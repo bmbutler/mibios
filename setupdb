@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euo pipefail
+if [[ -e ./var/db.sqlite3 ]]; then
+    ./manage.py shell -c "from hmb import models; models.erase_all_data()"
+else
+    ./manage.py migrate
+    echo "Creating superuh user:"
+    ./manage.py createsuperuser --username admin --email heinro@umich.edu
+fi
+./manage.py import_meta metadata_new.run.drop.csv
+./manage.py import_MMP MMP_manifest.20200511.csv
+./manage.py import_sample_master ugrads19.sample.master.csv
