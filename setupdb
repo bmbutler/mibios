@@ -7,6 +7,6 @@ else
     echo "Creating superuh user:"
     ./manage.py createsuperuser --username admin --email heinro@umich.edu
 fi
-./manage.py import_meta metadata_new.run.drop.csv
-./manage.py import_MMP MMP_manifest.20200511.csv
-./manage.py import_sample_master ugrads19.sample.master.csv
+./manage.py import_meta --traceback metadata_new.run.drop.csv
+./manage.py import_MMP --traceback MMP_manifest.20200511.csv
+./manage.py import_sample_master --traceback ugrads19.sample.master.csv
