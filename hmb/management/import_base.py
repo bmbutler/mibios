@@ -42,6 +42,7 @@ class AbstractImportCommand(BaseCommand):
         return parser
 
     def handle(self, *args, **options):
+        self.stdout.write('Loading {} ...'.format(options['file'].name))
         try:
             count, new, changed = self.loader_class.load_file(
                 options['file'],
