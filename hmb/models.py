@@ -11,16 +11,25 @@ class QuerySet(models.QuerySet):
         """
         Convert to pandas dataframe
         """
-        data = OrderedDict(
-            [(i.name, []) for i in self.model._meta.get_fields()]
-        )
-        for i in self:
-            d = i.export_dict()
+        df = pandas.DataFrame([], index=self.values_list('id', flat=True))
+        for i in self.model._meta.get_fields():
+            if not Model.is_simple_field(i):
+                continue
+            if i.name == 'id':
+                continue
 
-            for k, v in d.items():
-                data[k].append(v)
-
-        df = pandas.DataFrame(data, columns=data.keys())
+            dtype = Model.pd_type(i)
+            col_dat = self.values_list(i.name, flat=True)
+            kwargs = dict()
+            if i.choices:
+                col_dat = pandas.Categorical(col_dat)
+            else:
+                if dtype is str:
+                    # None become empty str
+                    # prevents 'None' string to enter df str columns
+                    col_dat = ('' if i is None else i for i in col_dat)
+                kwargs['dtype'] = dtype
+            df[i.name] = pandas.Series(col_dat, **kwargs)
         return df
 
 
@@ -34,6 +43,42 @@ class Model(models.Model):
         abstract = True
 
     objects = Manager()
+
+    @classmethod
+    def pd_type(cls, field):
+        """
+        Map Django field type to pandas data type
+        """
+        str_fields = (
+            models.CharField,
+            models.TextField,
+            models.ForeignKey,
+        )
+        int_fields = (
+            models.IntegerField,
+            models.AutoField,
+        )
+        if isinstance(field, str_fields):
+            dtype = str
+        elif isinstance(field, int_fields):
+            dtype = pandas.Int64Dtype()
+        else:
+            raise ValueError('Field type not supported: {}: {}'
+                             ''.format(field, field.get_internal_type()))
+        return dtype
+
+    @classmethod
+    def is_simple_field(cls, field):
+        """
+        Check if given field is "simple"
+
+        Simple fields are not ManyToMany or ManyToOne but can be represented
+        in a table cell
+        """
+        if isinstance(field, (models.ManyToOneRel, models.ManyToManyField)):
+            return False
+        else:
+            return True
 
     def export(self):
         """
