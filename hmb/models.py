@@ -87,13 +87,15 @@ class Model(models.Model):
         """
         ret = []
         for i in self._meta.get_fields():
-            ret.append(getattr(self, i.name, None))
+            if self.is_simple_field(i):
+                ret.append(getattr(self, i.name, None))
         return ret
 
-    def export_dict(self):
+    def export_dict(self, to_many=False):
         ret = OrderedDict()
         for i in self._meta.get_fields():
-            ret[i.name] = getattr(self, i.name, None)
+            if self.is_simple_field(i) or to_many:
+                ret[i.name] = getattr(self, i.name, None)
         return ret
 
     def compare(self, other):

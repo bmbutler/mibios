@@ -6,8 +6,8 @@
 </head>
 <body>
 Models: 
-{% for url_name, model_name in model_urls %}
-<a href="{% url url_name %}">{{ model_name }}</a>
+{% for i in model_names %}
+    <a href="{% url 'hmb:queryset_index' i %}">{{ i }}</a>
 {% endfor %}
 {% block nav %}{% endblock %}
 {% block content %}{% endblock %}

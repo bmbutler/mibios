@@ -1,17 +1,13 @@
-from django.apps import apps
+# from django.apps import apps
 from django.urls import path
 
-from .views import ModelIndexView
+from .views import ExportView, TableView
 
 
 app_name = 'hmb'
 urlpatterns = [
-        path('', ModelIndexView.as_view(), name='top_index'),
-    ]
-
-for i in apps.get_app_config(app_name).get_models():
-    p = i._meta.model_name + '/'
-    name = i._meta.model_name + '_index'
-    urlpatterns.append(path(p, ModelIndexView.as_view(model=i), name=name))
-
-del i, p, name
+    path('', TableView.as_view(), name='top'),
+    path('<str:model>/', TableView.as_view(), name='queryset_index'),
+    path('<str:model>/export/<str:format>/', ExportView.as_view(),
+         name='export'),
+]
