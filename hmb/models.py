@@ -95,6 +95,78 @@ class Model(models.Model):
             ret[i.name] = getattr(self, i.name, None)
         return ret
 
+    def compare(self, other):
+        """
+        Compares two objects and relates them by field content
+
+        Can be used to determine if <self> can be updated by <other> in a
+        purely additive, i.e. without changing existing data, just filling
+        blank fields.  <other> can also be a dict.
+
+        Returns a tuple (bool, int), the first component of which says if both
+        objects are consistent with each other, i.e. if the only differences on
+        fields involve one of the fields being blank or null.  Differences on
+        many-to-many fields don't affect consistency.  The second component
+        contains the names of those fields that are null or blank in <self> but
+        not in <other> including additional many-to-many links.
+
+        For two inconsistent objects the return value's second component is
+        undefined (it may be usable for debugging.)
+        """
+        if isinstance(other, Model):
+            if self._meta.concrete_model != other._meta.concrete_model:
+                return (False, None)
+        elif not isinstance(other, dict):
+            raise TypeError('can\'t compare to {} object'.format(type(other)))
+
+        diff = []
+        is_consistent = True
+        non_matching = []
+        for i in self._meta.get_fields():
+            if isinstance(other, dict) and i.name not in other:
+                # interpret as blank/None in other (dict version)
+                continue
+
+            if isinstance(i, models.ManyToOneRel):
+                # a ForeignKey in third model pointing to us
+                # ignore - must be handled from third model
+                pass
+            elif isinstance(i, models.ManyToManyField):
+                ours = set(getattr(self, i.name).all())
+                if isinstance(other, dict):
+                    try:
+                        theirs = set(other['name'])
+                    except TypeError:
+                        # packaged in iterable for set()
+                        theirs = set([other['name']])
+                else:
+                    theirs = set(getattr(other, i.name).all())
+                if theirs - ours:
+                    diff.append(i.name)
+            elif isinstance(i, models.OneToOneField):
+                raise NotImplementedError()
+            else:
+                # ForeignKey or normal scalar field
+                # Assumes that None and '' are not both possible values and
+                # that one of them indicates missing data
+                ours = getattr(self, i.name)
+                if isinstance(other, dict):
+                    theirs = other[i.name]
+                else:
+                    theirs = getattr(other, i.name)
+                if ours == theirs:
+                    pass
+                elif ours is None or ours == '':
+                    diff.append(i.name)
+                elif theirs is None or theirs == '':
+                    pass
+                else:
+                    # both sides differ with values
+                    is_consistent = False
+                    non_matching.append(i.name)
+
+        return (is_consistent, diff if is_consistent else non_matching)
+
 
 class Diet(Model):
     composition = models.CharField(max_length=1000)
