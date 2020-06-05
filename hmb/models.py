@@ -169,8 +169,28 @@ class Model(models.Model):
 
 
 class Diet(Model):
-    composition = models.CharField(max_length=1000)
-    week = models.ForeignKey('Week', on_delete=models.CASCADE)
+    # FIXME: two bwlow are suggested by Tom's diagram:
+    #   composition = models.CharField(max_length=1000)
+    #   week = models.ForeignKey('Week', on_delete=models.CASCADE)
+
+    # TODO: these all should have choices
+    frequency = models.CharField(max_length=30, blank=True)
+    dose = models.DecimalField(
+        max_digits=4, decimal_places=1,
+        blank=True, null=True, verbose_name='total dose grams'
+    )
+    supplement = models.CharField(
+        max_length=200, blank=True, verbose_name='supplement consumed'
+    )
+
+    class Meta:
+        unique_together = (
+            ('frequency', 'dose', 'supplement'),
+        )
+        ordering = ('supplement', 'frequency', 'dose')
+
+    def __str__(self):
+        return '{} {} {}'.format(self.supplement, self.frequency, self.dose)
 
 
 class FecalSample(Model):
@@ -178,7 +198,26 @@ class FecalSample(Model):
     number = models.PositiveSmallIntegerField()
     week = models.ForeignKey('Week', on_delete=models.SET_NULL, blank=True,
                              null=True)
+    ph = models.DecimalField(max_digits=4, decimal_places=2, blank=True,
+                             null=True)
+    bristol = models.DecimalField(max_digits=3, decimal_places=1, blank=True,
+                                  null=True)
     note = models.ManyToManyField('Note')
+    # SCFA stuff
+    # relatives seem to be calculated with lots of digits
+    scfa_kw = dict(max_digits=20, decimal_places=14, blank=True, null=True)
+    final_weight = models.DecimalField(**scfa_kw)
+    acetate_abs = models.DecimalField(**scfa_kw, verbose_name='Acetate_mM')
+    acetate_rel = models.DecimalField(**scfa_kw,
+                                      verbose_name='Acetate_mmol_kg')
+    butyrate_abs = models.DecimalField(**scfa_kw,
+                                       verbose_name='Butyrate_mM')
+    butyrate_rel = models.DecimalField(**scfa_kw,
+                                       verbose_name='Butyrate_mmol_kg')
+    propionate_abs = models.DecimalField(**scfa_kw,
+                                         verbose_name='Propionate_mM')
+    propionate_rel = models.DecimalField(**scfa_kw,
+                                         verbose_name='Propionate_mmol_kg')
 
     class Meta:
         unique_together = ('participant', 'number')
@@ -213,7 +252,7 @@ class FecalSample(Model):
 
 class Note(Model):
     name = models.CharField(max_length=100, unique=True)
-    text = models.TextField(max_length=300)
+    text = models.TextField(max_length=5000)
 
     def __str__(self):
         return self.name
@@ -228,6 +267,15 @@ class Participant(Model):
                                  blank=True, null=True)
     diet = models.ForeignKey('Diet', on_delete=models.SET_NULL, blank=True,
                              null=True)
+    QUANTITY_COMPLIANCE_CHOICES = ['NA', 'Quantity_compliant', 'no', 'none',
+                                   'unknown', 'yes']
+    _qc_choices = [(i, i) for i in QUANTITY_COMPLIANCE_CHOICES]
+
+    quantity_compliant = models.CharField(
+        max_length=30, choices=_qc_choices, blank=True,
+        help_text='Did the participant consumed at least 75% of the starch '
+                  'they were prescribed?'
+    )
     note = models.ManyToManyField('Note')
 
     class Meta:
@@ -290,14 +338,14 @@ class Sequencing(Model):
         (PLATE, PLATE),
         (OTHER, OTHER),
     )
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=100, unique=True)
     sample = models.ForeignKey('FecalSample', on_delete=models.CASCADE,
                                blank=True, null=True)
     control = models.CharField(max_length=50, choices=CONTROL_CHOICES,
                                blank=True)
-    r1_file = models.CharField(max_length=100, unique=True, blank=True,
+    r1_file = models.CharField(max_length=300, unique=True, blank=True,
                                null=True)
-    r2_file = models.CharField(max_length=100, unique=True, blank=True,
+    r2_file = models.CharField(max_length=300, unique=True, blank=True,
                                null=True)
     note = models.ManyToManyField('Note')
     run = models.ForeignKey('SequencingRun', on_delete=models.CASCADE,
@@ -311,10 +359,24 @@ class Sequencing(Model):
             ('run', 'snumber'),
             ('run', 'plate', 'plate_position'),
         )
-        ordering = ['run__serial', 'run__number', 'name']
+        ordering = ['name']
 
     def __str__(self):
         return self.name
+
+    @classmethod
+    def parse_control(cls, txt):
+        """
+        Coerce text into available control choices
+        """
+        choice = txt.strip().lower()
+        if choice:
+            for i in (j[0] for j in cls.CONTROL_CHOICES):
+                if i in choice:
+                    return i
+            return cls.OTHER
+        else:
+            return ''
 
 
 class SequencingRun(Model):
@@ -327,7 +389,7 @@ class SequencingRun(Model):
         ordering = ['serial', 'number']
 
     def __str__(self):
-        return '{} {}'.format(self.serial, self.number)
+        return '{}-{}'.format(self.serial, self.number)
 
 
 class Week(Model):
