@@ -1,5 +1,6 @@
 from collections import OrderedDict
 import re
+import sys
 
 from django.apps import apps
 from django.db import models
@@ -454,10 +455,12 @@ class Taxon(Model):
 # utility functions
 
 
-def erase_all_data():
+def erase_all_data(verbose=False):
     """
     Delete all data
     """
+    if verbose:
+        print('Erasing all data...', file=sys.stderr)
     for m in apps.get_app_config('hmb').get_models():
         m.objects.all().delete()
 
