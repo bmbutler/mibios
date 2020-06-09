@@ -5,8 +5,24 @@ from django.http import HttpResponse
 
 from django_tables2 import SingleTableView, Table
 
+from .models import FecalSample
 
 DATASET = {}
+
+
+class TestTable(Table):
+    class Meta:
+        model = FecalSample
+        fields = ['number', 'participant', A('participant.name'),
+                  A('participant.diet.dose')]
+
+
+class TestView(SingleTableView):
+    template_name = 'hmb/test.html'
+    table_class = TestTable
+
+    def get_queryset(self):
+        return FecalSample.objects.all()
 
 
 class TableView(SingleTableView):
