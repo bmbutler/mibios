@@ -178,18 +178,6 @@ class ExportView(TableView):
         ('csv', '.csv', 'text/csv', CSVRenderer),
     )
 
-    def get_queryset(self):
-        """
-        Add order to queryset
-
-        Re-implements what Table does
-        """
-        qs = super().get_queryset()
-        sort = self.request.GET.get('sort')
-        if sort:
-            qs = qs.order_by(sort)
-        return qs.values_list(*self.fields)
-
     def render_to_response(self, context):
         for name, suffix, content_type, renderer_class in self.FORMATS:
             if name == self.kwargs.get('format'):
@@ -199,13 +187,12 @@ class ExportView(TableView):
                              ''.format(format))
 
         response = HttpResponse(content_type=content_type)
-        f = context['model_name'] + suffix
+        f = context['dataset_name'] + suffix
         response['Content-Disposition'] = 'attachment; filename="{}"'.format(f)
 
         r = renderer_class(response)
-        qs = self.get_queryset()
-        r.render_row(qs._fields)  # header row
-        for i in self.get_queryset():
+        r.render_row(self.col_names)
+        for i in self.get_table().as_values():
             r.render_row(i)
 
         return response
