@@ -3,11 +3,10 @@ import csv
 from django.apps import apps
 from django.http import HttpResponse
 
-from django_tables2 import SingleTableView, Table
+from django_tables2 import SingleTableView, Table, A
 
+from .dataset import DATASET
 from .models import FecalSample
-
-DATASET = {}
 
 
 class TestTable(Table):
@@ -32,6 +31,7 @@ class TableView(SingleTableView):
     # set by setup()
     model = None
     fields = None
+    col_names = None
     filter = None
 
     def setup(self, request, *args, **kwargs):
@@ -39,6 +39,7 @@ class TableView(SingleTableView):
 
         self.filter = {}
         self.fields = []
+        self.col_names = []
         if 'dataset' not in kwargs:
             self.model = None
             return
@@ -47,21 +48,42 @@ class TableView(SingleTableView):
         dataset = DATASET.get(kwargs['dataset'])
         if kwargs['dataset'] in DATASET:
             dataset = DATASET[kwargs['dataset']]
+            self.dataset_name = kwargs['dataset']
+            self.dataset_verbose_name = kwargs['dataset']
             model = dataset['model']
             self.filter.update(**dataset['filter'])
-            self.fields.append(dataset['fields'])
+            for i in dataset['fields']:
+                if isinstance(i, tuple):
+                    self.fields.append(i[0])
+                    self.col_names.append(i[-1])
+                else:
+                    # assume i is str
+                    self.fields.append(i)
+                    self.col_names.append(i)
         else:
             model = kwargs['dataset']
 
         # raises on invalid model
         self.model = apps.get_app_config('hmb').get_model(model)
 
-        # set default fields - just the "simple" ones
-        for i in self.model.get_simple_fields():
-            if i.name == 'id':
-                continue
-            if i.name not in self.fields:
+        if kwargs['dataset'] not in DATASET:
+            # normal model
+            self.dataset_name = self.model._meta.model_name
+            self.dataset_verbose_name = self.model._meta.verbose_name
+            # set default fields - just the "simple" ones
+            no_name_field = True
+            for i in self.model.get_simple_fields():
+                if i.name == 'id':
+                    continue
+                if i.name == 'name':
+                    no_name_field = False
                 self.fields.append(i.name)
+                # FIXME: need this?:
+                # self.col_names.append(i.verbose_name)
+
+            if no_name_field and hasattr(self.model, 'name'):
+                # add column for canonical name
+                self.fields = ['name'] + self.fields
 
     def get(self, request, *args, **kwargs):
         self.filter.update(self.get_filter_from_url())
@@ -97,16 +119,20 @@ class TableView(SingleTableView):
         if self.model is None:
             return Table
 
-        # FIXME: there is also _meta.get_fields() ?
         meta_opts = dict(
             model=self.model,
             template_name='django_tables2/bootstrap.html',
-            fields=self.fields,
+            fields=[A(i.replace('__', '.')) for i in self.fields],
         )
         Meta = type('Meta', (object,), meta_opts)
-        name = self.model._meta.label.capitalize() + 'IndexTable'
+        name = self.dataset_name.capitalize() + 'IndexTable'
         table_opts = {'Meta': Meta}
-        return type(name, (Table,), table_opts)
+        c = type(name, (Table,), table_opts)
+        # Monkey-patch column headers
+        for i, j in zip(self.fields, self.col_names):
+            if i != j and j:
+                c.base_columns[i.replace('__', '.')].verbose_name = j
+        return c
 
     @classmethod
     def get_model_names(cls):
@@ -123,9 +149,11 @@ class TableView(SingleTableView):
         ctx = super().get_context_data(**ctx)
         if self.model is not None:
             ctx['model'] = self.model._meta.model_name
-            ctx['model_verbose'] = self.model._meta.verbose_name
+            ctx['dataset_name'] = self.dataset_name
+            ctx['dataset_verbose_name'] = self.dataset_verbose_name
             ctx['count'] = self.get_queryset().count()
         ctx['model_names'] = self.get_model_names()
+        ctx['data_sets'] = DATASET.keys()
         query = self.request.GET.urlencode()
         if query:
             ctx['query'] = '?' + query
