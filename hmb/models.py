@@ -305,24 +305,25 @@ class Participant(Model):
 
 
 class Semester(Model):
-    # semester: 4 seasons, numeric, so they can be sorted
-    FALL = '3'
-    WINTER = '4'
-    SEASON_CHOICES = (
+    # semester: 4 terms, numeric, so they can be sorted, winter goes first
+    WINTER = '1'
+    FALL = '4'
+    TERM_CHOICES = (
         (FALL, 'fall'),
         (WINTER, 'winter'),
     )
-    season = models.CharField(max_length=20, choices=SEASON_CHOICES)
+    term = models.CharField(max_length=20, choices=TERM_CHOICES)
     year = models.PositiveSmallIntegerField()
 
     class Meta:
-        unique_together = ('season', 'year')
-        ordering = ['year', 'season']
+        unique_together = ('term', 'year')
+        # FIXME: unsure why -term makes winter come before fall as 1<4
+        ordering = ['year', '-term']
 
     def __str__(self):
-        return self.season.capitalize() + str(self.year)
+        return self.term.capitalize() + str(self.year)
 
-    pat = re.compile(r'^(?P<season>[a-zA-Z]+)[^a-zA-Z0-9]*(?P<year>\d+)$')
+    pat = re.compile(r'^(?P<term>[a-zA-Z]+)[^a-zA-Z0-9]*(?P<year>\d+)$')
 
     @classmethod
     def parse(cls, txt):
@@ -333,15 +334,15 @@ class Semester(Model):
         if m is None:
             raise ValueError('Failed parsing as semester: {}'.format(txt[:99]))
         else:
-            season, year = m.groups()
+            term, year = m.groups()
 
-        season = season.lower()
+        term = term.lower()
         year = int(year)
         if year < 100:
             # two-digit year given, assume 21st century
             year += 2000
 
-        return {'season': season, 'year': year}
+        return {'term': term, 'year': year}
 
 
 class Sequencing(Model):
