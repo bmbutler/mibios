@@ -7,7 +7,9 @@
 {% endblock %}
 
 {% block content %}
-<h2>{{ model_name }} data ({{ count }} records)</h2>
-<a href="{% url 'hmb:export' model=model_name format='csv' %}{{ query }}">export as csv</a>
+{% if model %}
+<h2>{{ model_verbose }} data ({{ count }} records)</h2>
+<a href="{% url 'hmb:export' dataset=model format='csv' %}{{ query }}">export as csv</a>
     {% render_table table %}
+{% endif %}
 {% endblock %}

@@ -6,34 +6,64 @@ from django.http import HttpResponse
 from django_tables2 import SingleTableView, Table
 
 
+DATASET = {}
+
+
 class TableView(SingleTableView):
     template_name = 'hmb/model_index.html'
     QUERY_FILTER_PREFIX = 'filter__'
 
     # set by setup()
     model = None
-    filter = dict()
+    fields = None
+    filter = None
 
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)
-        self.compile_filter()
-        model = kwargs.get('model')
-        if model:
-            # raises on invalid model
-            self.model = apps.get_app_config('hmb').get_model(model)
 
-    def compile_filter(self):
+        self.filter = {}
+        self.fields = []
+        if 'dataset' not in kwargs:
+            self.model = None
+            return
+
+        # load special dataset
+        dataset = DATASET.get(kwargs['dataset'])
+        if kwargs['dataset'] in DATASET:
+            dataset = DATASET[kwargs['dataset']]
+            model = dataset['model']
+            self.filter.update(**dataset['filter'])
+            self.fields.append(dataset['fields'])
+        else:
+            model = kwargs['dataset']
+
+        # raises on invalid model
+        self.model = apps.get_app_config('hmb').get_model(model)
+
+        # set default fields - just the "simple" ones
+        for i in self.model.get_simple_fields():
+            if i.name == 'id':
+                continue
+            if i.name not in self.fields:
+                self.fields.append(i.name)
+
+    def get(self, request, *args, **kwargs):
+        self.filter.update(self.get_filter_from_url())
+        return super().get(request, *args, **kwargs)
+
+    def get_filter_from_url(self):
         """
         Compile filter dict from GET
         """
-        self.filter = {}
+        filter = {}
         for k, v in self.request.GET.items():
             # v is last value if mutliples
             if k.startswith(self.QUERY_FILTER_PREFIX):
                 # rm prefix
                 k = k[len(self.QUERY_FILTER_PREFIX):]
                 # last one wins
-                self.filter[k] = v
+                filter[k] = v
+        return filter
 
     def get_queryset(self):
         if self.model is None:
@@ -55,7 +85,7 @@ class TableView(SingleTableView):
         meta_opts = dict(
             model=self.model,
             template_name='django_tables2/bootstrap.html',
-            fields=[i.name for i in self.model._meta.fields],
+            fields=self.fields,
         )
         Meta = type('Meta', (object,), meta_opts)
         name = self.model._meta.label.capitalize() + 'IndexTable'
@@ -77,7 +107,7 @@ class TableView(SingleTableView):
         ctx = super().get_context_data(**ctx)
         if self.model is not None:
             ctx['model'] = self.model._meta.model_name
-            ctx['model_name'] = self.model._meta.verbose_name
+            ctx['model_verbose'] = self.model._meta.verbose_name
             ctx['count'] = self.get_queryset().count()
         ctx['model_names'] = self.get_model_names()
         query = self.request.GET.urlencode()
@@ -105,11 +135,16 @@ class ExportView(TableView):
     )
 
     def get_queryset(self):
+        """
+        Add order to queryset
+
+        Re-implements what Table does
+        """
         qs = super().get_queryset()
         sort = self.request.GET.get('sort')
         if sort:
             qs = qs.order_by(sort)
-        return qs
+        return qs.values_list(*self.fields)
 
     def render_to_response(self, context):
         for name, suffix, content_type, renderer_class in self.FORMATS:
@@ -124,12 +159,9 @@ class ExportView(TableView):
         response['Content-Disposition'] = 'attachment; filename="{}"'.format(f)
 
         r = renderer_class(response)
-        head = None
+        qs = self.get_queryset()
+        r.render_row(qs._fields)  # header row
         for i in self.get_queryset():
-            row = i.export_dict()
-            if head is None:
-                head = list(row.keys())
-                r.render_row(head)
-            r.render_row(row.values())
+            r.render_row(i)
 
         return response

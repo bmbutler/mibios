@@ -81,6 +81,22 @@ class Model(models.Model):
         else:
             return True
 
+    @classmethod
+    def get_simple_fields(cls):
+        """
+        Get forward, non-many-to-fields, non-auto
+        """
+        non_simple = (
+            models.AutoField,
+            models.ManyToOneRel,
+            models.ManyToManyField,
+        )
+        return [
+            i for i
+            in cls._meta.get_fields()
+            if not isinstance(i, non_simple)
+        ]
+
     def export(self):
         """
         Convert object into "table row" / list

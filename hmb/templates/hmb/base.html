@@ -5,10 +5,16 @@
     {% block link %}{% endblock %}
 </head>
 <body>
-Models: 
+Tables: 
 {% for i in model_names %}
     <a href="{% url 'hmb:queryset_index' i %}">{{ i }}</a>
 {% endfor %}
+<br>
+Data sets:
+{% for i in data_sets %}
+    <a href="{% url 'hmb:queryset_index' i %}">{{ i }}</a>
+{% endfor %}
+<hr>
 {% block nav %}{% endblock %}
 {% block content %}{% endblock %}
 </body>
