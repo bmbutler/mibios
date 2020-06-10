@@ -178,6 +178,15 @@ class ExportView(TableView):
         ('csv', '.csv', 'text/csv', CSVRenderer),
     )
 
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+
+        # add pk column if needed
+        if 'name' not in self.fields:
+            self.fields = ['id'] + self.fields
+            self.col_names = \
+                ['{}_id'.format(kwargs.get('dataset'))] + self.col_names
+
     def render_to_response(self, context):
         for name, suffix, content_type, renderer_class in self.FORMATS:
             if name == self.kwargs.get('format'):
