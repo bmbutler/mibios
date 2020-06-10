@@ -78,47 +78,51 @@ class AbstractImportCommand(BaseCommand):
         except Exception as e:
             raise CommandError('Failed importing data') from e
 
-        self.stdout.write(' {} rows processed'.format(count))
+        self.stdout.write(
+            self.format_counters(count, new, added, changed, **options)
+        )
+        self.stdout.write(' All done.')
+
+    @classmethod
+    def format_counters(cls, count, new, added, changed, **options):
+        out = ''
+        out += ' {} rows processed'.format(count)
         if new:
-            self.stdout.write(' Imported:\n' + '\n'.join([
+            out += ' Imported:\n' + '\n'.join([
                 '  {}: {}'.format(k, v)
                 for k, v
                 in new.items()
-            ]))
+            ])
         else:
-            self.stdout.write(' No new records\n')
+            out += ' No new records\n'
 
         if added:
-            self.stdout.write(
-                ' Records with blank fields filled:\n' + '\n'.join([
-                    '  {}: {}'.format(k, v)
-                    for k, v
-                    in added.items()
-                ])
-            )
+            out += ' Records with blank fields filled:\n' + '\n'.join([
+                '  {}: {}'.format(k, v)
+                for k, v
+                in added.items()
+            ])
 
         if changed:
-            if options['overwrite']:
+            if options.get('overwrite'):
                 msg = ' Modified:'
             else:
                 msg = (' Number of records differing from database but not '
                        'changed due to policy (use --overwrite to apply '
                        'changes):\n')
-            self.stdout.write(msg + '\n'.join([
+            out += msg + '\n'.join([
                 '  {}: {}'.format(k, len(v))
                 for k, v
                 in changed.items()
-            ]))
-            if options['verbose_changes']:
+            ])
+            if options.get('verbose_changes'):
                 for m, i in changed.items():
                     for obj, change_list in i:
                         row = []
                         for old, new in change_list:
                             row.append('{} -> {}'.format(old, new))
-                        line = '   {} {}: {}\n'.format(m, obj, ' | '.join(row))
-                        self.stdout.write(line)
+                        out += '   {} {}: {}\n'.format(m, obj, ' | '.join(row))
 
         else:
-            self.stdout.write(' No records changed\n')
-
-        self.stdout.write(' All done.')
+            out += ' No records changed\n'
+        return out
