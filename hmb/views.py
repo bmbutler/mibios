@@ -1,11 +1,17 @@
 import csv
+import io
 
 from django.apps import apps
 from django.http import HttpResponse
+from django.urls import reverse
+from django.views.generic.edit import FormView
 
 from django_tables2 import SingleTableView, Table, A
 
 from .dataset import DATASET
+from .forms import UploadFileForm
+from .load import ModelLoader
+from .management.import_base import AbstractImportCommand
 from .models import FecalSample
 
 
@@ -200,8 +206,35 @@ class ExportView(TableView):
         response['Content-Disposition'] = 'attachment; filename="{}"'.format(f)
 
         r = renderer_class(response)
-        r.render_row(self.col_names)
         for i in self.get_table().as_values():
             r.render_row(i)
 
         return response
+
+
+class ImportView(FormView):
+    template_name = 'hmb/import.html'
+    form_class = UploadFileForm
+
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+        self.dataset = kwargs.get('dataset')
+
+    def form_valid(self, form):
+        # do data import
+        f = io.TextIOWrapper(form.files['file'])
+        print('Importing into {}: {}'.format(self.dataset, f))
+        print('BOEK', vars(f))
+        stats = ModelLoader.load_file(f, self.dataset)
+        f.close()
+        msg = AbstractImportCommand.format_counters(
+            *stats,
+            overwrite=True,
+            verbose_changes=True,
+        )
+        print('Import stats:\n', msg)
+        print('Import stats:\n', *stats)
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        return reverse('hmb:queryset_index', kwargs=dict(dataset=self.dataset))

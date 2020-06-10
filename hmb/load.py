@@ -3,6 +3,7 @@ from pathlib import Path
 import re
 import sys
 
+from django.apps import apps
 from django.db import transaction
 
 from .models import (Diet, FecalSample, Note, Participant, Semester,
@@ -49,12 +50,9 @@ class AbstractLoader():
             setattr(self, 'name', None)
 
     @classmethod
-    def load_file(cls, file, sep='\t', can_overwrite=True, warn_on_error=False,
-                  strict_sample_id=False, dry_run=False):
+    def load_file(cls, file, sep='\t', **kwargs):
         colnames = file.readline().strip().split(sep)
-        loader = cls(colnames, sep=sep, can_overwrite=can_overwrite,
-                     warn_on_error=warn_on_error, dry_run=dry_run,
-                     strict_sample_id=strict_sample_id)
+        loader = cls(colnames, sep=sep, **kwargs)
         return loader.process_file(file)
 
     @transaction.atomic
@@ -420,5 +418,58 @@ class MMPManifestLoader(AbstractLoader):
         obj, new = Sequencing.objects.get_or_create(
             defaults=from_row,
             name=from_row['name'],
+        )
+        self.account(obj, new, from_row)
+
+
+class ModelLoader(AbstractLoader):
+    """
+    Import single-model file
+    """
+    def __init__(self, model, columns, **kwargs):
+        # set COLS from model
+        m = apps.get_app_config('hmb').get_model(model)
+        self.model = m
+        self.COLS = [
+            (i.verbose_name.capitalize(), i.name)
+            for i in m.get_simple_fields()
+        ]
+        self.COLS = [(model + '_id', 'id')] + self.COLS
+
+        super().__init__(columns, **kwargs)
+
+    @classmethod
+    def load_file(cls, file, model, sep='\t', **kwargs):
+        colnames = file.readline().strip().split(sep)
+        loader = cls(model, colnames, sep=sep, **kwargs)
+        return loader.process_file(file)
+
+    def process_row(self):
+        from_row = {}
+        id_arg = None
+        for k, v in self.row.items():
+            field = self.model._meta.get_field(k)
+            if k == 'name' and id_arg is None:
+                id_arg = {k: v}
+            elif k == 'id':
+                # takes precedence over 'name'
+                id_arg = {k: v}
+            elif field.many_to_one:
+                m = field.related_model
+                from_row[k], new = m.objects.get_or_create(canonical=v)
+                self.account(from_row[k], new)
+                del m, new
+            else:
+                from_row[k] = v
+
+        if id_arg is None:
+            raise UserDataError('"id" or "name" column is required')
+
+        if not list(id_arg.values())[0]:
+            raise UserDataError('"id" or "name" value must not be empty')
+
+        obj, new = self.model.objects.get_or_create(
+            defaults=from_row,
+            **id_arg,
         )
         self.account(obj, new, from_row)
