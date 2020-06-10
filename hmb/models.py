@@ -3,6 +3,7 @@ import re
 import sys
 
 from django.apps import apps
+from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 import pandas
 
@@ -32,6 +33,15 @@ class QuerySet(models.QuerySet):
                 kwargs['dtype'] = dtype
             df[i.name] = pandas.Series(col_dat, **kwargs)
         return df
+
+    def get(self, *args, canonical=None, **kwargs):
+        """
+        Implement canonical keyword for super().get()
+        """
+        c = {}
+        if canonical is not None:
+            c = self.model.canonical_lookup(canonical)
+        return super().get(*args, **c, **kwargs)
 
 
 class Manager(models.Manager):
@@ -188,9 +198,58 @@ class Model(models.Model):
 
         return (is_consistent, diff if is_consistent else non_matching)
 
+    @property
+    def canonical(self):
+        """
+        A canonical identifier under which the object is commonly known
+
+        This defaults to the name field if it exists.  Models without a name
+        field should implement this.
+
+        The canonical value must be derived from the non-relational fields of
+        the model.  To implement the canonical proterty for a model this method
+        as well as canonical_lookup() must be implemented.  The setter method
+        should be general enough for most cases.  The inverse of this method is
+        implemented by canonical_lookup().
+        """
+        return getattr(self, 'name', self.pk)
+
+    @classmethod
+    def canonical_lookup(cls, value):
+        """
+        Generate a dict lookup from the canonical value
+
+        This is used in QuerySet.get() to find objects canonical value.  The
+        implementation usually de-constructs the canonical value into its
+        components and is the inverse of the canonical() property.
+
+        Might also be used as parsing tool to coerce a user-given input value
+        to field-compatible values.
+        """
+        try:
+            cls._meta.get_field('name')
+        except FieldDoesNotExist:
+            return dict(pk=value)
+        else:
+            return dict(name=value)
+
+    @canonical.setter
+    def canonical(self, value):
+        """
+        Update model fields from canonical value
+
+        The default implementation should be general enough to be used by
+        inheriting classes
+        """
+        for k, v in self.canonical_lookup(value).items():
+            setattr(self, k, v)
+
+    def __str__(self):
+        return self.canonical
+
 
 class Diet(Model):
-    # FIXME: two bwlow are suggested by Tom's diagram:
+    # FIXME: two below are suggested by Tom's diagram:
     #   composition = models.CharField(max_length=1000)
     #   week = models.ForeignKey('Week', on_delete=models.CASCADE)
 
