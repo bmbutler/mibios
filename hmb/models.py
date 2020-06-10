@@ -269,8 +269,14 @@ class Diet(Model):
         )
         ordering = ('supplement', 'frequency', 'dose')
 
-    def __str__(self):
+    @property
+    def canonical(self):
         return '{} {} {}'.format(self.supplement, self.frequency, self.dose)
+
+    @classmethod
+    def canonical_lookup(cls, value):
+        s, f, d = value.split()
+        return dict(supplement=s, frequency=f, dose=d)
 
 
 class FecalSample(Model):
@@ -309,7 +315,10 @@ class FecalSample(Model):
     def parse_id(cls, txt):
         """
         Convert sample identifing str into kwargs dict
+
         """
+        # FIXME: returns participant as str, but compare to canonical_lookup
+        # which returns a model object
         m = cls.id_pat.match(txt.strip())
         if m is None:
             raise ValueError('Failed parsing sample id: {}'.format(txt[:100]))
@@ -324,18 +333,25 @@ class FecalSample(Model):
 
     @property
     def name(self):
+        """
+        Allow us to display the canonical value as a name (in tables)
+        """
+        return self.canonical
+
+    @property
+    def canonical(self):
         return '{}_{}'.format(self.participant, self.number)
 
-    def __str__(self):
-        return self.name
+    @classmethod
+    def canonical_lookup(cls, value):
+        p, n = value.split('_')
+        p = Participant.object.get(name=p)
+        return dict(participant=p, number=int(n))
 
 
 class Note(Model):
     name = models.CharField(max_length=100, unique=True)
     text = models.TextField(max_length=5000)
-
-    def __str__(self):
-        return self.name
 
 
 class Participant(Model):
@@ -361,9 +377,6 @@ class Participant(Model):
     class Meta:
         ordering = ['semester', 'name']
 
-    def __str__(self):
-        return self.name
-
 
 class Semester(Model):
     # semester: 4 terms, numeric, so they can be sorted, winter goes first
@@ -381,16 +394,14 @@ class Semester(Model):
         # FIXME: unsure why -term makes winter come before fall as 1<4
         ordering = ['year', '-term']
 
-    def __str__(self):
+    @property
+    def canonical(self):
         return self.term.capitalize() + str(self.year)
 
     pat = re.compile(r'^(?P<term>[a-zA-Z]+)[^a-zA-Z0-9]*(?P<year>\d+)$')
 
     @classmethod
-    def parse(cls, txt):
-        """
-        Convert str into kwargs dict
-        """
+    def canonical_lookup(cls, txt):
         m = cls.pat.match(txt.strip())
         if m is None:
             raise ValueError('Failed parsing as semester: {}'.format(txt[:99]))
@@ -403,7 +414,7 @@ class Semester(Model):
             # two-digit year given, assume 21st century
             year += 2000
 
-        return {'term': term, 'year': year}
+        return dict(term=term, year=year)
 
 
 class Sequencing(Model):
@@ -442,9 +453,6 @@ class Sequencing(Model):
         )
         ordering = ['name']
 
-    def __str__(self):
-        return self.name
-
     @classmethod
     def parse_control(cls, txt):
         """
@@ -469,8 +477,14 @@ class SequencingRun(Model):
         unique_together = ('serial', 'number')
         ordering = ['serial', 'number']
 
-    def __str__(self):
+    @property
+    def canonical(self):
         return '{}-{}'.format(self.serial, self.number)
+
+    @classmethod
+    def canonical_lookup(cls, value):
+        s, n = value.split('-')
+        return dict(serial=s, number=int(n))
 
 
 class Week(Model):
@@ -479,22 +493,23 @@ class Week(Model):
     class Meta:
         ordering = ('number',)
 
-    def __str__(self):
+    @property
+    def canonical(self):
         return 'week{}'.format(self.number)
 
     pat = re.compile(r'(week[^a-zA-Z0-9]*)?(?P<num>[0-9]+)', re.IGNORECASE)
 
     @classmethod
-    def parse(cls, txt):
+    def canonical_lookup(cls, value):
         """
         Convert a input text like "Week 1" into {'number' : 1}
         """
-        m = cls.pat.match(txt)
+        m = cls.pat.match(value)
         if m is None:
             raise ValueError(
-                'Failed to parse this as a week: {}'.format(txt[:100])
+                'Failed to parse this as a week: {}'.format(value[:100])
             )
-        return {'number': int(m.groupdict()['num'])}
+        return dict(number=int(m.groupdict()['num']))
 
 
 class Community(Model):

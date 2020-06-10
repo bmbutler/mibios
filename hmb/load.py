@@ -153,7 +153,7 @@ class AbstractLoader():
         """
         if 'semester' in self.row:
             try:
-                s = Semester.parse(self.row['semester'])
+                s = Semester.canonical_lookup(self.row['semester'])
             except ValueError as e:
                 raise UserDataError(str(e)) from e
             obj, new = Semester.objects.get_or_create(**s)
@@ -184,7 +184,7 @@ class AbstractLoader():
         """
         if 'week' in self.row:
             obj, new = Week.objects.get_or_create(
-                **Week.parse(self.row['week'])
+                **Week.canonical_lookup(self.row['week'])
             )
             self.account(obj, new)
 
