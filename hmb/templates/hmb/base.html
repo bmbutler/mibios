@@ -16,6 +16,16 @@ Data sets:
 {% endfor %}
 <hr>
 {% block nav %}{% endblock %}
+
+{% block notifications %}{% if messages %}
+<ul class="messages">
+    {% for message in messages %}
+    <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+    {% endfor %}
+</ul>
+<hr>
+{% endif %}{% endblock %}
+
 {% block content %}{% endblock %}
 </body>
 </html>

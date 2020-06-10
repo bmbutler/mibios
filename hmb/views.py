@@ -2,6 +2,7 @@ import csv
 import io
 
 from django.apps import apps
+from django.contrib import messages
 from django.http import HttpResponse
 from django.urls import reverse
 from django.views.generic.edit import FormView
@@ -224,16 +225,24 @@ class ImportView(FormView):
         # do data import
         f = io.TextIOWrapper(form.files['file'])
         print('Importing into {}: {}'.format(self.dataset, f))
-        print('BOEK', vars(f))
-        stats = ModelLoader.load_file(f, self.dataset)
+        try:
+            stats = ModelLoader.load_file(f, self.dataset)
+        except Exception as e:
+            msg = ('Failed to import data in uploaded file: {}: {}'
+                   ''.format(type(e).__name__, e))
+            msg_level = messages.ERROR
+        else:
+            msg = AbstractImportCommand.format_counters(
+                *stats,
+                overwrite=True,
+                verbose_changes=True,
+            )
+            msg_level = messages.SUCCESS
+
         f.close()
-        msg = AbstractImportCommand.format_counters(
-            *stats,
-            overwrite=True,
-            verbose_changes=True,
-        )
+        messages.add_message(self.request, msg_level, msg)
         print('Import stats:\n', msg)
-        print('Import stats:\n', *stats)
+
         return super().form_valid(form)
 
     def get_success_url(self):
