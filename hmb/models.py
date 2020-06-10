@@ -170,7 +170,9 @@ class Model(models.Model):
                 # that one of them indicates missing data
                 ours = getattr(self, i.name)
                 if isinstance(other, dict):
-                    theirs = other[i.name]
+                    # expect other dict to have str values
+                    # try to cast to e.g. Decimal, ... (crossing fingers?)
+                    theirs = type(ours)(other[i.name])
                 else:
                     theirs = getattr(other, i.name)
                 if ours == theirs:
