@@ -397,7 +397,7 @@ class FecalSample(Model):
     @classmethod
     def canonical_lookup(cls, value):
         p, n = value.split('_')
-        p = Participant.object.get(name=p)
+        p = Participant.objects.get(name=p)
         return dict(participant=p, number=int(n))
 
 
