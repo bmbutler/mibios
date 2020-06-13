@@ -163,11 +163,14 @@ class Model(models.Model):
             elif isinstance(i, models.ManyToManyField):
                 ours = set(getattr(self, i.name).all())
                 if isinstance(other, dict):
+                    # TODO / FIXME: how do we get here?
                     try:
                         theirs = set(other['name'])
                     except TypeError:
                         # packaged in iterable for set()
                         theirs = set([other['name']])
+                    except KeyError:
+                        theirs = set()
                 else:
                     theirs = set(getattr(other, i.name).all())
                 if theirs - ours:
@@ -177,22 +180,28 @@ class Model(models.Model):
             else:
                 # ForeignKey or normal scalar field
                 # Assumes that None and '' are not both possible values and
-                # that one of them indicates missing data
+                # that either of them indicates missing data
                 ours = getattr(self, i.name)
                 if isinstance(other, dict):
-                    # expect other dict to have str values
-                    # try to cast to e.g. Decimal, ... (crossing fingers?)
-                    theirs = type(ours)(other[i.name])
+                    theirs = other[i.name]
                 else:
                     theirs = getattr(other, i.name)
-                if ours == theirs:
-                    pass
+
+                if theirs is None or theirs == '':
+                    # other data missing ok
+                    continue
                 elif ours is None or ours == '':
+                    # other has more data
                     diff.append(i.name)
-                elif theirs is None or theirs == '':
-                    pass
-                else:
-                    # both sides differ with values
+                    continue
+
+                # both are real data
+                # usually other dict has str values
+                # try to cast to e.g. Decimal, ... (crossing fingers?)
+                if isinstance(theirs, str):
+                    theirs = type(ours)(theirs)
+
+                if ours != theirs:
                     is_consistent = False
                     non_matching.append(i.name)
 
