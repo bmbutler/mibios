@@ -6,8 +6,9 @@ import sys
 from django.apps import apps
 from django.db import transaction
 
+from .dataset import DATASET
 from .models import (Diet, FecalSample, Note, Participant, Semester,
-                     Sequencing, SequencingRun, Week)
+                     Sequencing, SequencingRun, Week, Model)
 
 
 class UserDataError(Exception):
@@ -28,14 +29,21 @@ class AbstractLoader():
     process_line(), that are not calls via process_file(), only when
     process_file() is about to finish, dry_run will cause a rollback.
     """
-    def __init__(self, columns, sep='\t', can_overwrite=True,
+    missing_data = ['']
+
+    def __init__(self, colnames, sep='\t', can_overwrite=True,
                  warn_on_error=False, strict_sample_id=False, dry_run=False):
-        valid_colnames = [i for i, j in self.COLS]
-        for i in columns:
-            if i not in valid_colnames:
-                raise UserDataError('Unknown column name: {}'.format(i))
         # use internal names for columns:
-        self.cols = [v for k, v in self.COLS if k in columns]
+        _cols = dict(self.COLS)
+        self.cols = []  # internal names for columns in file
+        self.ignored_columns = []  # columns that won't be processed
+        for i in colnames:
+            if i in _cols:
+                self.cols.append(_cols[i])
+            else:
+                self.cols.append(i)
+                self.ignored_columns.append(i)
+
         self.sep = sep
         self.new = Counter()
         self.added = Counter()
@@ -57,6 +65,9 @@ class AbstractLoader():
 
     @transaction.atomic
     def process_file(self, file):
+        """
+        Load data from given file
+        """
         try:
             for i in file:
                 self.process_line(i)
@@ -111,17 +122,40 @@ class AbstractLoader():
 
         self.rec[model_name] = obj
 
+    def non_empty(self, value):
+        """
+        Say if a value is "empty" or missing.
+
+        An empty value is something like whitespace-only or Null or None
+        or 'NA' etc.
+        """
+        for i in self.missing_data:
+            if isinstance(i, re.Pattern):
+                if i.match(value):
+                    return False
+            elif value == i:
+                return False
+        if Model.decode_blank(value) == '':
+            return False
+        return True
+
     def process_line(self, line):
         """
         Process a single input line
 
         Calls process_row() which must be provided by implementors
         """
-        if type(line) == str:
-            row = line.strip().split(self.sep)
+        if isinstance(line, str):
+            row = [i.strip() for i in line.strip().split(self.sep)]
 
         # row: the non-empty row content, whitespace-stripped, read-only
-        self.row = {k: v.strip() for k, v in zip(self.cols, row) if v.strip()}
+        valid_cols = [i[1] for i in self.COLS]
+        self.row = {
+            k: v
+            for k, v
+            in zip(self.cols, row)
+            if self.non_empty(v) and k in valid_cols
+        }
         # rec: accumulates bits of processing before final assembly
         self.rec = {}
         # backup counters
@@ -422,54 +456,193 @@ class MMPManifestLoader(AbstractLoader):
         self.account(obj, new, from_row)
 
 
-class ModelLoader(AbstractLoader):
+class GeneralLoader(AbstractLoader):
     """
-    Import single-model file
+    Import data-set/model-specific file
     """
-    def __init__(self, model, columns, **kwargs):
-        # set COLS from model
-        m = apps.get_app_config('hmb').get_model(model)
-        self.model = m
-        self.COLS = [
-            (i.verbose_name.capitalize(), i.name)
-            for i in m.get_simple_fields()
-        ]
-        self.COLS = [(model + '_id', 'id')] + self.COLS
+    def __init__(self, dataset, colnames, **kwargs):
+        if dataset in DATASET:
+            model_name = DATASET[dataset]['model']
+        else:
+            model_name = dataset
 
-        super().__init__(columns, **kwargs)
+        self.conf = apps.get_app_config('hmb')
+        self.model = self.conf.get_model(model_name)
+
+        if dataset in DATASET:
+            self.COLS = [
+                (col, model_name + '__' + accs)
+                for accs, col
+                in DATASET[dataset]['fields']
+            ]
+            self.missing_data += DATASET[dataset].get('missing_data', [])
+        else:
+            # set COLS from model, start with id column
+            self.COLS = [(model_name + '_id', model_name + '__id')]
+            self.COLS += [
+                (i.verbose_name.capitalize(), model_name + '__' + i.name)
+                for i in self.model.get_simple_fields()
+            ]
+
+        super().__init__(colnames, **kwargs)
 
     @classmethod
-    def load_file(cls, file, model, sep='\t', **kwargs):
+    def load_file(cls, file, dataset, sep='\t', **kwargs):
         colnames = file.readline().strip().split(sep)
-        loader = cls(model, colnames, sep=sep, **kwargs)
+        loader = cls(dataset, colnames, sep=sep, **kwargs)
         return loader.process_file(file)
 
+    def row_with_missing_columns(self):
+        """
+        Get row data with missing columns having an explicit blank
+
+        DEPRECATED -- superceded by get_template etc.
+        """
+        row = self.row.copy()
+        for col, accr in self.COLS:
+            if accr not in row:
+                row[accr] = ''
+        return row
+
+    def compile_template(self):
+        """
+        Make a deep template dict for the model(s)
+
+        This replaces self.rec from super()
+        """
+        t = {}
+        for i in self.row.keys():
+            cur = t
+            for j in i.split('__'):
+                if j not in cur:
+                    cur[j] = {}
+                cur = cur[j]
+        return t
+
+    def tget(self, key):
+        """
+        Get method for dict for dicts / a.k.a. deep model template
+
+        key can be a __-separated string (django lookup style) or a list
+        of dict keys
+        """
+        cur = self.template
+        if isinstance(key, str):
+            key = key.split('__')
+
+        for i in key:
+            try:
+                cur = cur[i]
+            except (KeyError, TypeError):
+                raise LookupError('Invalid key for template: {}'.format(key))
+        return cur
+
+    def tset(self, key, value):
+        """
+        Set method for dict for dicts / a.k.a. deep model template
+
+        key can be a __-separated string (django lookup style) or a list
+        of dict keys
+        """
+        cur = self.template
+        prev = None
+        if isinstance(key, str):
+            key = key.split('__')
+
+        for i in key:
+            prev = cur
+            try:
+                cur = cur[i]
+            except (KeyError, TypeError):
+                raise LookupError('Invalid key for template: {}, current:'
+                                  ''.format(key, cur))
+
+        if not isinstance(cur, dict):
+            # was assigned an object
+            raise ValueError('Template already has a value:{} at key:{}'
+                             ''.format(cur, key))
+        prev[i] = value
+
     def process_row(self):
-        from_row = {}
-        id_arg = None
-        for k, v in self.row.items():
-            field = self.model._meta.get_field(k)
-            if k == 'name' and id_arg is None:
-                id_arg = {k: v}
-            elif k == 'id':
-                # takes precedence over 'name'
-                id_arg = {k: v}
-            elif field.many_to_one:
-                m = field.related_model
-                from_row[k], new = m.objects.get_or_create(canonical=v)
-                self.account(from_row[k], new)
-                del m, new
-            else:
-                from_row[k] = v
+        self.template = self.compile_template()
+        # Processing row column by column, i.e. iterating over accessors to the
+        # template.  processing order: leafs go first, template roots (which
+        # are not columns themselves) get added last
+        a = sorted(
+            self.row.items(),
+            key=lambda x: x[0].split('__'),
+            reverse=True
+        ) + [(i, None) for i in self.template.keys()]
+        for k, v in a:
+            model, id_arg, obj, new = [None] * 4
+            try:
+                parts = k.split('__')
+                try:
+                    # try as model
+                    model = self.conf.get_model(parts[-1])
+                except LookupError:
+                    # assume a field
+                    v = self.model.decode_blank(v)
+                    # FIXME: are blanks not filtered out in process_line()?
+                    if v:
+                        self.tset(k, v)
+                else:
+                    # remove nodes not in row/data
+                    # TODO: if these are not leafs but "stand-ins" with some
+                    # fields filled in they get ignored currently
+                    data = self.tget(k).copy()
+                    for _k, _v in self.tget(k).items():
+                        if isinstance(_v, dict):
+                            del data[_k]
 
-        if id_arg is None:
-            raise UserDataError('"id" or "name" column is required')
+                    if v:
+                        id_arg = dict(canonical=v)
+                        # add v as lookup to data so get_or_create() can create
+                        # a new object if one does not yet exist
+                        data.update(model.canonical_lookup(v))
+                    elif 'canonical' in data:
+                        id_arg = dict(canonical=data.pop('canonical'))
+                    elif 'id' in data:
+                        id_arg = dict(id=data.pop('id'))
+                    elif 'name' in data:
+                        id_arg = dict(name=data.pop('name'))
+                    elif v is None:
+                        # finally the primary row object but can't do
+                        # anything with it?
+                        # FIXME: should raise UserDataError if id or name
+                        # column in empty, but have to find the right place
+                        # where to make that determination
+                        raise RuntimeError('oops here: data: ' + str(data))
+                    else:
+                        # got nothing to id an object / remain a dict
+                        continue
 
-        if not list(id_arg.values())[0]:
-            raise UserDataError('"id" or "name" value must not be empty')
+                    # separate many_to_many fields from data
+                    m2ms = {
+                        _k: _v
+                        for _k, _v in data.items()
+                        if model._meta.get_field(_k).many_to_many
+                    }
+                    for i in m2ms:
+                        del data[i]
 
-        obj, new = self.model.objects.get_or_create(
-            defaults=from_row,
-            **id_arg,
-        )
-        self.account(obj, new, from_row)
+                    obj, new = model.objects.get_or_create(
+                        defaults=data,
+                        **id_arg,
+                    )
+
+                    for _k, _v in m2ms.items():
+                        getattr(obj, _k).add(_v)
+
+                    self.account(obj, new, data)
+                    self.tset(k, obj)
+            except Exception as e:
+                raise RuntimeError(
+                    'k={} v={} model={} id_arg={}\ndata={}\ntemplate={}'
+                    ''.format(k, v, model, id_arg, data, self.template)
+                ) from e
+            # if k == parts:
+            #   print(f'X {k=} {v=} {model=} {id_arg=} {data=}' + 'template={}'
+            #          ''.format(self.template))
+            # else:
+            #    print(parts)

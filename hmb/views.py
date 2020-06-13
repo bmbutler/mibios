@@ -2,6 +2,7 @@ import csv
 import io
 
 from django.apps import apps
+from django.conf import settings
 from django.contrib import messages
 from django.http import HttpResponse
 from django.urls import reverse
@@ -11,7 +12,7 @@ from django_tables2 import SingleTableView, Table, A
 
 from .dataset import DATASET
 from .forms import UploadFileForm
-from .load import ModelLoader
+from .load import GeneralLoader
 from .management.import_base import AbstractImportCommand
 from .models import FecalSample
 
@@ -226,8 +227,10 @@ class ImportView(FormView):
         f = io.TextIOWrapper(form.files['file'])
         print('Importing into {}: {}'.format(self.dataset, f))
         try:
-            stats = ModelLoader.load_file(f, self.dataset)
+            stats = GeneralLoader.load_file(f, self.dataset)
         except Exception as e:
+            if settings.DEBUG:
+                raise
             msg = ('Failed to import data in uploaded file: {}: {}'
                    ''.format(type(e).__name__, e))
             msg_level = messages.ERROR
