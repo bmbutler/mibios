@@ -34,14 +34,14 @@ class QuerySet(models.QuerySet):
             df[i.name] = pandas.Series(col_dat, **kwargs)
         return df
 
-    def get(self, *args, canonical=None, **kwargs):
+    def _filter_or_exclude(self, negate, *args, canonical=None, **kwargs):
         """
-        Implement canonical keyword for super().get()
+        Implement canonical lookups
         """
         c = {}
         if canonical is not None:
             c = self.model.canonical_lookup(canonical)
-        return super().get(*args, **c, **kwargs)
+        return super()._filter_or_exclude(negate, *args, **c, **kwargs)
 
 
 class Manager(models.Manager):
