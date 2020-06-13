@@ -50,6 +50,16 @@ class Manager(models.Manager):
 
 
 class Model(models.Model):
+    """
+    Adds some extras to Django's Model
+    """
+
+    """
+    String value, indicating missing data to be used externally.  Internally,
+    None or the empty string remains in use for missing data.
+    """
+    MISSING_DATA = '-'
+
     class Meta:
         abstract = True
 
@@ -256,6 +266,36 @@ class Model(models.Model):
     def __str__(self):
         return self.canonical
 
+    @classmethod
+    def str_blank(cls, *values):
+        """
+        Convert into strings, explicitly marking blank/null values as such
+
+        Use this when an empty string is insufficient to indicate missing data.
+        This is the reverse of decode_blank().
+        """
+        ret = []
+        for i in values:
+            if i in ['', None]:
+                ret.append(cls.MISSING_DATA)
+            else:
+                ret.append(str(i))
+        return ret[0] if len(ret) == 1 else tuple(ret)
+
+    @classmethod
+    def decode_blank(cls, *values):
+        """
+        Filter values, turning strings indicating missing data into actual
+        blank/empty string.
+        """
+        ret = []
+        for i in values:
+            if i == cls.MISSING_DATA:
+                ret.append('')
+            else:
+                ret.append(i)
+        return ret[0] if len(ret) == 1 else tuple(ret)
+
 
 class Diet(Model):
     # FIXME: two below are suggested by Tom's diagram:
@@ -280,11 +320,14 @@ class Diet(Model):
 
     @Model.canonical.getter
     def canonical(self):
-        return '{} {} {}'.format(self.supplement, self.frequency, self.dose)
+
+        return '{} {} {}'.format(
+            *self.str_blank(self.supplement, self.frequency, self.dose)
+        )
 
     @classmethod
     def canonical_lookup(cls, value):
-        s, f, d = value.split()
+        s, f, d = cls.decode_blank(*value.split())
         return dict(supplement=s, frequency=f, dose=d)
 
 
