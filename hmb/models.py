@@ -269,7 +269,7 @@ class Diet(Model):
         )
         ordering = ('supplement', 'frequency', 'dose')
 
-    @property
+    @Model.canonical.getter
     def canonical(self):
         return '{} {} {}'.format(self.supplement, self.frequency, self.dose)
 
@@ -338,7 +338,7 @@ class FecalSample(Model):
         """
         return self.canonical
 
-    @property
+    @Model.canonical.getter
     def canonical(self):
         return '{}_{}'.format(self.participant, self.number)
 
@@ -394,7 +394,7 @@ class Semester(Model):
         # FIXME: unsure why -term makes winter come before fall as 1<4
         ordering = ['year', '-term']
 
-    @property
+    @Model.canonical.getter
     def canonical(self):
         return self.term.capitalize() + str(self.year)
 
@@ -477,7 +477,7 @@ class SequencingRun(Model):
         unique_together = ('serial', 'number')
         ordering = ['serial', 'number']
 
-    @property
+    @Model.canonical.getter
     def canonical(self):
         return '{}-{}'.format(self.serial, self.number)
 
@@ -493,7 +493,7 @@ class Week(Model):
     class Meta:
         ordering = ('number',)
 
-    @property
+    @Model.canonical.getter
     def canonical(self):
         return 'week{}'.format(self.number)
 
