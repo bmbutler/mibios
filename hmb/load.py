@@ -592,56 +592,57 @@ class GeneralLoader(AbstractLoader):
                     # FIXME: are blanks not filtered out in process_line()?
                     if v:
                         self.tset(k, v)
+                    continue
+
+                # remove nodes not in row/data
+                # TODO: if these are not leafs but "stand-ins" with some
+                # fields filled in they get ignored currently
+                data = self.tget(k).copy()
+                for _k, _v in self.tget(k).items():
+                    if isinstance(_v, dict):
+                        del data[_k]
+
+                if v:
+                    id_arg = dict(canonical=v)
+                    # add v as lookup to data so get_or_create() can create
+                    # a new object if one does not yet exist
+                    data.update(model.canonical_lookup(v))
+                elif 'canonical' in data:
+                    id_arg = dict(canonical=data.pop('canonical'))
+                elif 'id' in data:
+                    id_arg = dict(id=data.pop('id'))
+                elif 'name' in data:
+                    id_arg = dict(name=data.pop('name'))
+                elif v is None:
+                    # finally the primary row object but can't do
+                    # anything with it?
+                    # FIXME: should raise UserDataError if id or name
+                    # column in empty, but have to find the right place
+                    # where to make that determination
+                    raise RuntimeError('oops here: data: ' + str(data))
                 else:
-                    # remove nodes not in row/data
-                    # TODO: if these are not leafs but "stand-ins" with some
-                    # fields filled in they get ignored currently
-                    data = self.tget(k).copy()
-                    for _k, _v in self.tget(k).items():
-                        if isinstance(_v, dict):
-                            del data[_k]
+                    # got nothing to id an object / remain a dict
+                    continue
 
-                    if v:
-                        id_arg = dict(canonical=v)
-                        # add v as lookup to data so get_or_create() can create
-                        # a new object if one does not yet exist
-                        data.update(model.canonical_lookup(v))
-                    elif 'canonical' in data:
-                        id_arg = dict(canonical=data.pop('canonical'))
-                    elif 'id' in data:
-                        id_arg = dict(id=data.pop('id'))
-                    elif 'name' in data:
-                        id_arg = dict(name=data.pop('name'))
-                    elif v is None:
-                        # finally the primary row object but can't do
-                        # anything with it?
-                        # FIXME: should raise UserDataError if id or name
-                        # column in empty, but have to find the right place
-                        # where to make that determination
-                        raise RuntimeError('oops here: data: ' + str(data))
-                    else:
-                        # got nothing to id an object / remain a dict
-                        continue
+                # separate many_to_many fields from data
+                m2ms = {
+                    _k: _v
+                    for _k, _v in data.items()
+                    if model._meta.get_field(_k).many_to_many
+                }
+                for i in m2ms:
+                    del data[i]
 
-                    # separate many_to_many fields from data
-                    m2ms = {
-                        _k: _v
-                        for _k, _v in data.items()
-                        if model._meta.get_field(_k).many_to_many
-                    }
-                    for i in m2ms:
-                        del data[i]
+                obj, new = model.objects.get_or_create(
+                    defaults=data,
+                    **id_arg,
+                )
 
-                    obj, new = model.objects.get_or_create(
-                        defaults=data,
-                        **id_arg,
-                    )
+                for _k, _v in m2ms.items():
+                    getattr(obj, _k).add(_v)
 
-                    for _k, _v in m2ms.items():
-                        getattr(obj, _k).add(_v)
-
-                    self.account(obj, new, data)
-                    self.tset(k, obj)
+                self.account(obj, new, data)
+                self.tset(k, obj)
             except Exception as e:
                 raise RuntimeError(
                     'k={} v={} model={} id_arg={}\ndata={}\ntemplate={}'
