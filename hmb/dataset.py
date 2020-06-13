@@ -1,7 +1,9 @@
 """
 Definitions for special datasets
 """
-__dir__ = ('x', 'a')
+import re
+
+
 DATASET = {}
 
 DATASET['meta_all'] = {
@@ -28,4 +30,32 @@ DATASET['meta_all'] = {
 
 
 DATASET['meta_thru2019'] = DATASET['meta_all'].copy()
-DATASET['meta_thru2019']['filter']['sample__participant__semester__year__lte'] = '2019'
+DATASET['meta_thru2019']['filter']['sample__participant__semester__year__lte']\
+    = '2019'
+
+DATASET['SCFA_indv'] = {
+    'model': 'fecalsample',
+    'fields': [
+        ('participant', 'Participant_ID'),
+        ('number', 'Sample_number'),
+        ('canonical', 'Sample_ID'),
+        ('week', 'Study_week'),
+        ('participant__semester', 'Semester'),
+        # ('use_data', 'Use_Data'),
+        ('participant__quantity_compliant', 'Quantity_compliant'),
+        ('participant__diet__frequency', 'Frequency'),
+        ('participant__diet__supplement', 'Supplement_consumed'),
+        ('final_weight', 'Final_weight'),
+        ('acetate_abs', 'Acetate_mM'),
+        ('acetate_rel', 'Acetate_mmol_kg'),
+        ('butyrate_abs', 'Butyrate_mM'),
+        ('butyrate_rel', 'Butyrate_mmol_kg'),
+        ('butyrate_abs', 'Propionate_mM'),
+        ('butyrate_rel', 'Propionate_mmol_kg'),
+        ('note', 'SCFA_notes'),
+    ],
+    'filter': {},
+    'missing_data': [
+        re.compile(r'(NA|[-])', re.IGNORECASE)
+    ],
+}
