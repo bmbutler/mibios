@@ -66,7 +66,7 @@ class AbstractImportCommand(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write('Loading {} ...'.format(options['file'].name))
         try:
-            count, new, added, changed = self.loader_class.load_file(
+            stats = self.loader_class.load_file(
                 options['file'],
                 sep=options['sep'],
                 can_overwrite=options['overwrite'],
@@ -79,20 +79,23 @@ class AbstractImportCommand(BaseCommand):
             raise CommandError('Failed importing data') from e
 
         self.stdout.write(
-            self.format_counters(count, new, added, changed, **options)
+            self.format_import_stats(**stats, **options)
         )
         self.stdout.write(' All done.')
 
     @classmethod
-    def format_counters(cls, count, new, added, changed, **options):
+    def format_import_stats(cls, count=0, new={}, added={}, changed={},
+                            ignored=[], **options):
         out = ''
-        out += ' {} rows processed'.format(count)
+        out += ' {} rows processed\n'.format(count)
+        if ignored:
+            out += ' Columns, not processd: ' + ', '.join(ignored) + '\n'
         if new:
             out += ' Imported:\n' + '\n'.join([
                 '  {}: {}'.format(k, v)
                 for k, v
                 in new.items()
-            ])
+            ]) + '\n'
         else:
             out += ' No new records\n'
 
@@ -101,11 +104,11 @@ class AbstractImportCommand(BaseCommand):
                 '  {}: {}'.format(k, v)
                 for k, v
                 in added.items()
-            ])
+            ]) + '\n'
 
         if changed:
             if options.get('overwrite'):
-                msg = ' Modified:'
+                msg = ' Modified:\n'
             else:
                 msg = (' Number of records differing from database but not '
                        'changed due to policy (use --overwrite to apply '
@@ -114,7 +117,7 @@ class AbstractImportCommand(BaseCommand):
                 '  {}: {}'.format(k, len(v))
                 for k, v
                 in changed.items()
-            ])
+            ]) + '\n'
             if options.get('verbose_changes'):
                 for m, i in changed.items():
                     for obj, change_list in i:

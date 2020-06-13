@@ -235,8 +235,8 @@ class ImportView(FormView):
                    ''.format(type(e).__name__, e))
             msg_level = messages.ERROR
         else:
-            msg = AbstractImportCommand.format_counters(
-                *stats,
+            msg = AbstractImportCommand.format_import_stats(
+                **stats,
                 overwrite=True,
                 verbose_changes=True,
             )

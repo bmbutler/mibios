@@ -77,7 +77,13 @@ class AbstractLoader():
             raise RuntimeError('Failed processing line:\n{}'.format(i)) from e
         if self.dry_run:
             transaction.rollback()
-        return self.count, self.new, self.added, self.changed
+        return dict(
+            count=self.count,
+            new=self.new,
+            added=self.added,
+            changed=self.changed,
+            ignored_cols=self.ignored_columns,
+        )
 
     def get_from_row(self, *keys):
         """
