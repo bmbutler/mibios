@@ -343,18 +343,19 @@ class FecalSample(Model):
     note = models.ManyToManyField('Note')
     # SCFA stuff
     # relatives seem to be calculated with lots of digits
-    scfa_kw = dict(max_digits=20, decimal_places=14, blank=True, null=True)
-    final_weight = models.DecimalField(**scfa_kw)
-    acetate_abs = models.DecimalField(**scfa_kw, verbose_name='Acetate_mM')
-    acetate_rel = models.DecimalField(**scfa_kw,
+    scfa_abs_kw = dict(max_digits=8, decimal_places=3, blank=True, null=True)
+    scfa_rel_kw = dict(max_digits=22, decimal_places=16, blank=True, null=True)
+    final_weight = models.DecimalField(**scfa_abs_kw)
+    acetate_abs = models.DecimalField(**scfa_abs_kw, verbose_name='Acetate_mM')
+    acetate_rel = models.DecimalField(**scfa_rel_kw,
                                       verbose_name='Acetate_mmol_kg')
-    butyrate_abs = models.DecimalField(**scfa_kw,
+    butyrate_abs = models.DecimalField(**scfa_abs_kw,
                                        verbose_name='Butyrate_mM')
-    butyrate_rel = models.DecimalField(**scfa_kw,
+    butyrate_rel = models.DecimalField(**scfa_rel_kw,
                                        verbose_name='Butyrate_mmol_kg')
-    propionate_abs = models.DecimalField(**scfa_kw,
+    propionate_abs = models.DecimalField(**scfa_abs_kw,
                                          verbose_name='Propionate_mM')
-    propionate_rel = models.DecimalField(**scfa_kw,
+    propionate_rel = models.DecimalField(**scfa_rel_kw,
                                          verbose_name='Propionate_mmol_kg')
 
     class Meta:
