@@ -227,7 +227,7 @@ class ImportView(FormView):
         f = io.TextIOWrapper(form.files['file'])
         print('Importing into {}: {}'.format(self.dataset, f))
         try:
-            stats = GeneralLoader.load_file(f, self.dataset)
+            stats = GeneralLoader.load_file(f, self.dataset, warn_on_error=True)
         except Exception as e:
             if settings.DEBUG:
                 raise

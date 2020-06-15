@@ -44,6 +44,7 @@ class AbstractLoader():
                 self.cols.append(i)
                 self.ignored_columns.append(i)
 
+        self.warnings = []
         self.sep = sep
         self.new = Counter()
         self.added = Counter()
@@ -83,6 +84,7 @@ class AbstractLoader():
             added=self.added,
             changed=self.changed,
             ignored_cols=self.ignored_columns,
+            warnings=self.warnings,
         )
 
     def get_from_row(self, *keys):
@@ -175,7 +177,9 @@ class AbstractLoader():
             msg1 = '{} at line {}'.format(e, self.count + 2)
             msg2 = ', current row:\n{}'.format(self.row)
             if self.warn_on_error and isinstance(e, UserDataError):
-                print('[SKIPPING]', msg1, file=sys.stderr)
+                msg1 = '[SKIPPING]' + msg1
+                self.warnings.append(msg1)
+                print(msg1, file=sys.stderr)
                 self.new = new_
                 self.added = added_
                 self.changed = changed_
