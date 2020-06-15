@@ -2,7 +2,7 @@ import argparse
 
 from django.core.management.base import BaseCommand, CommandError
 
-from hmb.load import SequencingLoader, UserDataError
+from hmb.load import UserDataError
 
 
 class AbstractImportCommand(BaseCommand):
@@ -27,13 +27,17 @@ class AbstractImportCommand(BaseCommand):
 
         calls super and adds options
         """
+        more_help_file = ''
+        if hasattr(self.loader_class, 'COLS'):
+            more_help_file += ', recognized columns are: '
+            more_help_file += ', '.join([i[0] for i in self.loader_class.COLS])
+
         parser = super().create_parser(prog_name, subcommand)
         parser.add_argument(
             'file',
             type=argparse.FileType(),
-            help='Inputfile, tab-separated with columns: '
-                 '' + ', '.join([i[0] for i in SequencingLoader.COLS]),
-        )
+            help='Inputfile, tab-separated' + more_help_file,
+            )
         parser.add_argument(
             '-n', '--dry-run',
             action='store_true',
