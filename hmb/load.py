@@ -510,7 +510,7 @@ class GeneralLoader(AbstractLoader):
         super().__init__(colnames, **kwargs)
 
     @classmethod
-    def load_file(cls, file, dataset, sep='\t', **kwargs):
+    def load_file(cls, file, dataset=None, sep='\t', **kwargs):
         colnames = file.readline().strip().split(sep)
         loader = cls(dataset, colnames, sep=sep, **kwargs)
         return loader.process_file(file)
