@@ -4,11 +4,15 @@ import re
 import sys
 
 from django.apps import apps
-from django.db import transaction
+from django.db import transaction, IntegrityError
 
 from .dataset import DATASET
 from .models import (Diet, FecalSample, Note, Participant, Semester,
                      Sequencing, SequencingRun, Week, Model)
+
+
+class DryRunRollback(Exception):
+    pass
 
 
 class UserDataError(Exception):
@@ -64,20 +68,25 @@ class AbstractLoader():
         loader = cls(colnames, sep=sep, **kwargs)
         return loader.process_file(file)
 
-    @transaction.atomic
     def process_file(self, file):
         """
         Load data from given file
         """
         try:
-            for i in file:
-                self.process_line(i)
+            with transaction.atomic():
+                for i in file:
+                    self.process_line(i)
+
+                if self.dry_run:
+                    raise DryRunRollback
+        except DryRunRollback:
+            pass
         except UserDataError:
+            # FIXME: needs to be reported; and (when) does this happen?
             raise
         except Exception as e:
             raise RuntimeError('Failed processing line:\n{}'.format(i)) from e
-        if self.dry_run:
-            transaction.rollback()
+
         return dict(
             count=self.count,
             new=self.new,
@@ -174,9 +183,13 @@ class AbstractLoader():
             with transaction.atomic():
                 self.process_row()
         except Exception as e:
+            # some user errors in the data come up as IntegrityErrors, e.g.
+            # violations of UNIQUE, IntegrityError should not be caught insie
+            # an atomic() (cf. Django docs)
             msg1 = '{} at line {}'.format(e, self.count + 2)
             msg2 = ', current row:\n{}'.format(self.row)
-            if self.warn_on_error and isinstance(e, UserDataError):
+            if self.warn_on_error \
+                    and isinstance(e, (IntegrityError, UserDataError)):
                 msg1 = '[SKIPPING]' + msg1
                 self.warnings.append(msg1)
                 print(msg1, file=sys.stderr)
@@ -585,6 +598,7 @@ class GeneralLoader(AbstractLoader):
         ) + [(i, None) for i in self.template.keys()]
         for k, v in a:
             model, id_arg, obj, new = [None] * 4
+            _k, _v, data = [None] *3
             try:
                 parts = k.split('__')
                 try:
@@ -647,6 +661,8 @@ class GeneralLoader(AbstractLoader):
 
                 self.account(obj, new, data)
                 self.tset(k, obj)
+            except IntegrityError:
+                raise
             except Exception as e:
                 raise RuntimeError(
                     'k={} v={} model={} id_arg={}\ndata={}\ntemplate={}'
