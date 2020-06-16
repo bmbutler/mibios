@@ -10,3 +10,8 @@ class SequencingTable(tables.Table):
             'name', 'sample.participant', 'sample', 'sample.week',
             'sample.participant.semester', 'batch', 'note',
         )
+
+
+class Table(tables.Table):
+    name = tables.Column(linkify=True)
+    id = tables.Column(linkify=True)

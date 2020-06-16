@@ -8,13 +8,14 @@ from django.http import HttpResponse
 from django.urls import reverse
 from django.views.generic.edit import FormView
 
-from django_tables2 import SingleTableView, Table, A
+from django_tables2 import SingleTableView, A
 
 from .dataset import DATASET
 from .forms import UploadFileForm
 from .load import GeneralLoader
 from .management.import_base import AbstractImportCommand
 from .models import FecalSample
+from .tables import Table
 
 
 class TestTable(Table):
@@ -127,14 +128,25 @@ class TableView(SingleTableView):
         if self.model is None:
             return Table
 
+        fields = [A(i.replace('__', '.')) for i in self.fields]
+        exclude = []
+        # conditionally exclude fields defined in the table class:
+        if 'name' in self.fields:
+            exclude.append('id')
+        else:
+            exclude.append('name')
+            fields = ['id'] + fields
+
         meta_opts = dict(
             model=self.model,
             template_name='django_tables2/bootstrap.html',
-            fields=[A(i.replace('__', '.')) for i in self.fields],
+            fields=fields,
+            exclude=exclude,
         )
         Meta = type('Meta', (object,), meta_opts)
         name = self.dataset_name.capitalize() + 'IndexTable'
-        table_opts = {'Meta': Meta}
+        table_opts.update(Meta=Meta)
+        # FIXME: call django_tables2.table_factory??
         c = type(name, (Table,), table_opts)
         # Monkey-patch column headers
         for i, j in zip(self.fields, self.col_names):
@@ -189,11 +201,12 @@ class ExportView(TableView):
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)
 
-        # add pk column if needed
-        if 'name' not in self.fields:
-            self.fields = ['id'] + self.fields
-            self.col_names = \
-                ['{}_id'.format(kwargs.get('dataset'))] + self.col_names
+        # put model name in id column header
+        if 'id' in self.fields:
+            self.col_names = [
+                '{}_id'.format(kwargs.get('dataset')) if i == 'id' else i
+                for i in self.col_names
+            ]
 
     def render_to_response(self, context):
         for name, suffix, content_type, renderer_class in self.FORMATS:
