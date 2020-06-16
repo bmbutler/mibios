@@ -2,6 +2,7 @@ import csv
 import io
 
 from django.apps import apps
+from django.db.models import Count
 from django.conf import settings
 from django.contrib import messages
 from django.http import HttpResponse
@@ -15,7 +16,7 @@ from .forms import UploadFileForm
 from .load import GeneralLoader
 from .management.import_base import AbstractImportCommand
 from .models import FecalSample
-from .tables import Table
+from .tables import CountColumn, Table
 
 
 class TestTable(Table):
@@ -42,11 +43,13 @@ class TableView(SingleTableView):
     fields = None
     col_names = None
     filter = None
+    dataset_filter = None
 
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)
 
         self.filter = {}
+        self.dataset_filter = {}
         self.fields = []
         self.col_names = []
         if 'dataset' not in kwargs:
@@ -60,7 +63,7 @@ class TableView(SingleTableView):
             self.dataset_name = kwargs['dataset']
             self.dataset_verbose_name = kwargs['dataset']
             model = dataset['model']
-            self.filter.update(**dataset['filter'])
+            self.dataset_filter = dataset['filter']
             for i in dataset['fields']:
                 if isinstance(i, tuple):
                     self.fields.append(i[0])
@@ -112,11 +115,33 @@ class TableView(SingleTableView):
                 filter[k] = v
         return filter
 
+    def get_query_string(self, ignore_original=False, **extras):
+        """
+        Build the GET querystring from the user filter
+
+        Extra filter arguments can be used to add or override the original
+        filter.  With ignore_original self.filter will not be used, just the
+        extras.  This is the reverse of the get_filter_from_url method
+        """
+        filter = {}
+        if not ignore_original:
+            filter.update(self.filter)
+        filter.update(**extras)
+        return '?' + '&'.join([
+            '{}{}={}'.format(self.QUERY_FILTER_PREFIX, k, v)
+            for k, v in filter.items()
+        ])
+
     def get_queryset(self):
         if self.model is None:
             return []
         else:
-            return super().get_queryset().filter(**self.filter)
+            # add reverse relation count annotations
+            cts = [Count(i.name) for i in self.model._meta.related_objects]
+            return super() \
+                .get_queryset() \
+                .filter(**self.dataset_filter, **self.filter) \
+                .annotate(*cts)
 
     def get_table_class(self):
         """
@@ -136,6 +161,16 @@ class TableView(SingleTableView):
         else:
             exclude.append('name')
             fields = ['id'] + fields
+
+        # reverse relations
+        table_opts = {
+            i.name + '__count': CountColumn(i, view=self)
+            for i in self.model._meta.related_objects
+        }
+        fields += [
+            i.name + '__count'
+            for i in self.model._meta.related_objects
+        ]
 
         meta_opts = dict(
             model=self.model,
