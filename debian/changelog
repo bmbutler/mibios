@@ -1,0 +1,6 @@
+hmb (0.0.2-1) UNRELEASED; urgency=low
+
+  * Initial release. Closes: #nnnn
+    <nnnn is the bug number of your ITP>
+
+ -- Robert <heinro@umich.edu>  Tue, 16 Jun 2020 16:58:08 -0400

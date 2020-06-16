@@ -1,0 +1,21 @@
+Source: hmb
+Section: unknown
+Priority: optional
+Maintainer: Robert <heinro@umich.edu>
+Build-Depends: debhelper (>=11~), dh-python, python-all, python3-all
+Standards-Version: 4.1.4
+Homepage: <insert the upstream URL, if relevant>
+X-Python-Version: >= 2.6
+X-Python3-Version: >= 3.2
+
+Package: hmb
+Architecture: all
+Multi-Arch: foreign
+Depends: ${misc:Depends}, ${python:Depends}
+Description: Microbiome data project
+ The Microbiom data project
+ ==========================
+ .
+ .
+ A database for microbiome data sets.
+ .
