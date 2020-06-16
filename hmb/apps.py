@@ -1,5 +1,7 @@
-from django.apps import AppConfig
+from django import apps
 
 
-class MarioConfig(AppConfig):
+class AppConfig(apps.AppConfig):
     name = 'hmb'
+    label = 'microbiome_data'
+    verbose_name = 'microbiome database'

@@ -16,11 +16,8 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
-from hmb.admin import admin_site
-
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('admin1/', admin_site.urls),
     path('hmb/', include('hmb.urls')),
 ]

@@ -9,8 +9,8 @@
 {% block content %}
 {% if model %}
 <h2>{{ dataset_verbose_name }} data ({{ count }} records)</h2>
-<a href="{% url 'hmb:import' dataset=dataset_name %}">import</a>
-<a href="{% url 'hmb:export' dataset=dataset_name format='csv' %}{{ query }}">export as csv</a>
+<a href="{% url 'import' dataset=dataset_name %}">import</a>
+<a href="{% url 'export' dataset=dataset_name format='csv' %}{{ query }}">export as csv</a>
     {% render_table table %}
 {% endif %}
 {% endblock %}

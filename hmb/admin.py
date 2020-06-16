@@ -1,13 +1,16 @@
+from django.apps import apps
 from django.contrib import admin
 
-from django.apps import apps
+
+app_config = apps.get_app_config('hmb')
 
 
-class MyAdminSite(admin.AdminSite):
-    site_header = 'The Administration'
+class AdminSite(admin.AdminSite):
+    site_header = app_config.verbose_name + ' Administration'
+    site_url = '/{}/'.format(app_config.name)
 
 
-admin_site = MyAdminSite(name='myadmin')
+site = AdminSite(name=app_config.name)
 
-for i in apps.get_app_config('hmb').get_models():
-    admin_site.register(i)
+for i in app_config.get_models():
+    site.register(i)

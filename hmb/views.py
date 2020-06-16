@@ -249,4 +249,4 @@ class ImportView(FormView):
         return super().form_valid(form)
 
     def get_success_url(self):
-        return reverse('hmb:queryset_index', kwargs=dict(dataset=self.dataset))
+        return reverse('queryset_index', kwargs=dict(dataset=self.dataset))

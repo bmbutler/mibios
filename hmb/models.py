@@ -3,6 +3,7 @@ import re
 import sys
 
 from django.apps import apps
+from django.urls import reverse
 from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 import pandas
@@ -295,6 +296,11 @@ class Model(models.Model):
             else:
                 ret.append(i)
         return ret[0] if len(ret) == 1 else tuple(ret)
+
+    def get_absolute_url(self):
+        name = '{app}:{app}_{model}_change' \
+               ''.format(app='hmb', model=self._meta.model_name)
+        return reverse(name, kwargs=dict(object_id=self.pk))
 
 
 class Diet(Model):
