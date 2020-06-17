@@ -7,7 +7,7 @@ def manage():
     """
     The original manage.py
     """
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'ops.settings')
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'hmb.ops.settings')
     try:
         from django.core.management import execute_from_command_line
     except ImportError as exc:
