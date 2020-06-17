@@ -1,6 +1,14 @@
-hmb (0.0.2-1) UNRELEASED; urgency=low
+hmb (0.0.1-1) unstable; urgency=medium
 
-  * Initial release. Closes: #nnnn
-    <nnnn is the bug number of your ITP>
+  * Initial release - alpha stage
+  * Move (for now) ops package under hmb to easy packaging
+  * Fix various stuff, rm python2, get build to work
+  * d/*: more packaging
+  * Initial setuptools packaging
+  * setup.py: run collectstatic during build
+  * settings: set STATIC_ROOT as needed to run collectstatic
+  * Use copy of the boostrap css not symlink, makes packaging easier
+  * Add production settings
+  * settings: set timezone
 
- -- Robert <heinro@umich.edu>  Tue, 16 Jun 2020 16:58:08 -0400
+ -- Robert <heinro@umich.edu>  Wed, 17 Jun 2020 21:02:51 +0000
