@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-from hmb.ops import manage
+from mibios.ops import manage
 
 
 if __name__ == '__main__':
-    manage('hmb.ops.settings')
+    manage('mibios.ops.settings')

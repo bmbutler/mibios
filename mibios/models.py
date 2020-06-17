@@ -299,7 +299,7 @@ class Model(models.Model):
 
     def get_absolute_url(self):
         name = '{app}:{app}_{model}_change' \
-               ''.format(app='hmb', model=self._meta.model_name)
+               ''.format(app='mibios', model=self._meta.model_name)
         return reverse(name, kwargs=dict(object_id=self.pk))
 
 
@@ -615,7 +615,7 @@ def erase_all_data(verbose=False):
     """
     if verbose:
         print('Erasing all data...', file=sys.stderr)
-    for m in apps.get_app_config('hmb').get_models():
+    for m in apps.get_app_config('mibios').get_models():
         m.objects.all().delete()
 
 
@@ -623,5 +623,5 @@ def show_stats():
     """
     print db stats
     """
-    for m in apps.get_app_config('hmb').get_models():
+    for m in apps.get_app_config('mibios').get_models():
         print('{}: {}'.format(m._meta.label, m.objects.count()))

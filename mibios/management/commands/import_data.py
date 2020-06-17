@@ -1,6 +1,6 @@
-from hmb.dataset import DATASET
-from hmb.load import GeneralLoader
-from hmb.management.import_base import AbstractImportCommand
+from mibios.dataset import DATASET
+from mibios.load import GeneralLoader
+from mibios.management.import_base import AbstractImportCommand
 
 
 class Command(AbstractImportCommand):

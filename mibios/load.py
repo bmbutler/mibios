@@ -489,7 +489,7 @@ class GeneralLoader(AbstractLoader):
         else:
             model_name = dataset
 
-        self.conf = apps.get_app_config('hmb')
+        self.conf = apps.get_app_config('mibios')
         self.model = self.conf.get_model(model_name)
 
         if dataset in DATASET:

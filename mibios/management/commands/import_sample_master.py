@@ -1,5 +1,5 @@
-from hmb.load import SampleMasterLoader
-from hmb.management.import_base import AbstractImportCommand
+from mibios.load import SampleMasterLoader
+from mibios.management.import_base import AbstractImportCommand
 
 
 class Command(AbstractImportCommand):

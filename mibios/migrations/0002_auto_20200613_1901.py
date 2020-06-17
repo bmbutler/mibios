@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('hmb', '0001_initial'),
+        ('mibios', '0001_initial'),
     ]
 
     operations = [

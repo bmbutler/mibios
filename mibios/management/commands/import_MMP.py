@@ -1,5 +1,5 @@
-from hmb.load import MMPManifestLoader
-from hmb.management.import_base import AbstractImportCommand
+from mibios.load import MMPManifestLoader
+from mibios.management.import_base import AbstractImportCommand
 
 
 class Command(AbstractImportCommand):

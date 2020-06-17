@@ -1,5 +1,5 @@
-from hmb.load import SequencingLoader
-from hmb.management.import_base import AbstractImportCommand
+from mibios.load import SequencingLoader
+from mibios.management.import_base import AbstractImportCommand
 
 
 class Command(AbstractImportCommand):

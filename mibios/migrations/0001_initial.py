@@ -90,7 +90,7 @@ class Migration(migrations.Migration):
             name='Strain',
             fields=[
                 ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('asv', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='hmb.ASV')),
+                ('asv', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='mibios.ASV')),
             ],
             options={
                 'abstract': False,
@@ -120,9 +120,9 @@ class Migration(migrations.Migration):
                 ('plate', models.PositiveSmallIntegerField(blank=True, null=True)),
                 ('plate_position', models.CharField(blank=True, max_length=10)),
                 ('snumber', models.PositiveSmallIntegerField(blank=True, null=True)),
-                ('note', models.ManyToManyField(to='hmb.Note')),
-                ('run', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, to='hmb.SequencingRun')),
-                ('sample', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, to='hmb.FecalSample')),
+                ('note', models.ManyToManyField(to='mibios.Note')),
+                ('run', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, to='mibios.SequencingRun')),
+                ('sample', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, to='mibios.FecalSample')),
             ],
             options={
                 'ordering': ['name'],
@@ -150,9 +150,9 @@ class Migration(migrations.Migration):
                 ('age', models.SmallIntegerField(blank=True, null=True)),
                 ('ethnicity', models.CharField(blank=True, max_length=200)),
                 ('quantity_compliant', models.CharField(blank=True, choices=[('NA', 'NA'), ('Quantity_compliant', 'Quantity_compliant'), ('no', 'no'), ('none', 'none'), ('unknown', 'unknown'), ('yes', 'yes')], help_text='Did the participant consumed at least 75% of the starch they were prescribed?', max_length=30)),
-                ('diet', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='hmb.Diet')),
-                ('note', models.ManyToManyField(to='hmb.Note')),
-                ('semester', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, to='hmb.Semester')),
+                ('diet', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='mibios.Diet')),
+                ('note', models.ManyToManyField(to='mibios.Note')),
+                ('semester', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, to='mibios.Semester')),
             ],
             options={
                 'ordering': ['semester__year', 'semester__term', 'name'],
@@ -161,24 +161,24 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='fecalsample',
             name='note',
-            field=models.ManyToManyField(to='hmb.Note'),
+            field=models.ManyToManyField(to='mibios.Note'),
         ),
         migrations.AddField(
             model_name='fecalsample',
             name='participant',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='hmb.Participant'),
+            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='mibios.Participant'),
         ),
         migrations.AddField(
             model_name='fecalsample',
             name='week',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='hmb.Week'),
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='mibios.Week'),
         ),
         migrations.CreateModel(
             name='Community',
             fields=[
                 ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('asv', models.ManyToManyField(to='hmb.ASV')),
-                ('seqs', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='hmb.Sequencing')),
+                ('asv', models.ManyToManyField(to='mibios.ASV')),
+                ('seqs', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='mibios.Sequencing')),
             ],
             options={
                 'abstract': False,
@@ -189,8 +189,8 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('gases', models.CharField(max_length=100)),
-                ('participant', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='hmb.Participant')),
-                ('week', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='hmb.Week')),
+                ('participant', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='mibios.Participant')),
+                ('week', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='mibios.Week')),
             ],
             options={
                 'abstract': False,
@@ -201,8 +201,8 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('cytokines', models.CharField(max_length=100)),
-                ('participant', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='hmb.Participant')),
-                ('week', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='hmb.Week')),
+                ('participant', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='mibios.Participant')),
+                ('week', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='mibios.Week')),
             ],
             options={
                 'abstract': False,
@@ -211,7 +211,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='asv',
             name='taxon',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='hmb.Taxon'),
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='mibios.Taxon'),
         ),
         migrations.AlterUniqueTogether(
             name='fecalsample',

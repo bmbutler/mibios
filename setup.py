@@ -8,7 +8,7 @@ import setuptools
 from setuptools.command.build_py import build_py
 
 
-NAME = 'hmb'
+NAME = 'mibios'
 
 
 class CollectStaticCmd(setuptools.Command):
@@ -45,7 +45,7 @@ setuptools.setup(
     python_requires='>=3.8',
     packages=setuptools.find_packages(),
     package_data={
-        'hmb': ['templates/' + NAME + '/*.html',
+        'mibios': ['templates/' + NAME + '/*.html',
                 'static/' + NAME + '/css/*.css'],
     },
     entry_points={

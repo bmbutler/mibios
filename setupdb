@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 if [[ -e ./var/db.sqlite3 ]]; then
-    ./manage.py shell -c "from hmb import models; models.erase_all_data(verbose=True)"
+    ./manage.py shell -c "from mibios import models; models.erase_all_data(verbose=True)"
 else
     ./manage.py migrate
     echo "Creating superuh user:"

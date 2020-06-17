@@ -27,7 +27,7 @@ class TestTable(Table):
 
 
 class TestView(SingleTableView):
-    template_name = 'hmb/test.html'
+    template_name = 'mibios/test.html'
     table_class = TestTable
 
     def get_queryset(self):
@@ -35,7 +35,7 @@ class TestView(SingleTableView):
 
 
 class TableView(SingleTableView):
-    template_name = 'hmb/model_index.html'
+    template_name = 'mibios/model_index.html'
     QUERY_FILTER_PREFIX = 'filter__'
 
     # set by setup()
@@ -76,7 +76,7 @@ class TableView(SingleTableView):
             model = kwargs['dataset']
 
         # raises on invalid model
-        self.model = apps.get_app_config('hmb').get_model(model)
+        self.model = apps.get_app_config('mibios').get_model(model)
 
         if kwargs['dataset'] not in DATASET:
             # normal model
@@ -197,7 +197,7 @@ class TableView(SingleTableView):
         return sorted([
             i._meta.model_name
             for i
-            in apps.get_app_config('hmb').get_models()
+            in apps.get_app_config('mibios').get_models()
         ])
 
     def get_context_data(self, **ctx):
@@ -263,7 +263,7 @@ class ExportView(TableView):
 
 
 class ImportView(FormView):
-    template_name = 'hmb/import.html'
+    template_name = 'mibios/import.html'
     form_class = UploadFileForm
 
     def setup(self, request, *args, **kwargs):

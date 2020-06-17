@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('hmb', '0002_auto_20200613_1901'),
+        ('mibios', '0002_auto_20200613_1901'),
     ]
 
     operations = [

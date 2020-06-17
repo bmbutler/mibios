@@ -2,12 +2,12 @@ import argparse
 
 from django.core.management.base import BaseCommand, CommandError
 
-from hmb.load import UserDataError
+from mibios.load import UserDataError
 
 
 class AbstractImportCommand(BaseCommand):
     # Implementers must loader class, which must be
-    # an implementation of hmb.load.AbstractLoader
+    # an implementation of mibios.load.AbstractLoader
     loader_class = None
 
     DEFAULT_SEPARATOR = '\t'

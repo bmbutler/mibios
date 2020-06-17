@@ -2,7 +2,7 @@ import argparse
 
 from django.core.management.base import BaseCommand, CommandError
 
-from hmb.export import to_meta_csv
+from mibios.export import to_meta_csv
 
 
 class Command(BaseCommand):

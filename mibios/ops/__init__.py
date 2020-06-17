@@ -1,4 +1,4 @@
-"""The project package for hmb"""
+"""The project package for mibios"""
 import os
 import sys
 
@@ -17,7 +17,7 @@ def manage(settings=None):
     if settings is None:
         if VAR not in os.environ:
             # set a default
-            settings = 'hmb.ops.production_settings'
+            settings = 'mibios.ops.production_settings'
 
     os.environ.setdefault(VAR, settings)
     try:

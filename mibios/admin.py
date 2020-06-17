@@ -2,7 +2,7 @@ from django.apps import apps
 from django.contrib import admin
 
 
-app_config = apps.get_app_config('hmb')
+app_config = apps.get_app_config('mibios')
 
 
 class AdminSite(admin.AdminSite):
