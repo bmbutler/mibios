@@ -3,7 +3,9 @@ import os
 import sys
 
 
-def manage(settings='hmb.ops.production_settings'):
+VAR = 'DJANGO_SETTINGS_MODULE'
+
+def manage(settings=None):
     """
     The original manage.py
 
@@ -12,7 +14,12 @@ def manage(settings='hmb.ops.production_settings'):
     settings are applied by default.  The usual manage.py script shoudl specify
     the development settings.
     """
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', settings)
+    if settings is None:
+        if VAR not in os.environ:
+            # set a default
+            settings = 'hmb.ops.production_settings'
+
+    os.environ.setdefault(VAR, settings)
     try:
         from django.core.management import execute_from_command_line
     except ImportError as exc:
