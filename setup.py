@@ -1,7 +1,35 @@
 #!/usr/bin/env python3
+import os
+
+import django
+from django.core.management import call_command
+
 import setuptools
+from setuptools.command.build_py import build_py
+
 
 NAME = 'hmb'
+
+
+class CollectStaticCmd(setuptools.Command):
+    def initialize_options(self):
+        pass
+
+    def finalize_options(self):
+        pass
+
+    def run(self):
+        call_command("collectstatic", interactive=False)
+
+
+class BuildPyCmd(build_py):
+    def run(self):
+        self.run_command('collectstatic')
+        super().run()
+
+
+os.environ['DJANGO_SETTINGS_MODULE'] = NAME + '.ops.settings'
+django.setup()
 
 with open('README.md', 'r') as fh:
     long_description = fh.read()
@@ -32,4 +60,8 @@ setuptools.setup(
         'Operating System :: OS Independent',
         'Topic :: Scientific/Engineering :: Bio-Informatics',
     ],
+    cmdclass={
+        'collectstatic': CollectStaticCmd,
+        'build_py': BuildPyCmd,
+    },
 )
