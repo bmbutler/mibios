@@ -28,7 +28,9 @@ ALLOWED_HOSTS = []
 
 
 # Application definition
-
+DEV_ONLY_APPS = [
+    'django_extensions',
+]
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -37,9 +39,9 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'hmb',
-    'django_extensions',
     'django_tables2',
-]
+] + DEV_ONLY_APPS
+
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
