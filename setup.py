@@ -45,7 +45,8 @@ setuptools.setup(
     python_requires='>=3.8',
     packages=setuptools.find_packages(),
     package_data={
-        'hmb': ['templates/' + NAME + '/*.html'],
+        'hmb': ['templates/' + NAME + '/*.html',
+                'static/' + NAME + '/css/*.css'],
     },
     entry_points={
         'console_scripts': [
