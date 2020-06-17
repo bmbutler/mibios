@@ -122,3 +122,4 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 DJANGO_TABLES2_TEMPLATE = "django_tables2/bootstrap.html"
+STATIC_ROOT = 'static'
