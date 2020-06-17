@@ -28,7 +28,9 @@ ALLOWED_HOSTS = []
 
 
 # Application definition
-
+DEV_ONLY_APPS = [
+    'django_extensions',
+]
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -37,9 +39,9 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'hmb',
-    'django_extensions',
     'django_tables2',
-]
+] + DEV_ONLY_APPS
+
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -51,7 +53,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'ops.urls'
+ROOT_URLCONF = 'hmb.ops.urls'
 
 TEMPLATES = [
     {
@@ -69,7 +71,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'ops.wsgi.application'
+WSGI_APPLICATION = 'hmb.ops.wsgi.application'
 
 
 # Database
@@ -108,7 +110,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'America/Detroit'
 
 USE_I18N = True
 
@@ -122,3 +124,4 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 DJANGO_TABLES2_TEMPLATE = "django_tables2/bootstrap.html"
+STATIC_ROOT = 'static'
