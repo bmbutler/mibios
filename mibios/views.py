@@ -151,7 +151,11 @@ class TableView(SingleTableView):
             '{}{}={}'.format(self.QUERY_EXCLUDE_PREFIX, k, v)
             for k, v in e.items()
         ])
-        return '?{}&{}'.format(f, e)
+        if f or e:
+            q = '?' + '&'.join([i for i in [f, e] if i])
+        else:
+            q = ''
+        return q
 
     def get_queryset(self):
         if self.model is None:
