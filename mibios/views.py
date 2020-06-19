@@ -141,7 +141,8 @@ class TableView(SingleTableView):
         log.debug('from GET:', filter, exclude)
         return filter, exclude
 
-    def get_query_string(self, ignore_original=False, filter={}, exclude={}):
+    def get_query_string(self, ignore_original=False, filter={}, exclude={},
+                         inverse=False):
         """
         Build the GET querystring from the user filter/exclude
 
@@ -156,6 +157,17 @@ class TableView(SingleTableView):
             e.update(**self.exclude)
         f.update(**filter)
         e.update(**exclude)
+
+        for k, v in f.items():
+            if v is None:
+                f[k] = NONE_LOOKUP
+        for k, v in e.items():
+            if v is None:
+                e[k] = NONE_LOOKUP
+
+        if inverse:
+            f, e = e, f
+
         f = '&'.join([
             '{}{}={}'.format(self.QUERY_FILTER_PREFIX, k, v)
             for k, v in f.items()
@@ -251,6 +263,7 @@ class TableView(SingleTableView):
         query = self.request.GET.urlencode()
         if query:
             ctx['query'] = '?' + query
+            ctx['invquery'] = self.get_query_string(inverse=True)
         return ctx
 
 
