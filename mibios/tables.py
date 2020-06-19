@@ -14,8 +14,8 @@ class CountColumn(tables.Column):
             )
 
             def linkify(record):
-                filter = {record._meta.model_name + '__pk': record.pk}
-                query = view.get_query_string(ignore_original=True, **filter)
+                f = {record._meta.model_name + '__pk': record.pk}
+                query = view.get_query_string(ignore_original=True, filter=f)
                 return url + query
 
             kwargs.update(linkify=linkify)

@@ -37,19 +37,23 @@ class TestView(SingleTableView):
 class TableView(SingleTableView):
     template_name = 'mibios/model_index.html'
     QUERY_FILTER_PREFIX = 'filter__'
+    QUERY_EXCLUDE_PREFIX = 'exclude__'
 
     # set by setup()
     model = None
     fields = None
     col_names = None
     filter = None
+    exclude = None
     dataset_filter = None
 
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)
 
         self.filter = {}
+        self.exclude = {}
         self.dataset_filter = {}
+        self.dataset_exclude = {}
         self.fields = []
         self.col_names = []
         if 'dataset' not in kwargs:
@@ -63,7 +67,8 @@ class TableView(SingleTableView):
             self.dataset_name = kwargs['dataset']
             self.dataset_verbose_name = kwargs['dataset']
             model = dataset['model']
-            self.dataset_filter = dataset['filter']
+            self.dataset_filter = dataset.get('filter', {})
+            self.dataset_exclude = dataset.get('exclude', {})
             for i in dataset['fields']:
                 if isinstance(i, tuple):
                     self.fields.append(i[0])
@@ -98,14 +103,17 @@ class TableView(SingleTableView):
                 self.fields = ['name'] + self.fields
 
     def get(self, request, *args, **kwargs):
-        self.filter.update(self.get_filter_from_url())
+        f, e = self.get_filter_from_url()
+        self.filter.update(**f)
+        self.exclude.update(**e)
         return super().get(request, *args, **kwargs)
 
     def get_filter_from_url(self):
         """
-        Compile filter dict from GET
+        Compile filter and exclude dicts from GET
         """
         filter = {}
+        exclude = {}
         for k, v in self.request.GET.items():
             # v is last value if mutliples
             if k.startswith(self.QUERY_FILTER_PREFIX):
@@ -113,24 +121,37 @@ class TableView(SingleTableView):
                 k = k[len(self.QUERY_FILTER_PREFIX):]
                 # last one wins
                 filter[k] = v
-        return filter
+            elif k.startswith(self.QUERY_EXCLUDE_PREFIX):
+                # rm prefix
+                k = k[len(self.QUERY_EXCLUDE_PREFIX):]
+                # last one wins
+                exclude[k] = v
+        return filter, exclude
 
-    def get_query_string(self, ignore_original=False, **extras):
+    def get_query_string(self, ignore_original=False, filter={}, exclude={}):
         """
-        Build the GET querystring from the user filter
+        Build the GET querystring from the user filter/exclude
 
         Extra filter arguments can be used to add or override the original
         filter.  With ignore_original self.filter will not be used, just the
         extras.  This is the reverse of the get_filter_from_url method
         """
-        filter = {}
+        f = {}
+        e = {}
         if not ignore_original:
-            filter.update(self.filter)
-        filter.update(**extras)
-        return '?' + '&'.join([
+            f.update(**self.filter)
+            e.update(**self.exclude)
+        f.update(**filter)
+        e.update(**exclude)
+        f = '&'.join([
             '{}{}={}'.format(self.QUERY_FILTER_PREFIX, k, v)
-            for k, v in filter.items()
+            for k, v in f.items()
         ])
+        e = '&'.join([
+            '{}{}={}'.format(self.QUERY_EXCLUDE_PREFIX, k, v)
+            for k, v in e.items()
+        ])
+        return '?{}&{}'.format(f, e)
 
     def get_queryset(self):
         if self.model is None:
@@ -141,6 +162,7 @@ class TableView(SingleTableView):
             return super() \
                 .get_queryset() \
                 .filter(**self.dataset_filter, **self.filter) \
+                .exclude(**self.dataset_exclude, **self.exclude) \
                 .annotate(*cts)
 
     def get_table_class(self):
