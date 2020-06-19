@@ -12,7 +12,7 @@ https://docs.djangoproject.com/en/2.2/ref/settings/
 
 from pathlib import Path
 
-BASE_DIR = Path(__file__).absolute().parent.parent
+BASE_DIR = Path(__file__).absolute().parent.parent.parent
 
 
 # Quick-start development settings - unsuitable for production
