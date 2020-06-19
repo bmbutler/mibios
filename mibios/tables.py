@@ -16,16 +16,17 @@ class CountColumn(tables.Column):
             kwargs=dict(dataset=related_object.name)
         )
         # our name: not always the same as our model/dataset_name
+        our_name = related_object.remote_field.name
+
         if 'linkify' not in kwargs:
             def linkify(record):
-                f = {record._meta.model_name + '__pk': record.pk}
+                f = {our_name + '__pk': record.pk}
                 query = view.get_query_string(ignore_original=True, filter=f)
                 return url + query
 
             kwargs.update(linkify=linkify)
 
         # prepare URL for footer
-        our_name = related_object.remote_field.name
         f = {our_name + '__' + k: v for k, v in view.filter.items()}
         e = {our_name + '__' + k: v for k, v in view.exclude.items()}
         e[our_name] = NONE_LOOKUP
