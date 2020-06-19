@@ -9,8 +9,20 @@
 {% block content %}
 {% if model %}
 <h2>{{ dataset_verbose_name }} data ({{ count }} records)</h2>
+
+{% if view.filter or view.exclude %}Applied filters:{% endif %}
+{% if view.filter %}
+with {% for k, v in view.filter.items %}{{ k }}={{ v }}{% endfor %}
+{% endif %}
+{% if view.exclude %}
+without {% for k, v in view.exclude.items %}{{ k }}={{ v }}{% endfor %}
+{% endif %}
+{% if view.filter or view.exclude %}<br>{% endif %}
+
 <a href="{% url 'import' dataset=dataset_name %}">import</a>
 <a href="{% url 'export' dataset=dataset_name format='csv' %}{{ query }}">export as csv</a>
-    {% render_table table %}
+
+{% render_table table %}
+
 {% endif %}
 {% endblock %}
