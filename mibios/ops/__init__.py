@@ -4,6 +4,9 @@ import sys
 
 
 VAR = 'DJANGO_SETTINGS_MODULE'
+DEFAULT_SETTINGS = 'mibios.ops.settings'
+LOCAL_SETTINGS = 'settings'
+
 
 def manage(settings=None):
     """
@@ -15,9 +18,19 @@ def manage(settings=None):
     the development settings.
     """
     if settings is None:
-        if VAR not in os.environ:
-            # set a default
-            settings = 'mibios.ops.production_settings'
+        if VAR in os.environ:
+            # already in env, 2nd priority
+            pass
+        else:
+            if os.path.exists(LOCAL_SETTINGS + '.py'):
+                # for local/manual deployment
+                settings = LOCAL_SETTINGS
+            else:
+                # last resort but usually for development
+                settings = DEFAULT_SETTINGS
+    else:
+        # passed as argument, has top priority
+        pass
 
     os.environ.setdefault(VAR, settings)
     try:
