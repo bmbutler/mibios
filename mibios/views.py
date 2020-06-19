@@ -16,7 +16,11 @@ from .forms import UploadFileForm
 from .load import GeneralLoader
 from .management.import_base import AbstractImportCommand
 from .models import FecalSample
-from .tables import CountColumn, Table
+from .tables import CountColumn, NONE_LOOKUP, Table
+from .utils import getLogger
+
+
+log = getLogger(__name__)
 
 
 class TestTable(Table):
@@ -111,11 +115,18 @@ class TableView(SingleTableView):
     def get_filter_from_url(self):
         """
         Compile filter and exclude dicts from GET
+
+        Called from get()
+
+        Converts "NULL" to None, with exact lookup this will translate to
+        SQL's "IS NULL"
         """
         filter = {}
         exclude = {}
         for k, v in self.request.GET.items():
             # v is last value if mutliples
+            if v == NONE_LOOKUP:
+                v = None
             if k.startswith(self.QUERY_FILTER_PREFIX):
                 # rm prefix
                 k = k[len(self.QUERY_FILTER_PREFIX):]
@@ -126,6 +137,8 @@ class TableView(SingleTableView):
                 k = k[len(self.QUERY_EXCLUDE_PREFIX):]
                 # last one wins
                 exclude[k] = v
+
+        log.debug('from GET:', filter, exclude)
         return filter, exclude
 
     def get_query_string(self, ignore_original=False, filter={}, exclude={}):
