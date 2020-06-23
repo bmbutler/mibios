@@ -21,16 +21,22 @@ class CountColumn(tables.Column):
         if 'linkify' not in kwargs:
             def linkify(record):
                 f = {our_name + '__pk': record.pk}
-                query = view.get_query_string(ignore_original=True, filter=f)
+                query = view.build_query_string(filter=f)
                 return url + query
 
             kwargs.update(linkify=linkify)
 
         # prepare URL for footer
         f = {our_name + '__' + k: v for k, v in view.filter.items()}
-        e = {our_name + '__' + k: v for k, v in view.exclude.items()}
-        e[our_name] = NONE_LOOKUP
-        q = view.get_query_string(ignore_original=True, filter=f, exclude=e)
+
+        elist = []
+        for i in view.excludes:
+            e = {our_name + '__' + k: v for k, v in i.items()}
+            if e:
+                elist.append(e)
+        elist.append({our_name: NONE_LOOKUP})
+
+        q = view.build_query_string(filter=f, excludes=elist)
         self.footer_url = url + q
 
         super().__init__(self, **kwargs)

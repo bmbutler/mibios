@@ -10,16 +10,24 @@
 {% if model %}
 <h2>{{ dataset_verbose_name }} data ({{ count }} records)</h2>
 
-{% if view.filter or view.exclude %}Applied filters:{% endif %}
+{% if view.filter or view.excludes %}
+    {% if view.negate %}(inversely){%endif%}
+    applied filters:
+{% endif %}
 {% if view.filter %}
-with {% for k, v in view.filter.items %}{{ k }}={{ v }}{% endfor %}
+    with: {% for k, v in view.filter.items %}{{ k }}={{ v }}{% endfor %}
 {% endif %}
-{% if view.exclude %}
-without {% for k, v in view.exclude.items %}{{ k }}={{ v }}{% endfor %}
+{% if view.excludes %}
+    without:
+    {% for e in view.excludes %}
+	{% for k, v in e.items %}
+	    {{ k }}={{ v }}
+	{% endfor %}
+    {% endfor %}
 {% endif %}
-{% if view.filter or view.exclude %}
-<a href="{% url 'queryset_index' dataset=dataset_name %}{{ invquery }}">inverse filter</a>
-<br>
+{% if view.filter or view.excludes %}
+    <a href="{% url 'queryset_index' dataset=dataset_name %}{{ invquery }}">inverse filter</a>
+    <br>
 {% endif %}
 
 <a href="{% url 'import' dataset=dataset_name %}">import</a>

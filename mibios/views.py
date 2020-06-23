@@ -2,7 +2,7 @@ import csv
 import io
 
 from django.apps import apps
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.conf import settings
 from django.contrib import messages
 from django.http import HttpResponse
@@ -40,24 +40,27 @@ class TestView(SingleTableView):
 
 class TableView(SingleTableView):
     template_name = 'mibios/model_index.html'
-    QUERY_FILTER_PREFIX = 'filter__'
-    QUERY_EXCLUDE_PREFIX = 'exclude__'
+    QUERY_FILTER = 'filter'
+    QUERY_EXCLUDE = 'exclude'
+    QUERY_NEGATE = 'inverse'
 
     # set by setup()
     model = None
     fields = None
     col_names = None
     filter = None
-    exclude = None
+    excludes = None
+    negate = None
     dataset_filter = None
+    dataset_excludes = None
 
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)
 
         self.filter = {}
-        self.exclude = {}
+        self.excludes = []
         self.dataset_filter = {}
-        self.dataset_exclude = {}
+        self.dataset_excludes = []
         self.fields = []
         self.col_names = []
         if 'dataset' not in kwargs:
@@ -72,7 +75,7 @@ class TableView(SingleTableView):
             self.dataset_verbose_name = kwargs['dataset']
             model = dataset['model']
             self.dataset_filter = dataset.get('filter', {})
-            self.dataset_exclude = dataset.get('exclude', {})
+            self.dataset_excludes = dataset.get('excludes', [])
             for i in dataset['fields']:
                 if isinstance(i, tuple):
                     self.fields.append(i[0])
@@ -107,9 +110,10 @@ class TableView(SingleTableView):
                 self.fields = ['name'] + self.fields
 
     def get(self, request, *args, **kwargs):
-        f, e = self.get_filter_from_url()
+        f, e, n = self.get_filter_from_url()
         self.filter.update(**f)
-        self.exclude.update(**e)
+        self.excludes += e
+        self.negate = n
         return super().get(request, *args, **kwargs)
 
     def get_filter_from_url(self):
@@ -122,77 +126,101 @@ class TableView(SingleTableView):
         SQL's "IS NULL"
         """
         filter = {}
-        exclude = {}
-        for k, v in self.request.GET.items():
-            # v is last value if mutliples
-            if v == NONE_LOOKUP:
-                v = None
-            if k.startswith(self.QUERY_FILTER_PREFIX):
-                # rm prefix
-                k = k[len(self.QUERY_FILTER_PREFIX):]
-                # last one wins
-                filter[k] = v
-            elif k.startswith(self.QUERY_EXCLUDE_PREFIX):
-                # rm prefix
-                k = k[len(self.QUERY_EXCLUDE_PREFIX):]
-                # last one wins
-                exclude[k] = v
+        excludes = []
+        negate = False
+        for qkey, qvals  in self.request.GET.lists():
+            if qkey == self.QUERY_FILTER:
+                for i in qvals:
+                    for j in i.split(','):
+                        k, _, v = j.partition(':')
+                        if v == NONE_LOOKUP:
+                            v = None
+                        filter[k] = v
 
-        log.debug('from GET:', filter, exclude)
-        return filter, exclude
+            elif qkey == self.QUERY_EXCLUDE:
+                for i in qvals:
+                    e = {}
+                    for j in i.split(','):
+                        k, _, v = j.partition(':')
+                        if v == NONE_LOOKUP:
+                            v = None
+                        e[k] = v
+                    excludes.append(e)
+            elif qkey == self.QUERY_NEGATE:
+                negate = True
 
-    def get_query_string(self, ignore_original=False, filter={}, exclude={},
-                         inverse=False):
+        log.debug('from GET:', filter, excludes, negate)
+        return filter, excludes, negate
+
+    def to_query_string(self, negate=False):
         """
-        Build the GET querystring from the user filter/exclude
+        Get query string from current state
 
-        Extra filter arguments can be used to add or override the original
-        filter.  With ignore_original self.filter will not be used, just the
-        extras.  This is the reverse of the get_filter_from_url method
+        If negate is True, then negate the current negation state.
         """
-        f = {}
-        e = {}
-        if not ignore_original:
-            f.update(**self.filter)
-            e.update(**self.exclude)
-        f.update(**filter)
-        e.update(**exclude)
+        return self.build_query_string(
+            self.filter,
+            self.excludes,
+            not self.negate if negate else self.negate
+        )
 
-        for k, v in f.items():
+    @classmethod
+    def format_query_string(cls, lookups):
+        """
+        Helper to format a set of lookups into query string format
+
+        E.g. {'a': 'b', 'c': None} ==> 'a:b,c:NULL'
+        """
+        ret = []
+        for k, v in lookups.items():
             if v is None:
-                f[k] = NONE_LOOKUP
-        for k, v in e.items():
-            if v is None:
-                e[k] = NONE_LOOKUP
+                v = NONE_LOOKUP
+            ret.append('{}:{}'.format(k, v))
+        return ','.join(ret)
 
-        if inverse:
-            f, e = e, f
+    @classmethod
+    def build_query_string(cls, filter={}, excludes=[], negate=False):
+        """
+        Build the GET querystring from lookup dicts
 
-        f = '&'.join([
-            '{}{}={}'.format(self.QUERY_FILTER_PREFIX, k, v)
-            for k, v in f.items()
-        ])
-        e = '&'.join([
-            '{}{}={}'.format(self.QUERY_EXCLUDE_PREFIX, k, v)
-            for k, v in e.items()
-        ])
-        if f or e:
-            q = '?' + '&'.join([i for i in [f, e] if i])
-        else:
-            q = ''
+        This is the reverse of the get_filter_from_url method
+        """
+        f = cls.format_query_string(filter)
+        if f:
+            f = cls.QUERY_FILTER + '=' + f
+
+        elist = []
+        for i in excludes:
+            e = cls.format_query_string(i)
+            if e:
+                elist.append(cls.QUERY_EXCLUDE + '=' + e)
+        elist = '&'.join(elist)
+
+        n = cls.QUERY_NEGATE if negate else ''
+
+        q = '&'.join([i for i in [f, elist, n] if i])
+        if q:
+            q = '?' + q
         return q
 
     def get_queryset(self):
         if self.model is None:
             return []
-        else:
-            # add reverse relation count annotations
-            cts = [Count(i.name) for i in self.model._meta.related_objects]
-            return super() \
-                .get_queryset() \
-                .filter(**self.dataset_filter, **self.filter) \
-                .exclude(**self.dataset_exclude, **self.exclude) \
-                .annotate(*cts)
+
+        # add reverse relation count annotations
+        cts = [Count(i.name) for i in self.model._meta.related_objects]
+
+        excludes = []
+        for i in self.dataset_excludes + self.excludes:
+            excludes.append(~Q(**i))
+
+        q = Q(*excludes, **self.dataset_filter, **self.filter)
+
+        if self.negate:
+            q = ~q
+
+        log.debug('QUERYSET FILTER:', q, 'ANNOTATION:', cts)
+        return super().get_queryset().filter(q).annotate(*cts)
 
     def get_table_class(self):
         """
@@ -263,7 +291,7 @@ class TableView(SingleTableView):
         query = self.request.GET.urlencode()
         if query:
             ctx['query'] = '?' + query
-            ctx['invquery'] = self.get_query_string(inverse=True)
+            ctx['invquery'] = self.to_query_string(negate=True)
         return ctx
 
 
