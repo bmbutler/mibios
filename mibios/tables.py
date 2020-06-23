@@ -15,7 +15,7 @@ class CountColumn(tables.Column):
             'queryset_index',
             kwargs=dict(dataset=related_object.name)
         )
-        # our name: not always the same as our model/dataset_name
+        # our (this column's) name
         our_name = related_object.remote_field.name
 
         if 'linkify' not in kwargs:
@@ -34,9 +34,14 @@ class CountColumn(tables.Column):
             e = {our_name + '__' + k: v for k, v in i.items()}
             if e:
                 elist.append(e)
-        elist.append({our_name: NONE_LOOKUP})
+        # if there is a filter selecting for us, then skip exclusion of missing data:
+        for i in f:
+            if i.startswith(our_name):
+                break
+        else:
+            elist.append({our_name: NONE_LOOKUP})
 
-        q = view.build_query_string(filter=f, excludes=elist)
+        q = view.build_query_string(filter=f, excludes=elist, negate=view.negate)
         self.footer_url = url + q
 
         super().__init__(self, **kwargs)
