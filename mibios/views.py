@@ -102,12 +102,17 @@ class TableView(SingleTableView):
                 if i.name == 'name':
                     no_name_field = False
                 self.fields.append(i.name)
-                # FIXME: need this?:
-                # self.col_names.append(i.verbose_name)
+                if i.name == i.verbose_name:
+                    # None: will be capitalized by django-tables2
+                    self.col_names.append(None)
+                else:
+                    # e.g. when letter case is importtant, like for 'pH'
+                    self.col_names.append(i.verbose_name)
 
             if no_name_field and hasattr(self.model, 'name'):
                 # add column for canonical name
                 self.fields = ['name'] + self.fields
+                self.col_names = [None] + self.col_names
 
     def get(self, request, *args, **kwargs):
         f, e, n = self.get_filter_from_url()
