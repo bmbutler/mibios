@@ -10,3 +10,6 @@ INSTALLED_APPS = [i for i in INSTALLED_APPS if i not in DEV_ONLY_APPS]
 STATIC_ROOT = './static'
 DATABASES['default']['NAME'] = './db.sqlite3'
 ALLOWED_HOSTS = ['localhost']
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.RemoteUserBackend',
+]
