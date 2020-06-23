@@ -18,5 +18,6 @@ from django.urls import include, path
 
 
 urlpatterns = [
-    path('', include('mibios.urls')),
+    path('users/', admin.site.urls),
+    path('', include('mibios.urls')),  # catch all, go last
 ]
