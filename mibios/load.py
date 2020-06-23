@@ -7,8 +7,8 @@ from django.apps import apps
 from django.db import transaction, IntegrityError
 
 from .dataset import DATASET
-from .models import (Diet, FecalSample, Note, Participant, Semester,
-                     Sequencing, SequencingRun, Week, Model)
+from .models import (FecalSample, Note, Participant, Semester, Sequencing,
+                     SequencingRun, Supplement, Week, Model)
 
 
 class DryRunRollback(Exception):
@@ -223,8 +223,8 @@ class AbstractLoader():
         if 'participant' in self.row:
             from_row = self.get_from_row('quantity_compliant')
             from_row['name'] = self.row['participant']
-            if 'diet' in self.rec:
-                from_row['diet'] = self.rec['diet']
+            if 'supplement' in self.rec:
+                from_row['supplement'] = self.rec['supplement']
             if 'semester' in self.rec:
                 from_row['semester'] = self.rec['semester']
             obj, new = Participant.objects.get_or_create(
@@ -279,20 +279,20 @@ class AbstractLoader():
             obj, new = Note.objects.get_or_create(name=self.row['note'])
             self.account(obj, new)
 
-    def process_diet(self):
+    def process_supplement(self):
         """
-        Process diet related columns
+        Process supplement related columns
 
         Call order: call before process_participant
         """
-        from_row = self.get_from_row('frequency', 'dose', 'supplement')
+        from_row = self.get_from_row('frequency', 'dose', 'composition')
 
         if len(from_row) < 3:
             return
         if 'NA' in from_row.values():
             return
 
-        obj, new = Diet.objects.get_or_create(**from_row)
+        obj, new = Supplement.objects.get_or_create(**from_row)
         self.account(obj, new)
 
 
@@ -352,7 +352,7 @@ class SequencingLoader(AbstractLoader):
         ('Quantity_compliant', 'quantity_compliant'),
         ('Frequency', 'frequency'),
         ('Total_dose_grams', 'dose'),
-        ('Supplement_consumed', 'supplement'),
+        ('Supplement_consumed', 'composition'),
         ('pH', 'ph'),
         ('Bristol', 'bristol'),
         ('seq_serial', 'serial'),
@@ -376,7 +376,7 @@ class SequencingLoader(AbstractLoader):
             if not self.row['use_data'].lower() == 'yes':
                 raise UserDataError('encountered use_data!=yes')
         self.process_semester()
-        self.process_diet()
+        self.process_supplement()
         self.process_participant()
         self.process_week()
         self.process_sample_id()

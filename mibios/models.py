@@ -303,38 +303,35 @@ class Model(models.Model):
         return reverse(name, kwargs=dict(object_id=self.pk))
 
 
-class Diet(Model):
-    # FIXME: two below are suggested by Tom's diagram:
-    #   composition = models.CharField(max_length=1000)
-    #   week = models.ForeignKey('Week', on_delete=models.CASCADE)
-
+class Supplement(Model):
     # TODO: these all should have choices
     frequency = models.CharField(max_length=30, blank=True)
     dose = models.DecimalField(
         max_digits=4, decimal_places=1,
         blank=True, null=True, verbose_name='total dose grams'
     )
-    supplement = models.CharField(
-        max_length=200, blank=True, verbose_name='supplement consumed'
+    composition = models.CharField(
+        max_length=200, blank=True, verbose_name='composition of the comsumed '
+        'dietary supplement'
     )
 
     class Meta:
         unique_together = (
-            ('frequency', 'dose', 'supplement'),
+            ('frequency', 'dose', 'composition'),
         )
-        ordering = ('supplement', 'frequency', 'dose')
+        ordering = ('composition', 'frequency', 'dose')
 
     @Model.canonical.getter
     def canonical(self):
 
         return '{} {} {}'.format(
-            *self.str_blank(self.supplement, self.frequency, self.dose)
+            *self.str_blank(self.composition, self.frequency, self.dose)
         )
 
     @classmethod
     def canonical_lookup(cls, value):
         s, f, d = cls.decode_blank(*value.split())
-        return dict(supplement=s, frequency=f, dose=d)
+        return dict(composition=s, frequency=f, dose=d)
 
 
 class FecalSample(Model):
@@ -420,8 +417,8 @@ class Participant(Model):
     ethnicity = models.CharField(max_length=200, blank=True)
     semester = models.ForeignKey('Semester', on_delete=models.CASCADE,
                                  blank=True, null=True)
-    diet = models.ForeignKey('Diet', on_delete=models.SET_NULL, blank=True,
-                             null=True)
+    supplement = models.ForeignKey('Supplement', on_delete=models.SET_NULL,
+                                   blank=True, null=True)
     QUANTITY_COMPLIANCE_CHOICES = ['NA', 'Quantity_compliant', 'no', 'none',
                                    'unknown', 'yes']
     _qc_choices = [(i, i) for i in QUANTITY_COMPLIANCE_CHOICES]

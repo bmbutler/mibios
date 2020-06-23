@@ -27,7 +27,7 @@ class TestTable(Table):
     class Meta:
         model = FecalSample
         fields = ['number', 'participant', A('participant.name'),
-                  A('participant.diet.dose')]
+                  A('participant.supplement.dose')]
 
 
 class TestView(SingleTableView):
