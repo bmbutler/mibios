@@ -25,6 +25,7 @@ def manage(settings=None):
             if os.path.exists(LOCAL_SETTINGS + '.py'):
                 # for local/manual deployment
                 settings = LOCAL_SETTINGS
+                sys.path = [''] + sys.path
             else:
                 # last resort but usually for development
                 settings = DEFAULT_SETTINGS
