@@ -1,7 +1,7 @@
 from django import apps
 
 
-class AppConfig(apps.AppConfig):
+class MibiosConfig(apps.AppConfig):
     name = 'mibios'
-    label = 'microbiome_data'
-    verbose_name = 'microbiome database'
+    # label = 'healthy_cohort'
+    verbose_name = 'healthy cohort data'

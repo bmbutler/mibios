@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>{% block title %}mibios{% endblock %}</title>
+    <title>{% block title %}{{ page_title | default:'mibios' }}{% endblock %}</title>
     {% block link %}{% endblock %}
 </head>
 <body>
@@ -25,7 +25,6 @@ Data sets:
 </ul>
 <hr>
 {% endif %}{% endblock %}
-
 {% block content %}{% endblock %}
 </body>
 </html>

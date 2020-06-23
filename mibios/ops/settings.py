@@ -38,7 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'mibios',
+    'mibios.apps.MibiosConfig',
     'django_tables2',
 ] + DEV_ONLY_APPS
 

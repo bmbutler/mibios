@@ -288,6 +288,7 @@ class TableView(SingleTableView):
             ctx['count'] = self.get_queryset().count()
         ctx['model_names'] = self.get_model_names()
         ctx['data_sets'] = DATASET.keys()
+        ctx['page_title'] = apps.get_app_config('mibios').verbose_name
         query = self.request.GET.urlencode()
         if query:
             ctx['query'] = '?' + query
