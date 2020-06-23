@@ -340,7 +340,7 @@ class FecalSample(Model):
     week = models.ForeignKey('Week', on_delete=models.SET_NULL, blank=True,
                              null=True)
     ph = models.DecimalField(max_digits=4, decimal_places=2, blank=True,
-                             null=True)
+                             null=True, verbose_name='pH')
     bristol = models.DecimalField(max_digits=3, decimal_places=1, blank=True,
                                   null=True)
     note = models.ManyToManyField('Note')
