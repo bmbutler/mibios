@@ -7,4 +7,3 @@ from .production_settings import *
 DEBUG = False
 STATIC_ROOT = './static'
 DATABASES['default']['NAME'] = './db.sqlite3'
-ALLOWED_HOSTS = ['localhost']
