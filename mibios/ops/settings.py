@@ -12,6 +12,9 @@ https://docs.djangoproject.com/en/2.2/ref/settings/
 
 from pathlib import Path
 
+from . import get_secret_key
+
+
 BASE_DIR = Path(__file__).absolute().parent.parent.parent
 
 
@@ -19,7 +22,7 @@ BASE_DIR = Path(__file__).absolute().parent.parent.parent
 # See https://docs.djangoproject.com/en/2.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'f++e=zx!e*0ri!gdak!o@adl@e$#q+^v@=ffjh(^_k7xp@k8=k'
+SECRET_KEY = get_secret_key(Path('./secret.key'))
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True

@@ -2,6 +2,7 @@
 import os
 import sys
 
+from django.core.management.utils import get_random_secret_key
 
 VAR = 'DJANGO_SETTINGS_MODULE'
 DEFAULT_SETTINGS = 'mibios.ops.settings'
@@ -43,3 +44,18 @@ def manage(settings=None):
             "forget to activate a virtual environment?"
         ) from exc
     execute_from_command_line(sys.argv)
+
+
+def get_secret_key(keyfile):
+    """
+    Read key from given file
+
+    If file does not exist, generate a key randomly and store it in the file
+    first.
+    """
+    if not keyfile.exists():
+        keyfile.touch(mode=0o600, exist_ok=False)
+        keyfile.write_text(get_random_secret_key())
+        keyfile.chmod(0o400)
+
+    return keyfile.read_text()
