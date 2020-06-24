@@ -10,7 +10,7 @@ class Command(BaseCommand):
         self.stdout.write(' '.join([str(i) for i in row if i]) + '\n')
 
     def handle(self, *args, **options):
-        for i in User.objects.all():
+        for i in User.objects.filter(is_active=True):
             perms = i.user_permissions.all()
             for j in perms:
                 # using single change permission as proxy for allowing any
