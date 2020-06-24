@@ -20,8 +20,8 @@ class Command(BaseCommand):
         argp.add_argument(
             '-k', '--keep',
             action='store_true',
-            help='Keep existing users listed not in input table.  The default '
-                 'is to delete them.',
+            help='Keep users which are not listed in input table active.  The default '
+                 'is to de-activate such users.',
         )
 
     @transaction.atomic
@@ -70,20 +70,21 @@ class Command(BaseCommand):
 
                 user.is_superuser = is_superuser
                 user.is_staff = True  # all can access the admin interface
+                user.is_active = True
                 user.save()
+
                 user.user_permissions.clear()
                 user.user_permissions.add(*view_perms)
 
                 if is_editor:
                     user.user_permissions.add(*edit_perms)
 
-
             if not options['keep']:
-                qs = User.objects.exclude(username__in=present_users)
-                if qs.exists():
-                    self.stdout.write('Removing {} users:')
-                    for i in qs:
-                        self.stdout.write(i.username)
-                    qs.delete()
+                for i in User.objects.exclude(username__in=present_users):
+                    i.is_active = False
+                    i.save()
+                    self.stdout.write(
+                        'user de-activated: {}'.format(i.username)
+                    )
 
         self.stdout.write('done')
