@@ -8,9 +8,7 @@ STATIC_ROOT = '/usr/share/mibios/static'
 DATABASES['default']['NAME'] = '/var/lib/mibios/db.sqlite3'
 # allowed hosts still need to be configured further:
 ALLOWED_HOSTS = ['localhost']
-AUTHENTICATION_BACKENDS = [
-    'django.contrib.auth.backends.RemoteUserBackend',
-]
+AUTHENTICATION_BACKENDS = ['mibios.ops.utils.RemoteUserBackend']
 
 # Security related:
 DEBUG = False

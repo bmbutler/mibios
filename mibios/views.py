@@ -5,6 +5,7 @@ from django.apps import apps
 from django.db.models import Count, Q
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
 from django.urls import reverse
 from django.views.generic.edit import FormView
@@ -38,7 +39,12 @@ class TestView(SingleTableView):
         return FecalSample.objects.all()
 
 
-class TableView(SingleTableView):
+class UserRequiredMixin(LoginRequiredMixin):
+    raise_exception = True
+    permission_denied_message = 'You don\'t have an active user account here.'
+
+
+class TableView(UserRequiredMixin, SingleTableView):
     template_name = 'mibios/model_index.html'
     QUERY_FILTER = 'filter'
     QUERY_EXCLUDE = 'exclude'

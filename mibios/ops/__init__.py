@@ -4,6 +4,7 @@ import sys
 
 from django.core.management.utils import get_random_secret_key
 
+
 VAR = 'DJANGO_SETTINGS_MODULE'
 DEFAULT_SETTINGS = 'mibios.ops.settings'
 LOCAL_SETTINGS = 'settings'
