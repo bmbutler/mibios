@@ -69,7 +69,7 @@ class Command(BaseCommand):
                     user.email = email
 
                 user.is_superuser = is_superuser
-                user.staff = True  # all can access the admin interface
+                user.is_staff = True  # all can access the admin interface
                 user.save()
                 user.user_permissions.clear()
                 user.user_permissions.add(*view_perms)
