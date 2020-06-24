@@ -110,6 +110,7 @@ class Model(models.Model):
         non_simple = (
             models.AutoField,
             models.ManyToOneRel,
+            models.ManyToManyRel,
             models.ManyToManyField,
         )
         return [
