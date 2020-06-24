@@ -80,7 +80,9 @@ class Command(BaseCommand):
                     user.user_permissions.add(*edit_perms)
 
             if not options['keep']:
-                for i in User.objects.exclude(username__in=present_users):
+                qs = User.objects.exclude(username__in=present_users)
+                qs = qs.filter(is_active=True)
+                for i in qs:
                     i.is_active = False
                     i.save()
                     self.stdout.write(
