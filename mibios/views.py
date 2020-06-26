@@ -8,6 +8,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
 from django.urls import reverse
+from django.utils.http import urlencode
 from django.views.generic.edit import FormView
 
 from django_tables2 import SingleTableView, A
@@ -49,6 +50,8 @@ class TableView(UserRequiredMixin, SingleTableView):
     QUERY_FILTER = 'filter'
     QUERY_EXCLUDE = 'exclude'
     QUERY_NEGATE = 'inverse'
+    QUERY_LIST_SEP = ','
+    QUERY_KEY_VAL_SEP = ':'
 
     # set by setup()
     model = None
@@ -142,8 +145,8 @@ class TableView(UserRequiredMixin, SingleTableView):
         for qkey, qvals  in self.request.GET.lists():
             if qkey == self.QUERY_FILTER:
                 for i in qvals:
-                    for j in i.split(','):
-                        k, _, v = j.partition(':')
+                    for j in i.split(self.QUERY_LIST_SEP):
+                        k, _, v = j.partition(self.QUERY_KEY_VAL_SEP)
                         if v == NONE_LOOKUP:
                             v = None
                         filter[k] = v
@@ -151,8 +154,8 @@ class TableView(UserRequiredMixin, SingleTableView):
             elif qkey == self.QUERY_EXCLUDE:
                 for i in qvals:
                     e = {}
-                    for j in i.split(','):
-                        k, _, v = j.partition(':')
+                    for j in i.split(self.QUERY_LIST_SEP):
+                        k, _, v = j.partition(self.QUERY_KEY_VAL_SEP)
                         if v == NONE_LOOKUP:
                             v = None
                         e[k] = v
@@ -187,8 +190,8 @@ class TableView(UserRequiredMixin, SingleTableView):
         for k, v in lookups.items():
             if v is None:
                 v = NONE_LOOKUP
-            ret.append('{}:{}'.format(k, v))
-        return ','.join(ret)
+            ret.append('{}{}{}'.format(k, cls.QUERY_KEY_VAL_SEP, v))
+        return cls.QUERY_LIST_SEP.join(ret)
 
     @classmethod
     def build_query_string(cls, filter={}, excludes=[], negate=False):
@@ -197,23 +200,27 @@ class TableView(UserRequiredMixin, SingleTableView):
 
         This is the reverse of the get_filter_from_url method
         """
+        query_dict = {}
         f = cls.format_query_string(filter)
         if f:
-            f = cls.QUERY_FILTER + '=' + f
+            query_dict[cls.QUERY_FILTER] = f
 
         elist = []
         for i in excludes:
             e = cls.format_query_string(i)
             if e:
-                elist.append(cls.QUERY_EXCLUDE + '=' + e)
-        elist = '&'.join(elist)
+                elist.append(e)
 
-        n = cls.QUERY_NEGATE if negate else ''
+        if elist:
+            query_dict[cls.QUERY_EXCLUDE] = elist
 
-        q = '&'.join([i for i in [f, elist, n] if i])
-        if q:
-            q = '?' + q
-        return q
+        if negate:
+            query_dict[cls.QUERY_NEGATE] = ''  # TODO: maybe True or Yes or so?
+
+        query = urlencode(query_dict, doseq=True)
+        if query:
+            query = '?' + query
+        return query
 
     def get_queryset(self):
         if self.model is None:
