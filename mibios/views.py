@@ -2,7 +2,7 @@ import csv
 import io
 
 from django.apps import apps
-from django.db.models import Count, Q
+from django.db.models import Count
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -16,7 +16,7 @@ from .dataset import DATASET
 from .forms import UploadFileForm
 from .load import GeneralLoader
 from .management.import_base import AbstractImportCommand
-from .models import FecalSample
+from .models import FecalSample, Q
 from .tables import CountColumn, NONE_LOOKUP, Table
 from .utils import getLogger
 
@@ -227,9 +227,10 @@ class TableView(UserRequiredMixin, SingleTableView):
 
         excludes = []
         for i in self.dataset_excludes + self.excludes:
-            excludes.append(~Q(**i))
+            excludes.append(~Q(**i, model=self.model))
 
-        q = Q(*excludes, **self.dataset_filter, **self.filter)
+        filter = {**self.dataset_filter, **self.filter}
+        q = Q(*excludes, **filter, model=self.model)
 
         if self.negate:
             q = ~q
