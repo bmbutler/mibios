@@ -303,20 +303,57 @@ class TableView(UserRequiredMixin, SingleTableView):
             in apps.get_app_config('mibios').get_models()
         ])
 
+    def get_sort_by_field(self):
+        field = self.request.GET.get(self.get_table()._meta.order_by_field)
+        if not field:
+            return None
+
+        field = field.lstrip('-')
+        if field not in [i.name for i in self.model.get_simple_fields()]:
+            return None
+
+        return field
+
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        if self.model is not None:
-            ctx['model'] = self.model._meta.model_name
-            ctx['dataset_name'] = self.dataset_name
-            ctx['dataset_verbose_name'] = self.dataset_verbose_name
-            ctx['count'] = self.get_queryset().count()
         ctx['model_names'] = self.get_model_names()
         ctx['data_sets'] = DATASET.keys()
         ctx['page_title'] = apps.get_app_config('mibios').verbose_name
+        if self.model is None:
+            return ctx
+
+        ctx['model'] = self.model._meta.model_name
+        ctx['dataset_name'] = self.dataset_name
+        ctx['dataset_verbose_name'] = self.dataset_verbose_name
+        ctx['count'] = self.get_queryset().count()
+
+        sort_by_field = self.get_sort_by_field()
+        if sort_by_field is not None:
+            ctx['sort_by_field'] = sort_by_field
+            qs = self.get_queryset()
+            stats = qs.get_field_stats(sort_by_field, canonical=True)
+            filter_link_data = [
+                (
+                    value,
+                    count,
+                    # TODO: applying filter to negated queryset is more
+                    # complicated
+                    self.to_query_string(filter={sort_by_field: value})
+                )
+                for value, count
+                in stats.get('choice_counts', {}).items()
+            ]
+            uniform_field = stats.get('uniform')
+            if uniform_field:
+                ctx['uniform_field'] = list(uniform_field.items())[0]
+            ctx['filter_link_data'] = filter_link_data
+            ctx['sort_by_stats'] = stats
+
         query = self.request.GET.urlencode()
         if query:
             ctx['query'] = '?' + query
             ctx['invquery'] = self.to_query_string(negate=True)
+
         return ctx
 
 

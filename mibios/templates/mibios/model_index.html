@@ -30,6 +30,32 @@
     <br>
 {% endif %}
 
+{% for stats_type, stats_obj in sort_by_stats.items %}
+    {# going through this pool only once usually #}
+    {% if stats_type == 'choice_counts' %}
+	{% if filter_link_data %}
+	    {% if view.negate %}
+		Sorted column
+	    {% else %}
+		Filter by
+	    {% endif %}
+	    {{ sort_by_field }}(count):
+	    {% for value, count, query in filter_link_data %}
+		{% if view.negate %}
+		    {{ value|default:table.default }}({{ count }})
+		{% else %}
+		    <a href="{% url 'queryset_index' dataset=dataset_name %}{{ query }}">{{ value|default:table.default }}</a>({{ count }})
+		{% endif %}
+	    {% endfor %}
+	    <br>
+	{% endif %}
+    {% elif stats_type == 'uniform' %}
+	Sorted column: "{{ sort_by_field }}" has single value: "{{ uniform_field|first|default:table.default }}"({{ uniform_field|last }})
+	    <br>
+    {% elif stats_type == 'unique' %}
+	Sorted column "{{ sort_by_field }}": all values unique<br>
+    {% endif %}
+{% endfor %}
 <a href="{% url 'import' dataset=dataset_name %}">import</a>
 <a href="{% url 'export' dataset=dataset_name format='csv' %}{{ query }}">export as csv</a>
 

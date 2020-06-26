@@ -66,6 +66,50 @@ class QuerySet(models.QuerySet):
             df[i.name] = pandas.Series(col_dat, **kwargs)
         return df
 
+    def get_field_stats(self, fieldname, canonical=False):
+        """
+        Get basic descriptive stats from a single field/column
+
+        Returns a dict: stats_type -> obj
+        Returning an empty dict indicates some error
+        """
+        qs = self
+        if canonical and self.model._meta.get_field(fieldname).is_relation:
+            # speedup
+            qs = qs.select_related(fieldname)
+
+        try:
+            col = qs.as_dataframe(fieldname, canonical=canonical)[fieldname]
+        except Exception as e:
+            # as_dataframe does not support all data types (e.g. Decimal)
+            log.debug('get_field_stats() failed:', type(e), e)
+            raise
+            return {}
+
+        stats = col.value_counts(dropna=False).sort_index()
+
+        if stats.count() == 1:
+            # all values the same
+            return {'uniform': stats.to_dict()}
+
+        if stats.max() < 2:
+            # column values are unique
+            return {'unique': stats.max()}
+
+        try:
+            not_blank = stats.drop(index='')
+        except KeyError:
+            pass
+        else:
+            if not_blank.max() < 2:
+                # column unique except for empties
+                return {'unique_blank': {
+                    'BLANK': stats[''],
+                    'NOT_BLANK': not_blank.sum(),
+                }}
+
+        return {'choice_counts': stats}
+
 
 class Manager(models.Manager):
     def get_queryset(self):
