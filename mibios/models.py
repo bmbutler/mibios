@@ -9,6 +9,24 @@ from django.db import models
 import pandas
 
 
+class Q(models.Q):
+    """
+    A thin wrapper around Q to handle canonical lookups
+
+    Ideally, "canonical" should be a custom Lookup and then handled closer to
+    the lookup-to-SQL machinery but it's not clear how to build a lookup that
+    can be model-dependent expressed purely in terms of other lookups and
+    doesn't touch SQL in at all.  Hence, we re-write canonical lookups before
+    they get packaged into the Q object.
+    """
+    def __init__(self, *args, model=None, **kwargs):
+        # handling canonical lookups is only done if the model is provided,
+        # since we need to know to which model the Q is relative to
+        if model is not None:
+            kwargs = model.handle_canonical_lookups(**kwargs)
+        super().__init__(*args, **kwargs)
+
+
 class QuerySet(models.QuerySet):
     def as_dataframe(self):
         """
@@ -35,15 +53,6 @@ class QuerySet(models.QuerySet):
                 kwargs['dtype'] = dtype
             df[i.name] = pandas.Series(col_dat, **kwargs)
         return df
-
-    def _filter_or_exclude(self, negate, *args, canonical=None, **kwargs):
-        """
-        Implement canonical lookups
-        """
-        c = {}
-        if canonical is not None:
-            c = self.model.canonical_lookup(canonical)
-        return super()._filter_or_exclude(negate, *args, **c, **kwargs)
 
 
 class Manager(models.Manager):
@@ -241,8 +250,10 @@ class Model(models.Model):
         """
         Generate a dict lookup from the canonical value
 
-        This is used in QuerySet.get() to find objects canonical value.  The
-        implementation usually de-constructs the canonical value into its
+        Used to replace a canonical lookup with real lookups that Django can
+        understand.  This method should be overwritten to suit the model.  The
+        default implementations assumes the model has a "name" field.
+        Implementations usually de-construct the canonical value into its
         components and is the inverse of the canonical() property.
 
         Might also be used as parsing tool to coerce a user-given input value
@@ -268,6 +279,53 @@ class Model(models.Model):
 
     def __str__(self):
         return self.canonical
+
+    @classmethod
+    def handle_canonical_lookups(cls, **lookups):
+        """
+        Detect and convert canonical object lookups
+
+        Convert "*__canonical='foo'" and "*__model_name='foo'" into their
+        proper lookups
+        """
+        ret = {}
+        for lhs, rhs in lookups.items():
+            if not isinstance(rhs, (str, int)):
+                # any canonical lookup should be str (or int for pk), if it's
+                # not, then the resulting error will be probably be misleading
+                ret[lhs] = rhs
+
+            cur_model = cls
+
+            parts = lhs.split('__')
+            for part in parts:
+                if part == 'canonical':
+                    continue
+                fields = {i.name: i for i in cur_model._meta.get_fields()}
+                if part in fields and fields[part].is_relation:
+                    cur_model = fields[part].related_model
+                else:
+                    # not an obj lookup, keep as-is
+                    ret[lhs] = rhs
+                    break
+            else:
+                # prepare lhs prefix for the canonical replacements:
+                if part == 'canonical':
+                    # remove __canonical from lhs
+                    lhs = '__'.join(parts[:-1])
+
+                if lhs:
+                    lhs += '__'
+
+                if isinstance(rhs, int):
+                    ret.update({lhs + 'pk': rhs})
+                else:
+                    ret.update({
+                        lhs + k: v
+                        for k, v
+                        in cur_model.canonical_lookup(rhs).items()
+                    })
+        return ret
 
     @classmethod
     def str_blank(cls, *values):
