@@ -163,15 +163,16 @@ class TableView(UserRequiredMixin, SingleTableView):
         log.debug('from GET:', filter, excludes, negate)
         return filter, excludes, negate
 
-    def to_query_string(self, negate=False):
+    def to_query_string(self, filter={}, excludes=[], negate=False):
         """
         Get query string from current state
 
         If negate is True, then negate the current negation state.
+        Extra filters or excludes can be amended.
         """
         return self.build_query_string(
-            self.filter,
-            self.excludes,
+            {**self.filter, **filter},
+            self.excludes + excludes,
             not self.negate if negate else self.negate
         )
 
