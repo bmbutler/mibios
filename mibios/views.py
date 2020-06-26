@@ -149,6 +149,10 @@ class TableView(UserRequiredMixin, SingleTableView):
                         k, _, v = j.partition(self.QUERY_KEY_VAL_SEP)
                         if v == NONE_LOOKUP:
                             v = None
+                        try:
+                            v = int(v)
+                        except ValueError:
+                            pass
                         filter[k] = v
 
             elif qkey == self.QUERY_EXCLUDE:
@@ -158,6 +162,10 @@ class TableView(UserRequiredMixin, SingleTableView):
                         k, _, v = j.partition(self.QUERY_KEY_VAL_SEP)
                         if v == NONE_LOOKUP:
                             v = None
+                        try:
+                            v = int(v)
+                        except ValueError:
+                            pass
                         e[k] = v
                     excludes.append(e)
             elif qkey == self.QUERY_NEGATE:
