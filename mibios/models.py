@@ -14,7 +14,8 @@ class QuerySet(models.QuerySet):
         """
         Convert to pandas dataframe
         """
-        df = pandas.DataFrame([], index=self.values_list('id', flat=True))
+        index=self.values_list('id', flat=True)
+        df = pandas.DataFrame([], index=index)
         for i in self.model._meta.get_fields():
             if not Model.is_simple_field(i):
                 continue
@@ -23,7 +24,7 @@ class QuerySet(models.QuerySet):
 
             dtype = Model.pd_type(i)
             col_dat = self.values_list(i.name, flat=True)
-            kwargs = dict()
+            kwargs = dict(index=index)
             if i.choices:
                 col_dat = pandas.Categorical(col_dat)
             else:
