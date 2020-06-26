@@ -406,7 +406,11 @@ class ExportView(TableView):
         response['Content-Disposition'] = 'attachment; filename="{}"'.format(f)
 
         r = renderer_class(response)
-        for i in self.get_table().as_values():
+        count_cols = [
+            i.name + '__count'
+            for i in self.model._meta.related_objects
+        ]
+        for i in self.get_table().as_values(exclude_columns=count_cols):
             r.render_row(i)
 
         return response
