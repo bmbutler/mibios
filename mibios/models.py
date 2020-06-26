@@ -66,6 +66,13 @@ class QuerySet(models.QuerySet):
             df[i.name] = pandas.Series(col_dat, **kwargs)
         return df
 
+    def _filter_or_exclude(self, negate, *args, **kwargs):
+        """
+        Implement canonical lookups
+        """
+        kwargs = self.model.handle_canonical_lookups(**kwargs)
+        return super()._filter_or_exclude(negate, *args, **kwargs)
+
     def get_field_stats(self, fieldname, canonical=False):
         """
         Get basic descriptive stats from a single field/column
