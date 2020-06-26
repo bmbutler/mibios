@@ -416,7 +416,7 @@ class ExportView(TableView):
         return response
 
 
-class ImportView(FormView):
+class ImportView(UserRequiredMixin, FormView):
     template_name = 'mibios/import.html'
     form_class = UploadFileForm
 
