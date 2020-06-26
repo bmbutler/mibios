@@ -28,20 +28,32 @@ class Q(models.Q):
 
 
 class QuerySet(models.QuerySet):
-    def as_dataframe(self):
+    def as_dataframe(self, *fields, canonical=False):
         """
         Convert to pandas dataframe
+
+        :param: fields str: Only return columns with given field names.
+        :param: canonical bool: If true, then replace id/pk of foreign
+                                relation with canonical representation.
         """
         index=self.values_list('id', flat=True)
         df = pandas.DataFrame([], index=index)
         for i in self.model._meta.get_fields():
+            if fields and i.name not in fields:
+                continue
             if not Model.is_simple_field(i):
                 continue
             if i.name == 'id':
                 continue
 
             dtype = Model.pd_type(i)
-            col_dat = self.values_list(i.name, flat=True)
+            if i.is_relation and canonical:
+                col_dat = map(
+                    lambda obj: getattr(getattr(obj, i.name), 'canonical', None),
+                    self.prefetch_related()
+                )
+            else:
+                col_dat = self.values_list(i.name, flat=True)
             kwargs = dict(index=index)
             if i.choices:
                 col_dat = pandas.Categorical(col_dat)
