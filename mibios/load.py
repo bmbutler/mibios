@@ -24,8 +24,9 @@ class AbstractLoader():
     Parent class for data importers
 
     Implementation needed for:
-    COLS - a sequence of tuples, mapping column headers to internal names;
-           intended to allow quick adaption to changing input formats
+    COLS - a sequence of tuples, mapping column headers (as they appear in
+           input file) to internal names; Column names will be matched
+           casefolded.
     process_row() - method to import data from the current row/line, method
                     must be guarded by atomic transaction
 
@@ -38,12 +39,12 @@ class AbstractLoader():
     def __init__(self, colnames, sep='\t', can_overwrite=True,
                  warn_on_error=False, strict_sample_id=False, dry_run=False):
         # use internal names for columns:
-        _cols = dict(self.COLS)
+        _cols = {i.casefold(): j for i, j in self.COLS}
         self.cols = []  # internal names for columns in file
         self.ignored_columns = []  # columns that won't be processed
         for i in colnames:
-            if i in _cols:
-                self.cols.append(_cols[i])
+            if i.casefold() in _cols:
+                self.cols.append(_cols[i.casefold()])
             else:
                 self.cols.append(i)
                 self.ignored_columns.append(i)
