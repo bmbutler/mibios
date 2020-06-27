@@ -174,18 +174,39 @@ class TableView(UserRequiredMixin, SingleTableView):
         log.debug('from GET:', filter, excludes, negate)
         return filter, excludes, negate
 
-    def to_query_string(self, filter={}, excludes=[], negate=False):
+    def to_query_string(self, filter={}, excludes=[], negate=False,
+                        without=[]):
         """
         Get query string from current state
 
         If negate is True, then negate the current negation state.
         Extra filters or excludes can be amended.
+
+        :param without list: list of dicts (with kwargs of elements of
+                             self.filter) and/or lists (elements of
+                             self.excludes) which will be omitted from
+                             the query string.
         """
-        return self.build_query_string(
-            {**self.filter, **filter},
-            self.excludes + excludes,
-            not self.negate if negate else self.negate
-        )
+        f = {**self.filter, **filter}
+        elist = self.excludes + excludes
+
+        for i in without:
+            if isinstance(i, dict):
+                for k, v in i.items():
+                    if k in f and f[k] == v:
+                        del f[k]
+            elif isinstance(i, list):
+                elist = [j for j in elist if i not in elist]
+            else:
+                raise TypeError('{} in without is neither a dict nor a list'
+                                .format(i))
+
+        if negate:
+            query_negate = not self.negate
+        else:
+            query_negate = self.negate
+
+        return self.build_query_string(f, elist, query_negate)
 
     @classmethod
     def format_query_string(cls, lookups):
