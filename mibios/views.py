@@ -356,6 +356,17 @@ class TableView(UserRequiredMixin, SingleTableView):
         ctx['dataset_verbose_name'] = self.dataset_verbose_name
         ctx['count'] = self.get_queryset().count()
 
+        ctx['applied_filter'] = [
+            (k, v, self.to_query_string(without=[{k: v}]))
+            for k, v
+            in self.filter.items()
+        ]
+        ctx['applied_excludes_list'] = [
+            (e, self.to_query_string(without=[e]))
+            for i
+            in self.excludes
+        ]
+
         sort_by_field = self.get_sort_by_field()
         if sort_by_field is not None:
             ctx['sort_by_field'] = sort_by_field
