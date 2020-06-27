@@ -93,7 +93,7 @@ class AbstractLoader():
             new=self.new,
             added=self.added,
             changed=self.changed,
-            ignored_cols=self.ignored_columns,
+            ignored=self.ignored_columns,
             warnings=self.warnings,
         )
 
