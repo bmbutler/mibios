@@ -86,13 +86,20 @@ class TableView(UserRequiredMixin, SingleTableView):
             self.dataset_filter = dataset.filter
             self.dataset_excludes = dataset.excludes
             for i in dataset.fields:
-                if isinstance(i, tuple):
-                    self.fields.append(i[0])
-                    self.col_names.append(i[-1])
-                else:
+                try:
+                    fieldname, colname = i
+                except ValueError:
+                    # assume one-tuple
+                    fieldname = i[0]
+                    colname = i[0]
+                except TypeError:
                     # assume i is str
-                    self.fields.append(i)
-                    self.col_names.append(i)
+                    fieldname = i
+                    colname = i
+
+                self.fields.append(fieldname)
+                self.col_names.append(colname)
+            del fieldname, colname
         else:
             model = kwargs['dataset']
 
