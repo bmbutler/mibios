@@ -91,6 +91,8 @@ class AbstractImportCommand(BaseCommand):
     def format_import_stats(cls, count=0, new={}, added={}, changed={},
                             ignored=[], **options):
         out = ''
+        if options.get('dry_run', False):
+            out += ' (dry run)'
         out += ' {} rows processed\n'.format(count)
         if ignored:
             out += ' Columns, not processd: ' + ', '.join(ignored) + '\n'
@@ -114,9 +116,8 @@ class AbstractImportCommand(BaseCommand):
             if options.get('overwrite'):
                 msg = ' Modified:\n'
             else:
-                msg = (' Number of records differing from database but not '
-                       'changed due to policy (use --overwrite to apply '
-                       'changes):\n')
+                msg = (' Modifications below not applied (no-overwrite/'
+                       'append-only option in use)\n')
             out += msg + '\n'.join([
                 '  {}: {}'.format(k, len(v))
                 for k, v

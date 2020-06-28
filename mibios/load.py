@@ -95,6 +95,8 @@ class AbstractLoader():
             changed=self.changed,
             ignored=self.ignored_columns,
             warnings=self.warnings,
+            dry_run=self.dry_run,
+            overwrite=self.can_overwrite,
         )
 
     def get_from_row(self, *keys):
