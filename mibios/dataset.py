@@ -4,11 +4,19 @@ Definitions for special datasets
 import re
 
 
-DATASET = {}
+class Dataset():
+    name = None
+    model = None
+    fields = []
+    filter = {}
+    excludes = []
+    missing_data = []
 
-DATASET['meta_all'] = {
-    'model': 'Sequencing',
-    'fields': [
+
+class Metadata(Dataset):
+    name = 'metadata'
+    model = 'Sequencing'
+    fields = [
         ('name', 'FASTQ_ID'),
         ('sample__participant__name', 'Participant_ID'),
         ('sample__canonical', 'Sample_ID'),
@@ -24,23 +32,27 @@ DATASET['meta_all'] = {
         ('run__serial', 'seq_serial'),
         ('run__number', 'seq_run'),
         ('note', 'drop'),
-    ],
-    'filter': {
+    ]
+    filter = {
         'sample__week__isnull': False,
-    },
-    'excludes': [
+    }
+    excludes = [
         {'note__name__contains': 'drop'},
-    ],
-}
+    ]
 
 
-DATASET['meta_thru2019'] = DATASET['meta_all'].copy()
-DATASET['meta_thru2019']['filter']['sample__participant__semester__year__lte']\
-    = '2019'
+class MetadataThru2019(Metadata):
+    name = 'metadata_thru2019'
+    filter = {
+        'sample__week__isnull': False,
+        'sample__participant__semester__year__lte': '2019',
+    }
 
-DATASET['SCFA_indv'] = {
-    'model': 'fecalsample',
-    'fields': [
+
+class SCFA_indv(Dataset):
+    name = 'SCFA_indv'
+    model = 'fecalsample'
+    fields = [
         ('participant', 'Participant_ID'),
         ('number', 'Sample_number'),
         ('canonical', 'Sample_ID'),
@@ -58,9 +70,30 @@ DATASET['SCFA_indv'] = {
         ('butyrate_abs', 'Propionate_mM'),
         ('butyrate_rel', 'Propionate_mmol_kg'),
         ('note', 'SCFA_notes'),
-    ],
-    'filter': {},
-    'missing_data': [
+    ]
+    missing_data = [
         re.compile(r'(NA|[-])', re.IGNORECASE)
-    ],
-}
+    ]
+
+
+class MMPManifest(Dataset):
+    name = 'MMP_manifest'
+    model = 'sequencing'
+    fields = [
+        ('', 'specimen'),
+        ('', 'batch'),
+        ('', 'R1'),
+        ('', 'R2'),
+        ('', 'person'),
+        ('', 'Sample_ID'),
+        ('', 'semester'),
+        ('', 'plate'),
+        ('', 'seqlabel'),
+        ('', 'read__1_fn'),
+        ('', 'read__2_fn'),
+    ]
+
+
+DATASET = {}
+for i in Dataset.__subclasses__():
+    DATASET[i.name] = i

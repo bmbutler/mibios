@@ -82,10 +82,10 @@ class TableView(UserRequiredMixin, SingleTableView):
             dataset = DATASET[kwargs['dataset']]
             self.dataset_name = kwargs['dataset']
             self.dataset_verbose_name = kwargs['dataset']
-            model = dataset['model']
-            self.dataset_filter = dataset.get('filter', {})
-            self.dataset_excludes = dataset.get('excludes', [])
-            for i in dataset['fields']:
+            model = dataset.model
+            self.dataset_filter = dataset.filter
+            self.dataset_excludes = dataset.excludes
+            for i in dataset.fields:
                 if isinstance(i, tuple):
                     self.fields.append(i[0])
                     self.col_names.append(i[-1])
