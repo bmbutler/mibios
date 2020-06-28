@@ -26,6 +26,9 @@ DATASET['meta_all'] = {
     'filter': {
         'sample__week__isnull': False,
     },
+    'excludes': [
+        {'note__name__contains': 'drop'},
+    ],
 }
 
 
