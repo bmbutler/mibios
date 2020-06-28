@@ -56,6 +56,14 @@ class CountColumn(tables.Column):
         return format_html('all: <a href={}>{}</a>', self.footer_url, total)
 
 
+class ManyToManyColumn(tables.ManyToManyColumn):
+    def __init__(self, *args, **kwargs):
+        if 'default' not in kwargs:
+            kwargs['default'] = ''
+
+        super().__init__(*args, **kwargs)
+
+
 class SequencingTable(tables.Table):
     class Meta:
         model = Sequencing

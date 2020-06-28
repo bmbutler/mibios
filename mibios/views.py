@@ -18,7 +18,7 @@ from .forms import UploadFileForm
 from .load import GeneralLoader
 from .management.import_base import AbstractImportCommand
 from .models import FecalSample, Q
-from .tables import CountColumn, NONE_LOOKUP, Table
+from .tables import CountColumn, ManyToManyColumn, NONE_LOOKUP, Table
 from .utils import getLogger
 
 
@@ -294,11 +294,22 @@ class TableView(UserRequiredMixin, SingleTableView):
             exclude.append('name')
             fields = ['id'] + fields
 
+        table_opts = {}
+        # m2m fields
+        for i in self.model._meta.many_to_many:
+            # model tables get this automatically, for datasets the field
+            # must be declared
+            if i.name in self.fields or self.dataset_name not in DATASET:
+                table_opts.update({i.name: ManyToManyColumn()})
+                if i.name not in self.fields:
+                    # add field name for model tables
+                    fields.append(i.name)
+
         # reverse relations
-        table_opts = {
+        table_opts.update({
             i.name + '__count': CountColumn(i, view=self)
             for i in self.model._meta.related_objects
-        }
+        })
         fields += [
             i.name + '__count'
             for i in self.model._meta.related_objects
