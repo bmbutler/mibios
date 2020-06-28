@@ -461,8 +461,14 @@ class ImportView(UserRequiredMixin, FormView):
         f = io.TextIOWrapper(form.files['file'])
         print('Importing into {}: {}'.format(self.dataset, f))
         try:
-            stats = GeneralLoader.load_file(f, self.dataset,
-                                            warn_on_error=True)
+            stats = GeneralLoader.load_file(
+                f,
+                self.dataset,
+                dry_run=form.cleaned_data['dry_run'],
+                can_overwrite=form.cleaned_data['overwrite'],
+                warn_on_error=True,
+            )
+
         except Exception as e:
             if settings.DEBUG:
                 raise
@@ -472,7 +478,6 @@ class ImportView(UserRequiredMixin, FormView):
         else:
             msg = AbstractImportCommand.format_import_stats(
                 **stats,
-                overwrite=True,
                 verbose_changes=True,
             )
             msg_level = messages.SUCCESS
