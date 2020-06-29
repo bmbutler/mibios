@@ -504,10 +504,10 @@ class GeneralLoader(AbstractLoader):
             self.missing_data += DATASET[dataset].missing_data
         else:
             # set COLS from model, start with id column
-            self.COLS = [(model_name + '_id', model_name + '__id')]
-            self.COLS += [
-                (i.verbose_name.capitalize(), model_name + '__' + i.name)
-                for i in self.model.get_simple_fields()
+            fields = self.model.get_fields()
+            self.COLS = [
+                (v.capitalize(), model_name + '__' + n)
+                for v, n in zip(fields.verbose, fields.names)
             ]
 
         super().__init__(colnames, **kwargs)

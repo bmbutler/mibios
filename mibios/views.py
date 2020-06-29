@@ -112,18 +112,18 @@ class TableView(UserRequiredMixin, SingleTableView):
             self.dataset_verbose_name = self.model._meta.verbose_name
             # set default fields - just the "simple" ones
             no_name_field = True
-            for i in self.model.get_simple_fields():
-                if i.name == 'id':
-                    continue
-                if i.name == 'name':
+            fields = self.model.get_fields()
+            for name, verbose_name in zip(fields.names, fields.verbose):
+                if name == 'name':
                     no_name_field = False
-                self.fields.append(i.name)
-                if i.name == i.verbose_name:
+                self.fields.append(name)
+                if name == verbose_name:
                     # None: will be capitalized by django-tables2
                     self.col_names.append(None)
                 else:
                     # e.g. when letter case is important, like for 'pH'
-                    self.col_names.append(i.verbose_name)
+                    self.col_names.append(verbose_name)
+            del name, verbose_name, fields
 
             if no_name_field and hasattr(self.model, 'name'):
                 # add column for canonical name
@@ -296,20 +296,17 @@ class TableView(UserRequiredMixin, SingleTableView):
         table_opts = {}
 
         # make one of id or name columns have an edit link
-        if 'id' in fields:
-            table_opts['id'] = Column(linkify=True)
-        elif 'name' in fields:
+        # hide id if name is present
+        if 'name' in fields:
             table_opts['name'] = Column(linkify=True)
+        if 'id' in fields:
+            table_opts['id'] = Column(linkify='name' not in fields,
+                                      visible='name' not in fields)
 
         # m2m fields
         for i in self.model._meta.many_to_many:
-            # model tables get this automatically, for datasets the field
-            # must be declared
-            if i.name in self.fields or self.dataset_name not in DATASET:
+            if i.name in self.fields:
                 table_opts.update({i.name: ManyToManyColumn()})
-                if i.name not in self.fields:
-                    # add field name for model tables
-                    fields.append(i.name)
 
         # reverse relations
         table_opts.update({
@@ -357,7 +354,7 @@ class TableView(UserRequiredMixin, SingleTableView):
             return None
 
         field = field.lstrip('-')
-        if field not in [i.name for i in self.model.get_simple_fields()]:
+        if field not in self.model.get_fields().names:
             return None
 
         return field
@@ -433,21 +430,6 @@ class ExportView(TableView):
     FORMATS = (
         ('csv', '.csv', 'text/csv', CSVRenderer),
     )
-
-    def setup(self, request, *args, **kwargs):
-        super().setup(request, *args, **kwargs)
-
-        # (for model tables) put model name in id column header
-        if self.dataset_name not in DATASET:
-            id_col = '{}_id'.format(self.dataset_name)
-            if 'id' in self.fields:
-                self.col_names = [
-                    id_col if i == 'id' else i
-                    for i in self.col_names
-                ]
-            else:
-                self.fields = ['id'] + self.fields
-                self.col_names = [id_col] + self.col_names
 
     def render_to_response(self, context):
         for name, suffix, content_type, renderer_class in self.FORMATS:

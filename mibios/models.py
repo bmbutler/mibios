@@ -1,4 +1,4 @@
-from collections import OrderedDict
+from collections import namedtuple, OrderedDict
 import re
 import sys
 
@@ -131,6 +131,10 @@ class Manager(models.Manager):
         return QuerySet(self.model, using=self._db)
 
 
+Fields = namedtuple('Fields', ['fields', 'names', 'verbose'])
+""" container to hold list of fields for a model """
+
+
 class Model(models.Model):
     """
     Adds some extras to Django's Model
@@ -184,21 +188,34 @@ class Model(models.Model):
             return True
 
     @classmethod
-    def get_simple_fields(cls):
+    def get_fields(cls, skip_auto=False, with_m2m=False):
         """
-        Get forward, non-many-to-fields, non-auto
+        Get fields to be displayed in table (in order) and used for import
+
+        Should be overwritten by models as needed to include e.g. m2m fields
+        Many-to-many fields are by default excluded because of the difficulties
+        of meaningfully displaying them
         """
-        non_simple = (
-            models.AutoField,
+        exclude = [
             models.ManyToOneRel,
-            models.ManyToManyRel,
-            models.ManyToManyField,
-        )
-        return [
+        ]
+        if skip_auto:
+            exclude.append(models.AutoField)
+
+        if not with_m2m:
+            exclude.append(models.ManyToManyRel)
+            exclude.append(models.ManyToManyField)
+
+        exclude = tuple(exclude)
+
+        fields = [
             i for i
             in cls._meta.get_fields()
-            if not isinstance(i, non_simple)
+            if not isinstance(i, exclude)
         ]
+        names = [i.name for i in fields]
+        verbose = [i.verbose_name for i in fields]
+        return Fields(fields=fields, names=names, verbose=verbose)
 
     def export(self):
         """
@@ -535,6 +552,12 @@ class FecalSample(Model):
         p = Participant.objects.get(name=p)
         return dict(participant=p, number=int(n))
 
+    @classmethod
+    def get_fields(cls, **kwargs):
+        if 'with_m2m' not in kwargs:
+            kwargs['with_m2m'] = True
+        return super().get_fields(**kwargs)
+
 
 class Note(Model):
     name = models.CharField(max_length=100, unique=True)
@@ -563,6 +586,12 @@ class Participant(Model):
 
     class Meta:
         ordering = ['semester', 'name']
+
+    @classmethod
+    def get_fields(cls, **kwargs):
+        if 'with_m2m' not in kwargs:
+            kwargs['with_m2m'] = True
+        return super().get_fields(**kwargs)
 
 
 class Semester(Model):
@@ -653,6 +682,12 @@ class Sequencing(Model):
             return cls.OTHER
         else:
             return ''
+
+    @classmethod
+    def get_fields(cls, **kwargs):
+        if 'with_m2m' not in kwargs:
+            kwargs['with_m2m'] = True
+        return super().get_fields(**kwargs)
 
 
 class SequencingRun(Model):
