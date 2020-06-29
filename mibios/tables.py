@@ -75,5 +75,4 @@ class SequencingTable(tables.Table):
 
 
 class Table(tables.Table):
-    name = tables.Column(linkify=True)
-    id = tables.Column(linkify=True)
+    pass

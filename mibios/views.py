@@ -11,7 +11,7 @@ from django.urls import reverse
 from django.utils.http import urlencode
 from django.views.generic.edit import FormView
 
-from django_tables2 import SingleTableView, A
+from django_tables2 import SingleTableView, A, Column
 
 from .dataset import DATASET
 from .forms import UploadFileForm
@@ -103,7 +103,7 @@ class TableView(UserRequiredMixin, SingleTableView):
         else:
             model = kwargs['dataset']
 
-        # raises on invalid model
+        # raises on invalid model name
         self.model = apps.get_app_config('mibios').get_model(model)
 
         if kwargs['dataset'] not in DATASET:
@@ -122,7 +122,7 @@ class TableView(UserRequiredMixin, SingleTableView):
                     # None: will be capitalized by django-tables2
                     self.col_names.append(None)
                 else:
-                    # e.g. when letter case is importtant, like for 'pH'
+                    # e.g. when letter case is important, like for 'pH'
                     self.col_names.append(i.verbose_name)
 
             if no_name_field and hasattr(self.model, 'name'):
@@ -293,15 +293,14 @@ class TableView(UserRequiredMixin, SingleTableView):
             return Table
 
         fields = [A(i.replace('__', '.')) for i in self.fields]
-        exclude = []
-        # conditionally exclude fields defined in the table class:
-        if 'name' in self.fields:
-            exclude.append('id')
-        else:
-            exclude.append('name')
-            fields = ['id'] + fields
-
         table_opts = {}
+
+        # make one of id or name columns have an edit link
+        if 'id' in fields:
+            table_opts['id'] = Column(linkify=True)
+        elif 'name' in fields:
+            table_opts['name'] = Column(linkify=True)
+
         # m2m fields
         for i in self.model._meta.many_to_many:
             # model tables get this automatically, for datasets the field
@@ -326,7 +325,6 @@ class TableView(UserRequiredMixin, SingleTableView):
             model=self.model,
             template_name='django_tables2/bootstrap.html',
             fields=fields,
-            exclude=exclude,
         )
         Meta = type('Meta', (object,), meta_opts)
         name = self.dataset_name.capitalize() + 'IndexTable'
@@ -335,7 +333,7 @@ class TableView(UserRequiredMixin, SingleTableView):
         c = type(name, (Table,), table_opts)
         # Monkey-patch column headers
         for i, j in zip(self.fields, self.col_names):
-            if i != j and j:
+            if i != j and j and i != 'id':
                 c.base_columns[i.replace('__', '.')].verbose_name = j
         return c
 
@@ -436,12 +434,17 @@ class ExportView(TableView):
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)
 
-        # put model name in id column header
-        if 'id' in self.fields:
-            self.col_names = [
-                '{}_id'.format(kwargs.get('dataset')) if i == 'id' else i
-                for i in self.col_names
-            ]
+        # (for model tables) put model name in id column header
+        if self.dataset_name not in DATASET:
+            id_col = '{}_id'.format(self.dataset_name)
+            if 'id' in self.fields:
+                self.col_names = [
+                    id_col if i == 'id' else i
+                    for i in self.col_names
+                ]
+            else:
+                self.fields = ['id'] + self.fields
+                self.col_names = [id_col] + self.col_names
 
     def render_to_response(self, context):
         for name, suffix, content_type, renderer_class in self.FORMATS:
