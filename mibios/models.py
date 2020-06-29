@@ -626,7 +626,7 @@ class Semester(Model):
 
     @Model.canonical.getter
     def canonical(self):
-        return self.term.capitalize() + str(self.year)
+        return self.get_term_display().capitalize() + str(self.year)
 
     pat = re.compile(r'^(?P<term>[a-zA-Z]+)[^a-zA-Z0-9]*(?P<year>\d+)$')
 
@@ -638,7 +638,12 @@ class Semester(Model):
         else:
             term, year = m.groups()
 
-        term = term.lower()
+        valid_terms = dict([(j, i) for i, j in cls.TERM_CHOICES])
+        try:
+            term = valid_terms[term.casefold()]
+        except KeyError:
+            raise ValueError('Failed parsing as semester: {}'.format(txt[:99]))
+
         year = int(year)
         if year < 100:
             # two-digit year given, assume 21st century
