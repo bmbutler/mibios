@@ -78,19 +78,19 @@ class SCFA_indv(Dataset):
 
 class MMPManifest(Dataset):
     name = 'MMP_manifest'
-    model = 'sequencing'
+    model = 'Sequencing'
     fields = [
-        ('', 'specimen'),
-        ('', 'batch'),
-        ('', 'R1'),
-        ('', 'R2'),
-        ('', 'person'),
-        ('', 'Sample_ID'),
-        ('', 'semester'),
-        ('', 'plate'),
-        ('', 'seqlabel'),
-        ('', 'read__1_fn'),
-        ('', 'read__2_fn'),
+        ('name', 'specimen'),
+        ('batch',),
+        ('r1_file', 'R1'),
+        ('r2_file', 'R2'),
+        ('sample__participant', 'person'),
+        ('sample', 'Sample_ID'),
+        ('sample__participant__semester', 'semester'),
+        ('plate',),
+        ('snumber', 'seqlabel'),
+        ('read__1_fn',),
+        ('read__2_fn',),
     ]
 
 
