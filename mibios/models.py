@@ -135,6 +135,17 @@ Fields = namedtuple('Fields', ['fields', 'names', 'verbose'])
 """ container to hold list of fields for a model """
 
 
+class AutoField(models.AutoField):
+    """
+    An AutoField with a verbose name that includes the model
+    """
+    def contribute_to_class(self, cls, name, **kwargs):
+        # at super() this sets self.model, so we can patch the verbose name
+        # after this
+        super().contribute_to_class(cls, name, **kwargs)
+        self.verbose_name = self.model._meta.model_name + '_' + self.name
+
+
 class Model(models.Model):
     """
     Adds some extras to Django's Model
@@ -145,6 +156,9 @@ class Model(models.Model):
     None or the empty string remains in use for missing data.
     """
     MISSING_DATA = '-'
+
+    # replace the default auto field that Django adds
+    id = AutoField(primary_key=True)
 
     class Meta:
         abstract = True
