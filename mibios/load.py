@@ -488,7 +488,7 @@ class GeneralLoader(AbstractLoader):
     """
     def __init__(self, dataset, colnames, **kwargs):
         if dataset in DATASET:
-            model_name = DATASET[dataset]['model']
+            model_name = DATASET[dataset].model
         else:
             model_name = dataset
 
@@ -499,9 +499,9 @@ class GeneralLoader(AbstractLoader):
             self.COLS = [
                 (col, model_name + '__' + accs)
                 for accs, col
-                in DATASET[dataset]['fields']
+                in DATASET[dataset].fields
             ]
-            self.missing_data += DATASET[dataset].get('missing_data', [])
+            self.missing_data += DATASET[dataset].missing_data
         else:
             # set COLS from model, start with id column
             self.COLS = [(model_name + '_id', model_name + '__id')]
