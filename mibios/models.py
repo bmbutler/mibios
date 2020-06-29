@@ -8,6 +8,11 @@ from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 import pandas
 
+from .utils import getLogger
+
+
+log = getLogger(__name__)
+
 
 class Q(models.Q):
     """
