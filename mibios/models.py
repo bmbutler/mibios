@@ -68,10 +68,18 @@ class QuerySet(models.QuerySet):
 
     def _filter_or_exclude(self, negate, *args, **kwargs):
         """
-        Implement canonical lookups
+        Handle canonical lookups for filtering operations
         """
         kwargs = self.model.handle_canonical_lookups(**kwargs)
         return super()._filter_or_exclude(negate, *args, **kwargs)
+
+    def _values(self, *fields, **expressions):
+        """
+        Handle the 'canonical' fields for value retrievals
+        """
+        if 'canonical' in fields:
+            fields = [i for i in fields if i != 'canonical']
+        return super()._values(*fields, **expressions)
 
     def get_field_stats(self, fieldname, canonical=False):
         """

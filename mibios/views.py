@@ -321,6 +321,9 @@ class TableView(UserRequiredMixin, SingleTableView):
             for i in self.model._meta.related_objects
         ]
 
+        if 'canonical' in fields:
+            table_opts['canonical'] = Column(orderable=False)
+
         meta_opts = dict(
             model=self.model,
             template_name='django_tables2/bootstrap.html',
