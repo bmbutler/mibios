@@ -5,7 +5,7 @@ from django.apps import apps
 from django.db.models import Count
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.http import urlencode
@@ -43,6 +43,13 @@ class TestView(SingleTableView):
 class UserRequiredMixin(LoginRequiredMixin):
     raise_exception = True
     permission_denied_message = 'You don\'t have an active user account here.'
+
+
+class CuratorRequiredMixin(UserRequiredMixin, UserPassesTestMixin):
+    group_name = 'curators'
+    permission_denied_message = 'You are not a curator'
+    def test_func(self):
+        return self.request.user.groups.filter(name=self.group_name).exists()
 
 
 class TableView(UserRequiredMixin, SingleTableView):
@@ -463,7 +470,7 @@ class ExportView(TableView):
         return response
 
 
-class ImportView(UserRequiredMixin, FormView):
+class ImportView(CuratorRequiredMixin, FormView):
     template_name = 'mibios/import.html'
     form_class = UploadFileForm
 
