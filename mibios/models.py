@@ -631,8 +631,7 @@ class Semester(Model):
 
     class Meta:
         unique_together = ('term', 'year')
-        # FIXME: unsure why -term makes winter come before fall as 1<4
-        ordering = ['year', '-term']
+        ordering = ['year', 'term']
 
     @Model.canonical.getter
     def canonical(self):
