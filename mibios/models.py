@@ -93,6 +93,11 @@ class QuerySet(models.QuerySet):
         Returns a dict: stats_type -> obj
         Returning an empty dict indicates some error
         """
+        if fieldname == 'id':
+            # as_dataframe('id') does not return anything meaningful
+            # FIXME?
+            return {}
+
         qs = self
         if canonical and self.model._meta.get_field(fieldname).is_relation:
             # speedup

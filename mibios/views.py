@@ -298,7 +298,16 @@ class TableView(UserRequiredMixin, SingleTableView):
         # make one of id or name columns have an edit link
         # hide id if name is present
         if 'name' in fields:
-            table_opts['name'] = Column(linkify=True)
+            sort_kw = {}
+            if 'name' not in self.model.get_fields().names:
+                # name is actually the canonical property, so have to set some
+                # proxy sorting, else the machinery tries to fetch the 'name'
+                # column (and fails)
+                if self.model._meta.ordering:
+                    sort_kw['order_by'] = self.model._meta.ordering
+                else:
+                    sort_kw['order_by'] = None
+            table_opts['name'] = Column(linkify=True, **sort_kw)
         if 'id' in fields:
             table_opts['id'] = Column(linkify='name' not in fields,
                                       visible='name' not in fields)
