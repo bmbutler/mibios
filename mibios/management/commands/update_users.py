@@ -1,5 +1,5 @@
 from django.db import transaction
-from django.contrib.auth.models import Permission, User
+from django.contrib.auth.models import Group, Permission, User
 from django.core.management.base import BaseCommand
 
 
@@ -57,6 +57,7 @@ class Command(BaseCommand):
                     if SUPERUSER in row:
                         is_superuser = True
 
+                # processing user
                 user, new = User.objects.get_or_create(username=uniquename)
                 if new:
                     self.stdout.write('new user: {}'.format(user))
@@ -69,15 +70,27 @@ class Command(BaseCommand):
                     user.email = email
 
                 user.is_superuser = is_superuser
-                user.is_staff = True  # all can access the admin interface
+                user.is_staff = True  # basic access to admin interface for all
                 user.is_active = True
                 user.save()
 
                 user.user_permissions.clear()
-                user.user_permissions.add(*view_perms)
+                user.groups.clear()
 
+                # processing group membership
                 if is_editor:
-                    user.user_permissions.add(*edit_perms)
+                    group_name = 'curators'
+                    perms = [edit_perms, view_perms]
+                else:
+                    group_name = 'viewers'
+                    perms = [view_perms]
+
+                group, new = Group.objects.get_or_create(name=group_name)
+                if new:
+                    for i in perms:
+                        group.permissions.add(*i)
+                    self.stdout.write('new group: {}'.format(group))
+                user.groups.add(group)
 
             if not options['keep']:
                 qs = User.objects.exclude(username__in=present_users)
