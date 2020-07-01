@@ -1,7 +1,12 @@
 """
 Definitions for special datasets
 """
+from pathlib import Path
 import re
+
+
+class UserDataError(Exception):
+    pass
 
 
 class Dataset():
@@ -91,19 +96,53 @@ class MMPManifest(Dataset):
     name = 'MMP_manifest'
     model = 'Sequencing'
     fields = [
-        ('name', 'specimen'),
-        ('batch',),
+        # ('name', 'specimen'),
+        # ('batch',),
         ('r1_file', 'R1'),
         ('r2_file', 'R2'),
         ('sample__participant', 'person'),
-        ('sample', 'Sample_ID'),
+        ('sample__canonical', 'Sample_ID'),
         ('sample__participant__semester', 'semester'),
-        ('plate',),
+        ('plate', 'plate'),
         ('snumber', 'seqlabel'),
-        ('read__1_fn',),
-        ('read__2_fn',),
+        # ('', read__1_fn'),
+        # ('', read__2_fn'),
     ]
 
+    name_extra_pat = re.compile(r'_L[0-9].*')
+    plate_pat = re.compile(r'^P([0-9])-([A-Z][0-9]+)$')
+    snum_plus_pat = re.compile(r'(_S[0-9]+).*$')
+
+    def parse_plate(self, txt):
+        """
+        Extract plate and position
+        """
+        m = self.plate_pat.match(txt)
+        if m is None:
+            raise UserDataError(
+                'Failed matching patter: {}'.format(self.plate_pat.pattern)
+            )
+        plate, position = m.groups()
+        plate = int(plate)
+        return dict(plate=plate, plate_position=position)
+
+    def parse_r1_file(self, txt):
+        """ extract record name and normalize path """
+        p = Path(txt)
+        name = self.snum_plus_pat.sub(r'\1', p.stem)
+        name = name.replace('-', '_')
+        return {
+            'name': name,
+            'r1_file': str(p),
+        }
+
+    def parse_r2_file(self, txt):
+        """ normalize path """
+        return str(Path(txt))
+
+    def parse_snumber(self, txt):
+        """ extract number as int """
+        return int(txt.lstrip('S'))
 
 
 class ParticipantList(Dataset):

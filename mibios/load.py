@@ -6,16 +6,12 @@ import sys
 from django.apps import apps
 from django.db import transaction, IntegrityError
 
-from .dataset import DATASET
+from .dataset import DATASET, UserDataError
 from .models import (FecalSample, Note, Participant, Semester, Sequencing,
                      SequencingRun, Supplement, Week, Model)
 
 
 class DryRunRollback(Exception):
-    pass
-
-
-class UserDataError(Exception):
     pass
 
 
