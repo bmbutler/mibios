@@ -15,6 +15,7 @@ else
     echo "Creating superuh user:"
      createsuperuser --username admin --email heinro@umich.edu
 fi
+$manage_cmd import_data --data-set-name participants_list participants.master.tsv
 $manage_cmd import_meta --traceback --verbose-changes metadata_new.run.drop.csv
 $manage_cmd import_MMP --traceback --verbose-changes MMP_manifest.20200511.csv
 $manage_cmd import_sample_master --verbose-changes --traceback ugrads19.sample.master.csv

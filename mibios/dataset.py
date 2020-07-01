@@ -94,6 +94,36 @@ class MMPManifest(Dataset):
     ]
 
 
+
+class ParticipantList(Dataset):
+    name = 'participants_list'
+    model = 'Participant'
+    fields = [
+        ('name', 'Participant_ID'),
+        ('semester', 'Semester'),
+        ('has_consented', 'Use_Data'),
+        ('saliva_status', 'Saliva'),
+        ('supplement_status', 'Dietary_Supplement'),
+        ('blood_status', 'Blood'),
+        ('has_consented_future', 'Use Data in Unspecified Future Research'),
+        ('has_consented_contact', 'Contact for Future Study Participation'),
+        ('note', 'Notes'),
+    ]
+
+    @classmethod
+    def parse_has_consented(cls, txt):
+        txt = txt.casefold()
+        if not txt:
+            return None
+        if txt == 'yes':
+            return True
+        return False
+
+    @classmethod
+    def parse_has_consented_future(cls, txt):
+        return cls.parse_has_consented(txt)
+
+
 DATASET = {}
 for i in Dataset.__subclasses__():
     DATASET[i.name] = i
