@@ -130,7 +130,7 @@ class AbstractLoader():
                     self.changed[model_name].append((
                         obj,
                         [
-                            (getattr(obj, i), from_row.get(i))
+                            (i, getattr(obj, i), from_row.get(i))
                             for i in diff
                         ]
                     ))

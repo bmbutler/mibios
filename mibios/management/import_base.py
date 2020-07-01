@@ -95,7 +95,8 @@ class AbstractImportCommand(BaseCommand):
             out += ' (dry run)'
         out += ' {} rows processed\n'.format(count)
         if ignored:
-            out += ' Columns, not processd: ' + ', '.join(ignored) + '\n'
+            out += ' {} column(s) not processd: '.format(len(ignored))
+            out += ', '.join(ignored) + '\n'
         if new:
             out += ' Imported:\n' + '\n'.join([
                 '  {}: {}'.format(k, v)
@@ -127,8 +128,8 @@ class AbstractImportCommand(BaseCommand):
                 for m, i in changed.items():
                     for obj, change_list in i:
                         row = []
-                        for old, new in change_list:
-                            row.append('{} -> {}'.format(old, new))
+                        for field, old, new in change_list:
+                            row.append('{}: {} -> {}'.format(field, old, new))
                         out += '   {} {}: {}\n'.format(m, obj, ' | '.join(row))
 
         else:
