@@ -566,11 +566,76 @@ class GeneralLoader(AbstractLoader):
                 raise LookupError('Invalid key for template: {}'.format(key))
         return cur
 
+    def tdel(self, key):
+        """
+        Del method for dict for dicts / a.k.a. deep model template
+
+        key can be a __-separated string (django lookup style) or a list
+        of dict keys
+        """
+        # FIXME: has currently no users
+        cur = self.template
+        if isinstance(key, str):
+            key = key.split('__')
+
+        prev = cur
+        for i in key:
+            prev = cur
+            try:
+                cur = cur[i]
+            except (KeyError, TypeError):
+                raise LookupError('Invalid key for template: {}'.format(key))
+
+        if prev[i] == {}:
+            del prev[i]
+        else:
+            raise ValueError('Leaf is not None: {} = {}'.format(key, prev[i]))
+
+    def tadd(self, key, value={}):
+        """
+        Add method for dict for dicts / a.k.a. deep model template
+
+        Adds a new key with optional value. Key can be a __-separated string
+        (django lookup style) or a list of dict keys
+        """
+        cur = self.template
+        if isinstance(key, str):
+            key = key.split('__')
+
+        for i in key:
+            try:
+                cur = cur[i]
+            except (KeyError, TypeError):
+                cur[i] = {}
+
+        cur[i] = value
+
+    def tcontains(self, key):
+        """
+        Contains method for dict for dicts / a.k.a. deep model template
+
+        Key can be a __-separated string (django lookup
+        style) or a list
+        of dict keys
+        """
+        # FIXME: at this point dicts of dict should really get their own class
+        cur = self.template
+        if isinstance(key, str):
+            key = key.split('__')
+
+        for i in key:
+            try:
+                cur = cur[i]
+            except (KeyError, TypeError):
+                return False
+        return True
+
     def tset(self, key, value):
         """
         Set method for dict for dicts / a.k.a. deep model template
 
-        key can be a __-separated string (django lookup style) or a list
+        The key must exist.  Key can be a __-separated string (django lookup
+        style) or a list
         of dict keys
         """
         cur = self.template
@@ -593,12 +658,28 @@ class GeneralLoader(AbstractLoader):
         prev[i] = value
 
     def parse_value(self, accessor, value):
-        # rm model prefix from accr
-        _, _, accessor = accessor.partition('__')
-        try:
-            return getattr(self.dataset, 'parse_' + accessor)(value)
-        except (AttributeError, TypeError):
-            return value
+        # rm model prefix from accsr to form method name
+        _, _, a = accessor.partition('__')
+        parse_fun = getattr(self.dataset, 'parse_' + a, None)
+        if parse_fun is None:
+            ret = value
+        else:
+            try:
+                ret = parse_fun(value)
+            except Exception as e:
+                # assume parse_fun is error-free and blame user
+                for i, j in self.COLS:
+                    print(i, j, accessor)
+                    if j == accessor:
+                        cols = i
+                        break
+                else:
+                    col = '??'
+                raise UserDataError(
+                    'Failed parsing value "{}" in column {}: {}:{}'
+                    ''.format(value, col, type(e).__name__, e)
+                )
+        return ret
 
     def process_row(self):
         self.template = self.compile_template()
@@ -623,7 +704,18 @@ class GeneralLoader(AbstractLoader):
                     v = self.model.decode_blank(v)
                     # FIXME: are blanks not filtered out in process_line()?
                     if v:
-                        self.tset(k, self.parse_value(k, v))
+                        v = self.parse_value(k, v)
+                        if isinstance(v, dict):
+                            # add mappings
+                            pref, _, _ = k.rpartition('__')
+                            for subk, subv in v.items():
+                                subk = pref + '__' + subk
+                                if not self.tcontains(subk):
+                                    self.tadd(subk)
+                                self.tset(subk, subv)
+                            del subk, subv
+                        else:
+                            self.tset(k, v)
                     continue
 
                 # remove nodes not in row/data
@@ -651,7 +743,10 @@ class GeneralLoader(AbstractLoader):
                     # FIXME: should raise UserDataError if id or name
                     # column in empty, but have to find the right place
                     # where to make that determination
-                    raise RuntimeError('oops here: data: ' + str(data))
+                    raise RuntimeError(
+                        'oops here: data: {}\nk:{}\nv:{}\nstate:{}'
+                        ''.format(data, k, v, self.template)
+                    )
                 else:
                     # got nothing to id an object / remain a dict
                     continue
