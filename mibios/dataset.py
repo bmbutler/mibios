@@ -12,6 +12,17 @@ class Dataset():
     excludes = []
     missing_data = []
 
+    # instance container for subclass singletons
+    __instance = {}
+
+    def __new__(cls):
+        """
+        Create per-subclass singleton instance
+        """
+        if cls.__name__ not in cls.__instance:
+            cls.__instance[cls.__name__] = super().__new__(cls)
+        return cls.__instance[cls.__name__]
+
 
 class Metadata(Dataset):
     name = 'metadata'
@@ -110,8 +121,10 @@ class ParticipantList(Dataset):
         ('note', 'Notes'),
     ]
 
-    @classmethod
-    def parse_has_consented(cls, txt):
+    def parse_has_consented(self, txt):
+        """
+        Turn mostly yes/no column into bool
+        """
         txt = txt.casefold()
         if not txt:
             return None
@@ -119,11 +132,10 @@ class ParticipantList(Dataset):
             return True
         return False
 
-    @classmethod
-    def parse_has_consented_future(cls, txt):
-        return cls.parse_has_consented(txt)
+    def parse_has_consented_future(self, txt):
+        return self.parse_has_consented(txt)
 
 
 DATASET = {}
 for i in Dataset.__subclasses__():
-    DATASET[i.name] = i
+    DATASET[i.name] = i()
