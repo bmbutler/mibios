@@ -486,22 +486,25 @@ class GeneralLoader(AbstractLoader):
     """
     Import data-set/model-specific file
     """
+    dataset = None
+
     def __init__(self, dataset, colnames, **kwargs):
         if dataset in DATASET:
-            model_name = DATASET[dataset].model
+            self.dataset = DATASET[dataset]
+            model_name = self.dataset.model
         else:
             model_name = dataset
 
         self.conf = apps.get_app_config('mibios')
         self.model = self.conf.get_model(model_name)
 
-        if dataset in DATASET:
+        if self.dataset:
             self.COLS = [
                 (col, model_name + '__' + accs)
                 for accs, col
-                in DATASET[dataset].fields
+                in self.dataset.fields
             ]
-            self.missing_data += DATASET[dataset].missing_data
+            self.missing_data += self.dataset.missing_data
         else:
             # set COLS from model, start with id column
             fields = self.model.get_fields()
@@ -589,6 +592,14 @@ class GeneralLoader(AbstractLoader):
                              ''.format(cur, key))
         prev[i] = value
 
+    def parse_value(self, accessor, value):
+        # rm model prefix from accr
+        _, _, accessor = accessor.partition('__')
+        try:
+            return getattr(self.dataset, 'parse_' + accessor)(value)
+        except (AttributeError, TypeError):
+            return value
+
     def process_row(self):
         self.template = self.compile_template()
         # Processing row column by column, i.e. iterating over accessors to the
@@ -612,7 +623,7 @@ class GeneralLoader(AbstractLoader):
                     v = self.model.decode_blank(v)
                     # FIXME: are blanks not filtered out in process_line()?
                     if v:
-                        self.tset(k, v)
+                        self.tset(k, self.parse_value(k, v))
                     continue
 
                 # remove nodes not in row/data
