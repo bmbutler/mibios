@@ -82,9 +82,9 @@ class AbstractImportCommand(BaseCommand):
         except Exception as e:
             raise CommandError('Failed importing data') from e
 
-        self.stdout.write(
-            self.format_import_stats(**stats, **options)
-        )
+        kwargs = dict(**options)
+        kwargs.update(**stats)
+        self.stdout.write(self.format_import_stats(**kwargs))
         self.stdout.write(' All done.')
 
     @classmethod
