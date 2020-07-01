@@ -607,6 +607,27 @@ class Participant(Model):
                   'they were prescribed?'
     )
     note = models.ManyToManyField('Note')
+    has_consented = models.BooleanField(
+        null=True, help_text='Corresponds to the Use_Data field in several '
+        'original tables',
+    )
+    has_consented_future = models.BooleanField(null=True,
+        help_text='Use Data in Unspecified Future Research')
+    has_consented_contact = models.CharField(max_length=20, blank=True,
+        help_text='Contact for Future Study Participation')
+    saliva_status = models.CharField(
+        max_length=20, blank=True,
+        help_text='the "Saliva" field from the participant list',
+    )
+    supplement_status = models.CharField(
+        max_length=20, blank=True,
+        help_text='the "Supplement" field from the participant list',
+    )
+    blood_status = models.CharField(
+        max_length=20, blank=True,
+        help_text='the "Blood" field from the participant list',
+    )
+
 
     class Meta:
         ordering = ['semester', 'name']
