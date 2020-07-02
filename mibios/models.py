@@ -193,6 +193,8 @@ class Model(models.Model):
             dtype = str
         elif isinstance(field, int_fields):
             dtype = pandas.Int64Dtype()
+        elif isinstance(field, models.BooleanField):
+            dtype = bool
         else:
             raise ValueError('Field type not supported: {}: {}'
                              ''.format(field, field.get_internal_type()))
