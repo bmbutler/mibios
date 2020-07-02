@@ -1,5 +1,8 @@
 #!/bin/bash
 set -euo pipefail
+
+IMPORT_DIR=initial_import
+
 if [[ -e ./manage.py ]];then dev=true; else dev=false; fi
 
 if $dev; then
@@ -12,11 +15,10 @@ if [[ -e ./db.sqlite3 ]]; then
     $manage_cmd shell -c "from mibios import models; models.erase_all_data(verbose=True)"
 else
     $manage_cmd migrate
-    echo "Creating superuh user:"
-     createsuperuser --username admin --email heinro@umich.edu
 fi
-$manage_cmd import_data --data-set-name participants_list participants.master.tsv
-$manage_cmd import_meta --traceback --verbose-changes metadata_new.run.drop.csv
-$manage_cmd import_MMP --traceback --verbose-changes MMP_manifest.20200511.csv
-$manage_cmd import_sample_master --verbose-changes --traceback ugrads19.sample.master.csv
-$manage_cmd import_data --data-set-name SCFA_indv SCFA_indv.txt 
+$manage_cmd update_users userlist
+$manage_cmd import_data --data-set-name participants_list $IMPORT_DIR/participants.master.tsv
+$manage_cmd import_meta --traceback --verbose-changes $IMPORT_DIR/metadata_new.run.drop.csv
+$manage_cmd import_MMP --traceback --verbose-changes $IMPORT_DIR/MMP_manifest.20200511.csv
+$manage_cmd import_sample_master --verbose-changes --traceback $IMPORT_DIR/ugrads19.sample.master.csv
+$manage_cmd import_data --data-set-name SCFA_indv $IMPORT_DIR/SCFA_indv.txt 
