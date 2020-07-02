@@ -1,0 +1,7 @@
+db.sqlite3
+initial_import
+secret.key
+userlist
+build/
+debug.log
+static/
