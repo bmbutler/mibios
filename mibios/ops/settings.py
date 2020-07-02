@@ -25,15 +25,12 @@ BASE_DIR = Path(__file__).absolute().parent.parent.parent
 SECRET_KEY = get_secret_key(Path('./secret.key'))
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = ['localhost']
 
 
 # Application definition
-DEV_ONLY_APPS = [
-    'django_extensions',
-]
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -43,7 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'mibios.apps.MibiosConfig',
     'django_tables2',
-] + DEV_ONLY_APPS
+]
 
 
 MIDDLEWARE = [
@@ -56,6 +53,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+AUTHENTICATION_BACKENDS = ['mibios.ops.utils.RemoteUserBackend']
 
 ROOT_URLCONF = 'mibios.ops.urls'
 
