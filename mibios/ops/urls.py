@@ -15,9 +15,11 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import include, path
+from django.conf.urls import handler404
 
 
 urlpatterns = [
+    path('favicon.ico', handler404),  # reduce log spam
     path('users/', admin.site.urls),
     path('', include('mibios.urls')),  # catch all, go last
 ]
