@@ -266,11 +266,11 @@ class TableView(UserRequiredMixin, SingleTableView):
         return query
 
     def get_queryset(self):
+        if hasattr(self, 'object_list'):
+            return self.object_list
+
         if self.model is None:
             return []
-
-        if self.queryset is not None:
-            return self.queryset
 
         # add reverse relation count annotations
         cts = [Count(i.name) for i in self.model._meta.related_objects]
@@ -286,8 +286,7 @@ class TableView(UserRequiredMixin, SingleTableView):
             q = ~q
 
         log.debug('QUERYSET FILTER:', q, 'ANNOTATION:', cts)
-        self.queryset = super().get_queryset().filter(q).annotate(*cts)
-        return self.queryset
+        return super().get_queryset().filter(q).annotate(*cts)
 
     def get_table_class(self):
         """
