@@ -54,7 +54,5 @@ class RemoteUserInjection:
         else:
             log.debug('Setting REMOTE_USER to {}'.format(assumed))
             request.META['REMOTE_USER'] = assumed
-            print('MIDDLEWARE BORK:', type(request.META))
-            print('MIDDLEWARE BORK:', request.META['REMOTE_USER'])
 
         return self.get_response(request)
