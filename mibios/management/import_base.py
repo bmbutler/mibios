@@ -67,6 +67,13 @@ class AbstractImportCommand(BaseCommand):
                  'give a summary',
         )
         parser.add_argument(
+            '--warn-on-error',
+            action='store_true',
+            help='Skip a row and receive a warning if processing it results '
+                 'in an error.  By default the import is aborted on any such '
+                 'error.',
+        )
+        parser.add_argument(
             '--debug',
             action='store_true',
             help='Turn on debugging output'
@@ -87,6 +94,7 @@ class AbstractImportCommand(BaseCommand):
                 sep=options['sep'],
                 can_overwrite=options['overwrite'],
                 dry_run=options['dry_run'],
+                warn_on_error=options['warn_on_error'],
                 **self.load_file_kwargs(**options),
             )
         except UserDataError as e:
@@ -101,7 +109,7 @@ class AbstractImportCommand(BaseCommand):
 
     @classmethod
     def format_import_stats(cls, count=0, new={}, added={}, changed={},
-                            ignored=[], **options):
+                            ignored=[], warnings=[], **options):
         out = ''
         if options.get('dry_run', False):
             out += ' (dry run)'
@@ -145,5 +153,11 @@ class AbstractImportCommand(BaseCommand):
                         out += '   {} {}: {}\n'.format(m, obj, ' | '.join(row))
 
         else:
-            out += ' No records changed\n'
+            out += ' No existing records modified\n'
+
+        if warnings:
+            out += '{} warnings:\n'.format(len(warnings))
+            for i in warnings:
+                out += '  {}\n'.format(i)
+
         return out
