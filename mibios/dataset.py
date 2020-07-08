@@ -190,6 +190,26 @@ class ParticipantList(Dataset):
         return self.parse_has_consented(txt)
 
 
+class RobertsSampleList(Dataset):
+    name = 'roberts_sample_list'
+    model = 'Sequencing'
+    fields = [
+        ('canonical', 'sample'),
+        # ('sample__participant__name', 'participant'),
+        ('control', 'control'),
+        # ('control group', 'control_group'),
+        ('note', 'do not use'),
+        ('r1_file', 'R1fastq'),
+        ('r2_file', 'R2fastq'),
+    ]
+
+    def parse_canonical(self, txt):
+        return txt.replace('-', '_')
+
+    def parse_control(self, txt):
+        return Sequencing.parse_control(txt)
+
+
 DATASET = {}
 for i in Dataset.__subclasses__():
     DATASET[i.name] = i()
