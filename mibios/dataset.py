@@ -4,6 +4,8 @@ Definitions for special datasets
 from pathlib import Path
 import re
 
+from .models import FecalSample, Sequencing
+
 
 class UserDataError(Exception):
     pass
@@ -31,7 +33,7 @@ class Dataset():
 
 class Metadata(Dataset):
     name = 'metadata'
-    model = 'Sequencing'
+    model = 'sequencing'
     fields = [
         ('name', 'FASTQ_ID'),
         ('sample__participant__name', 'Participant_ID'),
@@ -55,6 +57,7 @@ class Metadata(Dataset):
     excludes = [
         {'note__name__contains': 'drop'},
     ]
+    missing_data = ['NA']
 
 
 class MetadataThru2019(Metadata):
@@ -69,7 +72,7 @@ class SCFA_indv(Dataset):
     name = 'SCFA_indv'
     model = 'fecalsample'
     fields = [
-        ('participant', 'Participant_ID'),
+        ('participant__name', 'Participant_ID'),
         ('number', 'Sample_number'),
         ('canonical', 'Sample_ID'),
         ('week', 'Study_week'),
@@ -100,7 +103,7 @@ class MMPManifest(Dataset):
         # ('batch',),
         ('r1_file', 'R1'),
         ('r2_file', 'R2'),
-        ('sample__participant', 'person'),
+        ('sample__participant__name', 'person'),
         ('sample__canonical', 'Sample_ID'),
         ('sample__participant__semester', 'semester'),
         ('plate', 'plate'),
@@ -112,6 +115,18 @@ class MMPManifest(Dataset):
     name_extra_pat = re.compile(r'_L[0-9].*')
     plate_pat = re.compile(r'^P([0-9])-([A-Z][0-9]+)$')
     snum_plus_pat = re.compile(r'(_S[0-9]+).*$')
+
+    def parse_sample__canonical(self, txt):
+        """
+        s/-/_/g
+        """
+        txt = txt.replace('-', '_')
+        try:
+            FecalSample.canonical_lookup(txt)
+        except:
+            # ignore samples with bad name
+            return None
+        return txt
 
     def parse_plate(self, txt):
         """
