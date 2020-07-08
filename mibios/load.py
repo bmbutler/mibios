@@ -79,6 +79,7 @@ class AbstractLoader():
         """
         self.file = file
         self.linenum = 1
+        self.last_warning = None
         try:
             with transaction.atomic():
                 for i in file:
@@ -203,18 +204,35 @@ class AbstractLoader():
             # some user errors in the data come up as IntegrityErrors, e.g.
             # violations of UNIQUE, IntegrityError should not be caught insie
             # an atomic() (cf. Django docs)
-            msg1 = '{} at line {}'.format(e, self.count + 2)
+            msg1 = 'at line {}: {}'.format(self.linenum, e)
             msg2 = ', current row:\n{}'.format(self.row)
             if self.warn_on_error \
                     and isinstance(e, (IntegrityError, UserDataError)):
-                msg1 = '[SKIPPING]' + msg1
-                self.warnings.append(msg1)
-                print(msg1, file=sys.stderr)
+                if self.last_warning is None:
+                    self.last_warning = (e, self.linenum, self.linenum)
+                else:
+                    last_e, first_line, last_line = self.last_warning
+                    if str(e) == str(last_e) and last_line + 1 == self.linenum:
+                        self.last_warning = (e, first_line, self.linenum)
+                    else:
+                        self.warnings.append(
+                            'skipping row: at line {}: {}'
+                            ''.format(first_line, last_e)
+                        )
+                        if last_line != first_line:
+                            self.warnings.append(
+                                '    (and for next {} lines)'
+                                ''.format(last_line - first_line)
+                            )
+                        self.last_warning = (e, self.linenum, self.linenum)
+                # reset stats:
                 self.new = new_
                 self.added = added_
                 self.changed = changed_
             else:
-                # re-raise with row into added
+                # re-raise with row info added
+                msg1 = 'at line {}: {}'.format(self.linenum, e)
+                msg2 = ', current row:\n{}'.format(self.row)
                 raise type(e)(msg1 + msg2) from e
 
         self.count += 1
