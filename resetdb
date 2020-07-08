@@ -17,8 +17,8 @@ else
     $manage_cmd migrate
 fi
 $manage_cmd update_users userlist
-$manage_cmd import_data --data-set-name participants_list $IMPORT_DIR/participants.master.tsv
-$manage_cmd import_meta --traceback --verbose-changes $IMPORT_DIR/metadata_new.run.drop.csv
-$manage_cmd import_MMP --traceback --verbose-changes $IMPORT_DIR/MMP_manifest.20200511.csv
-$manage_cmd import_sample_master --verbose-changes --traceback $IMPORT_DIR/ugrads19.sample.master.csv
-$manage_cmd import_data --data-set-name SCFA_indv $IMPORT_DIR/SCFA_indv.txt 
+$manage_cmd import_data --data-set-name participants_list $IMPORT_DIR/participants.master.tsv --traceback
+$manage_cmd import_data --data-set-name metadata --traceback --verbose-changes $IMPORT_DIR/metadata_new.run.drop.csv
+$manage_cmd import_data --data-set-name MMP_manifest --sep , --traceback --verbose-changes --warn-on-error $IMPORT_DIR/MMP_manifest.20200511.csv
+$manage_cmd import_data --data-set-name roberts_sample_list --verbose-changes --traceback $IMPORT_DIR/ugrads19.sample.master.csv
+$manage_cmd import_data --data-set-name SCFA_indv $IMPORT_DIR/SCFA_indv.txt --traceback --verbose-changes
