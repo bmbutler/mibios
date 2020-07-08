@@ -14,6 +14,16 @@ from .utils import getLogger
 log = getLogger(__name__)
 
 
+class CanonicalLookupError(Exception):
+    """
+    Raised when a canonical lookup fails to resolve
+
+    Handle like a user input error, but beware they might be bugs in the
+    canonical lookup handling code
+    """
+    pass
+
+
 class Q(models.Q):
     """
     A thin wrapper around Q to handle canonical lookups
@@ -434,11 +444,17 @@ class Model(models.Model):
                 if isinstance(rhs, int):
                     ret.update({lhs + 'pk': rhs})
                 else:
-                    ret.update({
-                        lhs + k: v
-                        for k, v
-                        in cur_model.canonical_lookup(rhs).items()
-                    })
+                    try:
+                        real_lookups = cur_model.canonical_lookup(rhs)
+                    except Exception as e:
+                        # Assume code in canonical_lookup() is correct and
+                        # treat this a user error, i.e. the canonical rhs is
+                        # bad
+                        msg = 'Failed to resolve: [{}]{}={}' \
+                              ''.format(cur_model._meta.model_name, parts, rhs)
+                        raise CanonicalLookupError(msg) from e
+
+                    ret.update({lhs + k: v for k, v in real_lookups.items()})
         return ret
 
     @classmethod
