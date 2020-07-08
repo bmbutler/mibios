@@ -4,11 +4,17 @@ import re
 import sys
 
 from django.apps import apps
+from django.core.exceptions import FieldDoesNotExist
 from django.db import transaction, IntegrityError
 
 from .dataset import DATASET, UserDataError
 from .models import (FecalSample, Note, Participant, Semester, Sequencing,
-                     SequencingRun, Supplement, Week, Model)
+                     SequencingRun, Supplement, Week, Model,
+                     CanonicalLookupError)
+from .utils import DeepRecord, getLogger
+
+
+log = getLogger(__name__)
 
 
 class DryRunRollback(Exception):
@@ -541,134 +547,15 @@ class GeneralLoader(AbstractLoader):
                 row[accr] = ''
         return row
 
-    def compile_template(self):
-        """
-        Make a deep template dict for the model(s)
-
-        This replaces self.rec from super()
-        """
-        t = {}
-        for i in self.row.keys():
-            cur = t
-            for j in i.split('__'):
-                if j not in cur:
-                    cur[j] = {}
-                cur = cur[j]
-        return t
-
-    def tget(self, key):
-        """
-        Get method for dict for dicts / a.k.a. deep model template
-
-        key can be a __-separated string (django lookup style) or a list
-        of dict keys
-        """
-        cur = self.template
-        if isinstance(key, str):
-            key = key.split('__')
-
-        for i in key:
-            try:
-                cur = cur[i]
-            except (KeyError, TypeError):
-                raise LookupError('Invalid key for template: {}'.format(key))
-        return cur
-
-    def tdel(self, key):
-        """
-        Del method for dict for dicts / a.k.a. deep model template
-
-        key can be a __-separated string (django lookup style) or a list
-        of dict keys
-        """
-        # FIXME: has currently no users
-        cur = self.template
-        if isinstance(key, str):
-            key = key.split('__')
-
-        prev = cur
-        for i in key:
-            prev = cur
-            try:
-                cur = cur[i]
-            except (KeyError, TypeError):
-                raise LookupError('Invalid key for template: {}'.format(key))
-
-        if prev[i] == {}:
-            del prev[i]
-        else:
-            raise ValueError('Leaf is not None: {} = {}'.format(key, prev[i]))
-
-    def tadd(self, key, value={}):
-        """
-        Add method for dict for dicts / a.k.a. deep model template
-
-        Adds a new key with optional value. Key can be a __-separated string
-        (django lookup style) or a list of dict keys
-        """
-        cur = self.template
-        if isinstance(key, str):
-            key = key.split('__')
-
-        for i in key:
-            try:
-                cur = cur[i]
-            except (KeyError, TypeError):
-                cur[i] = {}
-
-        cur[i] = value
-
-    def tcontains(self, key):
-        """
-        Contains method for dict for dicts / a.k.a. deep model template
-
-        Key can be a __-separated string (django lookup
-        style) or a list
-        of dict keys
-        """
-        # FIXME: at this point dicts of dict should really get their own class
-        cur = self.template
-        if isinstance(key, str):
-            key = key.split('__')
-
-        for i in key:
-            try:
-                cur = cur[i]
-            except (KeyError, TypeError):
-                return False
-        return True
-
-    def tset(self, key, value):
-        """
-        Set method for dict for dicts / a.k.a. deep model template
-
-        The key must exist.  Key can be a __-separated string (django lookup
-        style) or a list
-        of dict keys
-        """
-        cur = self.template
-        prev = None
-        if isinstance(key, str):
-            key = key.split('__')
-
-        for i in key:
-            prev = cur
-            try:
-                cur = cur[i]
-            except (KeyError, TypeError):
-                raise LookupError('Invalid key for template: {}, current:'
-                                  ''.format(key, cur))
-
-        if not isinstance(cur, dict):
-            # was assigned an object
-            raise ValueError('Template already has a value:{} at key:{}'
-                             ''.format(cur, key))
-        prev[i] = value
 
     def parse_value(self, accessor, value):
+        """
+        Delegate to specified parsing method
+        """
         # rm model prefix from accsr to form method name
-        _, _, a = accessor.partition('__')
+        pref, _, a = accessor.partition('__')
         parse_fun = getattr(self.dataset, 'parse_' + a, None)
+
         if parse_fun is None:
             ret = value
         else:
@@ -687,65 +574,74 @@ class GeneralLoader(AbstractLoader):
                     'Failed parsing value "{}" in column {}: {}:{}'
                     ''.format(value, col, type(e).__name__, e)
                 )
+
+        if isinstance(ret, dict):
+            # put prefix back
+            ret = {pref + '__' + k: v for k, v in ret.items()}
+
         return ret
 
+    def get_model(self, accessor):
+        """
+        helper to get model class from accessor
+        """
+        m = self.conf.get_model(accessor[0])
+        for i in accessor[1:]:
+            try:
+                m = m._meta.get_field(i).related_model
+            except (FieldDoesNotExist, AttributeError) as e:
+                raise LookupError from e
+            if m is None:
+                raise LookupError
+        return m
+
     def process_row(self):
-        self.template = self.compile_template()
-        # Processing row column by column, i.e. iterating over accessors to the
-        # template.  processing order: leafs go first, template roots (which
-        # are not columns themselves) get added last
-        a = sorted(
-            self.row.items(),
-            key=lambda x: x[0].split('__'),
-            reverse=True
-        ) + [(i, None) for i in self.template.keys()]
-        for k, v in a:
+        """
+        Process a row column by column
+
+        Column representing non-foreign key fields are processed first and used
+        to get/create their objects, root objects are created last
+        """
+        self.rec = DeepRecord()
+        for k, v in self.row.items():
+            v = self.parse_value(k, v)
+            if v is None:
+                # parse_value said to ignore just this field
+                continue
+
+            if isinstance(v, dict):
+                self.rec.update(**v)
+            else:
+                self.rec[k] = v
+
+        log.debug('line {}: record: {}'.format(self.linenum, self.rec))
+
+        for k, v in self.rec.items(leaves_first=True):
             model, id_arg, obj, new = [None] * 4
             _k, _v, data = [None] *3
             try:
-                parts = k.split('__')
                 try:
                     # try as model
-                    model = self.conf.get_model(parts[-1])
+                    model = self.get_model(k)
                 except LookupError:
                     # assume a field
-                    v = self.model.decode_blank(v)
-                    # FIXME: are blanks not filtered out in process_line()?
-                    if v:
-                        v = self.parse_value(k, v)
-                        if isinstance(v, dict):
-                            # add mappings
-                            pref, _, _ = k.rpartition('__')
-                            for subk, subv in v.items():
-                                subk = pref + '__' + subk
-                                if not self.tcontains(subk):
-                                    self.tadd(subk)
-                                self.tset(subk, subv)
-                            del subk, subv
-                        else:
-                            self.tset(k, v)
                     continue
 
                 # remove nodes not in row/data
-                # TODO: if these are not leafs but "stand-ins" with some
-                # fields filled in they get ignored currently
-                data = self.tget(k).copy()
-                for _k, _v in self.tget(k).items():
-                    if isinstance(_v, dict):
-                        del data[_k]
+                # FIXME: commented out / still needed?
+                #for _k, _v in self.tget(k).items():
+                #    if isinstance(_v, dict):
+                #        print('BORK DEL', _k, _v)
+                #        del data[_k]
 
-                if v:
+                if isinstance(v, dict):
+                    data = v.copy()
+                    id_arg = {}
+                elif v:
                     id_arg = dict(canonical=v)
-                    # add v as lookup to data so get_or_create() can create
-                    # a new object if one does not yet exist
-                    data.update(model.canonical_lookup(v))
-                elif 'canonical' in data:
-                    id_arg = dict(canonical=data.pop('canonical'))
-                elif 'id' in data:
-                    id_arg = dict(id=data.pop('id'))
-                elif 'name' in data:
-                    id_arg = dict(name=data.pop('name'))
-                elif v is None:
+                    data = {}
+                else:
+                    # SUPER FIXME:when does this happen now?
                     # finally the primary row object but can't do
                     # anything with it?
                     # FIXME: should raise UserDataError if id or name
@@ -755,9 +651,11 @@ class GeneralLoader(AbstractLoader):
                         'oops here: data: {}\nk:{}\nv:{}\nstate:{}'
                         ''.format(data, k, v, self.template)
                     )
-                else:
-                    # got nothing to id an object / remain a dict
-                    continue
+
+                # separate identifiers from other fields
+                for i in ['canonical', 'id', 'name']:
+                    if i in data:
+                        id_arg.update(canonical=data.pop(i))
 
                 # separate many_to_many fields from data
                 m2ms = {
@@ -768,22 +666,40 @@ class GeneralLoader(AbstractLoader):
                 for i in m2ms:
                     del data[i]
 
-                obj, new = model.objects.get_or_create(
-                    defaults=data,
-                    **id_arg,
-                )
+                # if we don't have unique ids, use the "data" instead
+                if not id_arg:
+                    id_arg = data
+                    data = {}
+
+                try:
+                    obj = model.objects.get(**id_arg)
+                except model.DoesNotExist:
+                    obj = model(**id_arg, **data)
+                    new = True
+                except model.MultipleObjectsReturned as e:
+                    # id_arg under-specifies
+                    msg = '{} is not specific enough for {}' \
+                          ''.format(id_arg, model._meta.model_name)
+                    raise UserDataError(msg) from e
+                except CanonicalLookupError as e:
+                    raise UserDataError(e) from e
+                else:
+                    new = False
+
+                self.account(obj, new, data)
 
                 for _k, _v in m2ms.items():
                     getattr(obj, _k).add(_v)
 
-                self.account(obj, new, data)
-                self.tset(k, obj)
-            except IntegrityError:
+                # replace with real object
+                self.rec[k] = obj
+            except (IntegrityError, UserDataError):
                 raise
             except Exception as e:
                 raise RuntimeError(
-                    'k={} v={} model={} id_arg={}\ndata={}\ntemplate={}'
-                    ''.format(k, v, model, id_arg, data, self.template)
+                    'k={} v={} model={} id_arg={}\ndata={}\nrow record=\n{}'
+                    ''.format(k, v, model, id_arg, data,
+                              self.rec.pretty(indent=(3, 2)))
                 ) from e
             # if k == parts:
             #   print(f'X {k=} {v=} {model=} {id_arg=} {data=}' + 'template={}'
