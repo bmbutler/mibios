@@ -33,7 +33,8 @@ class AbstractLoader():
     missing_data = ['']
 
     def __init__(self, colnames, sep='\t', can_overwrite=True,
-                 warn_on_error=False, strict_sample_id=False, dry_run=False):
+                 warn_on_error=False, strict_sample_id=False, dry_run=False,
+                 user=None):
         # use internal names for columns:
         _cols = {i.casefold(): j for i, j in self.COLS}
         self.cols = []  # internal names for columns in file
@@ -56,6 +57,7 @@ class AbstractLoader():
         self.warn_on_error = warn_on_error
         self.strict_sample_id = strict_sample_id
         self.dry_run = dry_run
+        self.user=user
         for col, name in self.COLS:
             setattr(self, 'name', None)
 
@@ -69,6 +71,8 @@ class AbstractLoader():
         """
         Load data from given file
         """
+        self.file = file
+        self.linenum = 1
         try:
             with transaction.atomic():
                 for i in file:
@@ -115,8 +119,15 @@ class AbstractLoader():
         Update state with object
         """
         model_name = obj._meta.model_name
+        obj.add_change_record(
+            file=self.file.name,
+            line=self.linenum,
+            user=self.user,
+            cmdline=' '.join(sys.argv) if self.user is None else '',
+        )
         if is_new:
             self.new[model_name] += 1
+            obj.save()
         elif from_row is not None:
             consistent, diff = obj.compare(from_row)
             if diff:
@@ -161,6 +172,7 @@ class AbstractLoader():
 
         Calls process_row() which must be provided by implementors
         """
+        self.linenum += 1
         if isinstance(line, str):
             row = [i.strip() for i in line.strip().split(self.sep)]
 

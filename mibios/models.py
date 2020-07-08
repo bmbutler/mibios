@@ -3,6 +3,8 @@ import re
 import sys
 
 from django.apps import apps
+from django.contrib.auth.models import User
+from django.core import serializers
 from django.urls import reverse
 from django.core.exceptions import FieldDoesNotExist
 from django.db import models
@@ -491,6 +493,79 @@ class Model(models.Model):
         name = '{app}:{app}_{model}_change' \
                ''.format(app='mibios', model=self._meta.model_name)
         return reverse(name, kwargs=dict(object_id=self.pk))
+
+    def add_change_record(self, is_deleted=False, file=None, line=None,
+                          user=None, cmdline=''):
+        """
+        Create a change record attribute for this object
+
+        If the object has no id/pk yet the change will be "is_created".  The
+        serialized fields will contain a pk of null, but we can set record_pk
+        to the real pk once it is known.
+        """
+        self.change = ChangeRecord(
+            user=user,
+            file=file,
+            line=line,
+            command_line=cmdline,
+            record_model_name=self._meta.model_name,
+            record_pk=self.id,
+            record_natural=self.natural,
+            fields=serializers.serialize(
+                'json',
+                [self],
+                fields=self.get_fields(skip_auto=True, with_m2m=False).names,
+                use_natural_foreign_keys=True
+            ),
+            is_created=self.id is None,
+            is_deleted=is_deleted,
+        )
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if not hasattr(self, 'change'):
+            self.add_change_record()
+        self.change.record_pk = self.id
+        self.change.save()
+        self.history.add(self.change)
+        del self.change
+
+    def delete(self, *args, **kwargs):
+        super().delete(*args, **kwargs)
+
+
+class ChangeRecord(models.Model):
+    """
+    Model representing a changelog entry
+    """
+    timestamp = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    file = models.FileField(upload_to='import/%Y/', null=True,
+                            verbose_name='data source file')
+    line = models.IntegerField(
+        null=True, help_text='The corresponding line in the input file',
+    )
+    command_line = models.CharField(
+        max_length=200, blank=True, help_text='management command for import')
+    record_model_name = models.CharField(max_length=100)
+    record_pk = models.IntegerField()
+    record_natural = models.CharField(max_length=300, blank=True)
+    fields = models.TextField()
+    is_created = models.BooleanField(verbose_name='new record')
+    is_deleted = models.BooleanField(verbose_name='deleted')
+
+    def __str__(self):
+        user = ' ' + self.user.username if self.user else ''
+
+        if self.is_deleted:
+            return '{}{} (deleted) - {} (pk:{})'.format(
+                self.timestamp, user, self.record_natural, self.record_pk
+            )
+
+        new = ' (new)' if self.is_created else ''
+        dots = '...' if len(self.fields) > 80 else ''
+        return '{}{}{} - {}{}'.format(self.timestamp, user, new,
+                                      self.fields[:80], dots)
 
 
 class Supplement(Model):

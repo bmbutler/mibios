@@ -488,6 +488,7 @@ class ImportView(CuratorRequiredMixin, FormView):
                 dry_run=form.cleaned_data['dry_run'],
                 can_overwrite=form.cleaned_data['overwrite'],
                 warn_on_error=True,
+                user=self.request.user,
             )
 
         except Exception as e:
