@@ -3,6 +3,7 @@ import argparse
 from django.core.management.base import BaseCommand, CommandError
 
 from mibios.load import UserDataError
+from mibios.utils import getLogger
 
 
 class AbstractImportCommand(BaseCommand):
@@ -65,9 +66,20 @@ class AbstractImportCommand(BaseCommand):
             help='List each change of existing values, the default is to just '
                  'give a summary',
         )
+        parser.add_argument(
+            '--debug',
+            action='store_true',
+            help='Turn on debugging output'
+        )
         return parser
 
     def handle(self, *args, **options):
+        logger = getLogger('mibios')
+        if options['debug']:
+            logger.setLevel('DEBUG')
+        else:
+            logger.setLevel('INFO')
+
         self.stdout.write('Loading {} ...'.format(options['file'].name))
         try:
             stats = self.loader_class.load_file(
