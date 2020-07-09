@@ -181,6 +181,7 @@ class Model(models.Model):
 
     # replace the default auto field that Django adds
     id = AutoField(primary_key=True)
+    history = models.ManyToManyField('ChangeRecord')
 
     class Meta:
         abstract = True
@@ -249,7 +250,7 @@ class Model(models.Model):
         fields = [
             i for i
             in cls._meta.get_fields()
-            if not isinstance(i, exclude)
+            if not isinstance(i, exclude) and i.name != 'history'
         ]
         names = [i.name for i in fields]
         verbose = [i.verbose_name for i in fields]
