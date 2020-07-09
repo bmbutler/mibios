@@ -10,7 +10,7 @@ from django.db import transaction, IntegrityError
 from .dataset import DATASET, UserDataError
 from .models import (FecalSample, Note, Participant, Semester, Sequencing,
                      SequencingRun, Supplement, Week, Model,
-                     CanonicalLookupError)
+                     NaturalKeyLookupError)
 from .utils import DeepRecord, getLogger
 
 
@@ -243,7 +243,7 @@ class AbstractLoader():
         """
         if 'semester' in self.row:
             try:
-                s = Semester.canonical_lookup(self.row['semester'])
+                s = Semester.natural_lookup(self.row['semester'])
             except ValueError as e:
                 raise UserDataError(str(e)) from e
             obj, new = Semester.objects.get_or_create(**s)
@@ -274,7 +274,7 @@ class AbstractLoader():
         """
         if 'week' in self.row:
             obj, new = Week.objects.get_or_create(
-                **Week.canonical_lookup(self.row['week'])
+                **Week.natural_lookup(self.row['week'])
             )
             self.account(obj, new)
 
@@ -656,7 +656,7 @@ class GeneralLoader(AbstractLoader):
                     data = v.copy()
                     id_arg = {}
                 elif v:
-                    id_arg = dict(canonical=v)
+                    id_arg = dict(natural=v)
                     data = {}
                 else:
                     # SUPER FIXME:when does this happen now?
@@ -671,9 +671,9 @@ class GeneralLoader(AbstractLoader):
                     )
 
                 # separate identifiers from other fields
-                for i in ['canonical', 'id', 'name']:
+                for i in ['natural', 'id', 'name']:
                     if i in data:
-                        id_arg.update(canonical=data.pop(i))
+                        id_arg.update(natural=data.pop(i))
 
                 # separate many_to_many fields from data
                 m2ms = {
@@ -692,6 +692,9 @@ class GeneralLoader(AbstractLoader):
                 try:
                     obj = model.objects.get(**id_arg)
                 except model.DoesNotExist:
+                    # id_arg was used as lookup in get() above but used now for
+                    # the model constructor, this works as long as the keys are
+                    # limited to field or property names
                     obj = model(**id_arg, **data)
                     new = True
                 except model.MultipleObjectsReturned as e:
@@ -699,7 +702,7 @@ class GeneralLoader(AbstractLoader):
                     msg = '{} is not specific enough for {}' \
                           ''.format(id_arg, model._meta.model_name)
                     raise UserDataError(msg) from e
-                except CanonicalLookupError as e:
+                except NaturalKeyLookupError as e:
                     raise UserDataError(e) from e
                 else:
                     new = False

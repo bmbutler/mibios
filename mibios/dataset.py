@@ -37,7 +37,7 @@ class Metadata(Dataset):
     fields = [
         ('name', 'FASTQ_ID'),
         ('sample__participant__name', 'Participant_ID'),
-        ('sample__canonical', 'Sample_ID'),
+        ('sample__natural', 'Sample_ID'),
         ('sample__week', 'Study_week'),
         ('sample__participant__semester', 'Semester'),
         #  ('??', 'Use_Data'),
@@ -74,7 +74,7 @@ class SCFA_indv(Dataset):
     fields = [
         ('participant__name', 'Participant_ID'),
         ('number', 'Sample_number'),
-        ('canonical', 'Sample_ID'),
+        ('natural', 'Sample_ID'),
         ('week', 'Study_week'),
         ('participant__semester', 'Semester'),
         # ('use_data', 'Use_Data'),
@@ -104,7 +104,7 @@ class MMPManifest(Dataset):
         ('r1_file', 'R1'),
         ('r2_file', 'R2'),
         ('sample__participant__name', 'person'),
-        ('sample__canonical', 'Sample_ID'),
+        ('sample__natural', 'Sample_ID'),
         ('sample__participant__semester', 'semester'),
         ('plate', 'plate'),
         ('snumber', 'seqlabel'),
@@ -116,13 +116,13 @@ class MMPManifest(Dataset):
     plate_pat = re.compile(r'^P([0-9])-([A-Z][0-9]+)$')
     snum_plus_pat = re.compile(r'(_S[0-9]+).*$')
 
-    def parse_sample__canonical(self, txt):
+    def parse_sample__natural(self, txt):
         """
         s/-/_/g
         """
         txt = txt.replace('-', '_')
         try:
-            FecalSample.canonical_lookup(txt)
+            FecalSample.natural_lookup(txt)
         except:
             # ignore samples with bad name
             return None
@@ -194,7 +194,7 @@ class RobertsSampleList(Dataset):
     name = 'roberts_sample_list'
     model = 'Sequencing'
     fields = [
-        ('canonical', 'sample'),
+        ('natural', 'sample'),
         # ('sample__participant__name', 'participant'),
         ('control', 'control'),
         # ('control group', 'control_group'),
@@ -203,7 +203,7 @@ class RobertsSampleList(Dataset):
         ('r2_file', 'R2fastq'),
     ]
 
-    def parse_canonical(self, txt):
+    def parse_natural(self, txt):
         return txt.replace('-', '_')
 
     def parse_control(self, txt):

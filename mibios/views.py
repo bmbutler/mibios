@@ -133,7 +133,7 @@ class TableView(UserRequiredMixin, SingleTableView):
             del name, verbose_name, fields
 
             if no_name_field and hasattr(self.model, 'name'):
-                # add column for canonical name
+                # add column for natural name
                 self.fields = ['name'] + self.fields
                 self.col_names = [None] + self.col_names
 
@@ -306,9 +306,9 @@ class TableView(UserRequiredMixin, SingleTableView):
         if 'name' in fields:
             sort_kw = {}
             if 'name' not in self.model.get_fields().names:
-                # name is actually the canonical property, so have to set some
-                # proxy sorting, else the machinery tries to fetch the 'name'
-                # column (and fails)
+                # name is actually the natural property, so have to set
+                # some proxy sorting, else the machinery tries to fetch the
+                # 'name' column (and fails)
                 if self.model._meta.ordering:
                     sort_kw['order_by'] = self.model._meta.ordering
                 else:
@@ -333,8 +333,8 @@ class TableView(UserRequiredMixin, SingleTableView):
             for i in self.model._meta.related_objects
         ]
 
-        if 'canonical' in fields:
-            table_opts['canonical'] = Column(orderable=False)
+        if 'natural' in fields:
+            table_opts['natural'] = Column(orderable=False)
 
         meta_opts = dict(
             model=self.model,
@@ -402,7 +402,7 @@ class TableView(UserRequiredMixin, SingleTableView):
         if sort_by_field is not None:
             ctx['sort_by_field'] = sort_by_field
             qs = self.get_queryset()
-            stats = qs.get_field_stats(sort_by_field, canonical=True)
+            stats = qs.get_field_stats(sort_by_field, natural=True)
             filter_link_data = [
                 (
                     value,

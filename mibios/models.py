@@ -16,42 +16,43 @@ from .utils import getLogger
 log = getLogger(__name__)
 
 
-class CanonicalLookupError(Exception):
+class NaturalKeyLookupError(Exception):
+
     """
-    Raised when a canonical lookup fails to resolve
+    Raised when a natural lookup fails to resolve
 
     Handle like a user input error, but beware they might be bugs in the
-    canonical lookup handling code
+    natural lookup handling code
     """
     pass
 
 
 class Q(models.Q):
     """
-    A thin wrapper around Q to handle canonical lookups
+    A thin wrapper around Q to handle natural lookups
 
-    Ideally, "canonical" should be a custom Lookup and then handled closer to
+    Ideally, "natural" should be a custom Lookup and then handled closer to
     the lookup-to-SQL machinery but it's not clear how to build a lookup that
     can be model-dependent expressed purely in terms of other lookups and
-    doesn't touch SQL in at all.  Hence, we re-write canonical lookups before
+    doesn't touch SQL in at all.  Hence, we re-write natural lookups before
     they get packaged into the Q object.
     """
     def __init__(self, *args, model=None, **kwargs):
-        # handling canonical lookups is only done if the model is provided,
+        # handling natural lookups is only done if the model is provided,
         # since we need to know to which model the Q is relative to
         if model is not None:
-            kwargs = model.handle_canonical_lookups(**kwargs)
+            kwargs = model.handle_natural_lookups(**kwargs)
         super().__init__(*args, **kwargs)
 
 
 class QuerySet(models.QuerySet):
-    def as_dataframe(self, *fields, canonical=False):
+    def as_dataframe(self, *fields, natural=False):
         """
         Convert to pandas dataframe
 
         :param: fields str: Only return columns with given field names.
-        :param: canonical bool: If true, then replace id/pk of foreign
-                                relation with canonical representation.
+        :param: natural bool: If true, then replace id/pk of foreign
+                              relation with natural representation.
         """
         index=self.values_list('id', flat=True)
         df = pandas.DataFrame([], index=index)
@@ -64,9 +65,10 @@ class QuerySet(models.QuerySet):
                 continue
 
             dtype = Model.pd_type(i)
-            if i.is_relation and canonical:
+            if i.is_relation and natural:
                 col_dat = map(
-                    lambda obj: getattr(getattr(obj, i.name), 'canonical', None),
+                    lambda obj:
+                        getattr(getattr(obj, i.name), 'natural', None),
                     self.prefetch_related()
                 )
             else:
@@ -85,20 +87,20 @@ class QuerySet(models.QuerySet):
 
     def _filter_or_exclude(self, negate, *args, **kwargs):
         """
-        Handle canonical lookups for filtering operations
+        Handle natural lookups for filtering operations
         """
-        kwargs = self.model.handle_canonical_lookups(**kwargs)
+        kwargs = self.model.handle_natural_lookups(**kwargs)
         return super()._filter_or_exclude(negate, *args, **kwargs)
 
     def _values(self, *fields, **expressions):
         """
-        Handle the 'canonical' fields for value retrievals
+        Handle the 'natural' fields for value retrievals
         """
-        if 'canonical' in fields:
-            fields = [i for i in fields if i != 'canonical']
+        if 'natural' in fields:
+            fields = [i for i in fields if i != 'natural']
         return super()._values(*fields, **expressions)
 
-    def get_field_stats(self, fieldname, canonical=False):
+    def get_field_stats(self, fieldname, natural=False):
         """
         Get basic descriptive stats from a single field/column
 
@@ -111,12 +113,12 @@ class QuerySet(models.QuerySet):
             return {}
 
         qs = self
-        if canonical and self.model._meta.get_field(fieldname).is_relation:
+        if natural and self.model._meta.get_field(fieldname).is_relation:
             # speedup
             qs = qs.select_related(fieldname)
 
         try:
-            col = qs.as_dataframe(fieldname, canonical=canonical)[fieldname]
+            col = qs.as_dataframe(fieldname, natural=natural)[fieldname]
         except Exception as e:
             # as_dataframe does not support all data types (e.g. Decimal)
             log.debug('get_field_stats() failed:', type(e), e)
@@ -151,6 +153,9 @@ class QuerySet(models.QuerySet):
 class Manager(models.Manager):
     def get_queryset(self):
         return QuerySet(self.model, using=self._db)
+
+    def get_by_natural_key(self, key):
+        return self.get(**self.model.natural_lookup(key))
 
 
 Fields = namedtuple('Fields', ['fields', 'names', 'verbose'])
@@ -357,31 +362,34 @@ class Model(models.Model):
         return (is_consistent, diff if is_consistent else non_matching)
 
     @property
-    def canonical(self):
+    def natural(self):
         """
-        A canonical identifier under which the object is commonly known
+        A natural identifier under which the object is commonly known
 
         This defaults to the name field if it exists.  Models without a name
         field should implement this.
 
-        The canonical value must be derived from the non-relational fields of
-        the model.  To implement the canonical proterty for a model this method
-        as well as canonical_lookup() must be implemented.  The setter method
+        The natural value must be derived from the non-relational fields of
+        the model.  To implement the natural proterty for a model this method
+        as well as natural_lookup() must be implemented.  The setter method
         should be general enough for most cases.  The inverse of this method is
-        implemented by canonical_lookup().
+        implemented by natural_lookup().
         """
         return getattr(self, 'name', self.pk)
 
-    @classmethod
-    def canonical_lookup(cls, value):
-        """
-        Generate a dict lookup from the canonical value
+    def natural_key(self):
+        return self.natural
 
-        Used to replace a canonical lookup with real lookups that Django can
+    @classmethod
+    def natural_lookup(cls, value):
+        """
+        Generate a dict lookup from the natural value / key
+
+        Used to replace a natural lookup with real lookups that Django can
         understand.  This method should be overwritten to suit the model.  The
-        default implementations assumes the model has a "name" field.
-        Implementations usually de-construct the canonical value into its
-        components and is the inverse of the canonical() property.
+        default implementation assumes the model has a "name" field.
+        Implementations usually de-construct the natural value into its
+        components and is the inverse of the natural() property.
 
         Might also be used as parsing tool to coerce a user-given input value
         to field-compatible values.
@@ -393,32 +401,32 @@ class Model(models.Model):
         else:
             return dict(name=value)
 
-    @canonical.setter
-    def canonical(self, value):
+    @natural.setter
+    def natural(self, value):
         """
-        Update model fields from canonical value
+        Update model fields from natural value
 
         The default implementation should be general enough to be used by
         inheriting classes
         """
-        for k, v in self.canonical_lookup(value).items():
+        for k, v in self.natural_lookup(value).items():
             setattr(self, k, v)
 
     def __str__(self):
-        return self.canonical
+        return self.natural
 
     @classmethod
-    def handle_canonical_lookups(cls, **lookups):
+    def handle_natural_lookups(cls, **lookups):
         """
-        Detect and convert canonical object lookups
+        Detect and convert natural object lookups
 
-        Convert "*__canonical='foo'" and "*__model_name='foo'" into their
+        Convert "*__natural='foo'" and "*__model_name='foo'" into their
         proper lookups
         """
         ret = {}
         for lhs, rhs in lookups.items():
             if not isinstance(rhs, (str, int)):
-                # any canonical lookup should be str (or int for pk), if it's
+                # any natural lookup should be str (or int for pk), if it's
                 # not, then the resulting error will be probably be misleading
                 ret[lhs] = rhs
 
@@ -426,7 +434,7 @@ class Model(models.Model):
 
             parts = lhs.split('__')
             for part in parts:
-                if part == 'canonical':
+                if part == 'natural':
                     continue
                 fields = {i.name: i for i in cur_model._meta.get_fields()}
                 if part in fields and fields[part].is_relation:
@@ -436,9 +444,9 @@ class Model(models.Model):
                     ret[lhs] = rhs
                     break
             else:
-                # prepare lhs prefix for the canonical replacements:
-                if part == 'canonical':
-                    # remove __canonical from lhs
+                # prepare lhs prefix for the natural replacements:
+                if part == 'natural':
+                    # remove __natural from lhs
                     lhs = '__'.join(parts[:-1])
 
                 if lhs:
@@ -448,14 +456,14 @@ class Model(models.Model):
                     ret.update({lhs + 'pk': rhs})
                 else:
                     try:
-                        real_lookups = cur_model.canonical_lookup(rhs)
+                        real_lookups = cur_model.natural_lookup(rhs)
                     except Exception as e:
-                        # Assume code in canonical_lookup() is correct and
-                        # treat this a user error, i.e. the canonical rhs is
+                        # Assume code in natural_lookup() is correct and
+                        # treat this a user error, i.e. the natural rhs is
                         # bad
                         msg = 'Failed to resolve: [{}]{}={}' \
                               ''.format(cur_model._meta.model_name, parts, rhs)
-                        raise CanonicalLookupError(msg) from e
+                        raise NaturalKeyLookupError(msg) from e
 
                     ret.update({lhs + k: v for k, v in real_lookups.items()})
         return ret
@@ -587,15 +595,14 @@ class Supplement(Model):
         )
         ordering = ('composition', 'frequency', 'dose')
 
-    @Model.canonical.getter
-    def canonical(self):
-
+    @Model.natural.getter
+    def natural(self):
         return '{} {} {}'.format(
             *self.str_blank(self.composition, self.frequency, self.dose)
         )
 
     @classmethod
-    def canonical_lookup(cls, value):
+    def natural_lookup(cls, value):
         s, f, d = cls.decode_blank(*value.split())
         return dict(composition=s, frequency=f, dose=d)
 
@@ -639,7 +646,7 @@ class FecalSample(Model):
         Convert sample identifing str into kwargs dict
 
         """
-        # FIXME: returns participant as str, but compare to canonical_lookup
+        # FIXME: returns participant as str, but compare to natural_lookup
         # which returns a model object
         m = cls.id_pat.match(txt.strip())
         if m is None:
@@ -656,16 +663,16 @@ class FecalSample(Model):
     @property
     def name(self):
         """
-        Allow us to display the canonical value as a name (in tables)
+        Allow us to display the natural value as a name (in tables)
         """
-        return self.canonical
+        return self.natural
 
-    @Model.canonical.getter
-    def canonical(self):
+    @Model.natural.getter
+    def natural(self):
         return '{}_{}'.format(self.participant, self.number)
 
     @classmethod
-    def canonical_lookup(cls, value):
+    def natural_lookup(cls, value):
         p, n = value.split('_')
         p = Participant.objects.get(name=p)
         return dict(participant=p, number=int(n))
@@ -748,14 +755,14 @@ class Semester(Model):
         unique_together = ('term', 'year')
         ordering = ['year', 'term']
 
-    @Model.canonical.getter
-    def canonical(self):
+    @Model.natural.getter
+    def natural(self):
         return self.get_term_display().capitalize() + str(self.year)
 
     pat = re.compile(r'^(?P<term>[a-zA-Z]+)[^a-zA-Z0-9]*(?P<year>\d+)$')
 
     @classmethod
-    def canonical_lookup(cls, txt):
+    def natural_lookup(cls, txt):
         m = cls.pat.match(txt.strip())
         if m is None:
             raise ValueError('Failed parsing as semester: {}'.format(txt[:99]))
@@ -842,12 +849,12 @@ class SequencingRun(Model):
         unique_together = ('serial', 'number')
         ordering = ['serial', 'number']
 
-    @Model.canonical.getter
-    def canonical(self):
+    @Model.natural.getter
+    def natural(self):
         return '{}-{}'.format(self.serial, self.number)
 
     @classmethod
-    def canonical_lookup(cls, value):
+    def natural_lookup(cls, value):
         s, n = value.split('-')
         return dict(serial=s, number=int(n))
 
@@ -858,14 +865,14 @@ class Week(Model):
     class Meta:
         ordering = ('number',)
 
-    @Model.canonical.getter
-    def canonical(self):
+    @Model.natural.getter
+    def natural(self):
         return 'week{}'.format(self.number)
 
     pat = re.compile(r'(week[^a-zA-Z0-9]*)?(?P<num>[0-9]+)', re.IGNORECASE)
 
     @classmethod
-    def canonical_lookup(cls, value):
+    def natural_lookup(cls, value):
         """
         Convert a input text like "Week 1" into {'number' : 1}
         """

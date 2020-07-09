@@ -20,7 +20,7 @@ class CountColumn(tables.Column):
 
         if 'linkify' not in kwargs:
             def linkify(record):
-                f = {our_name : record.canonical}
+                f = {our_name : record.natural}
                 query = view.build_query_string(filter=f)
                 return url + query
 
