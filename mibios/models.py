@@ -616,7 +616,7 @@ class FecalSample(Model):
                              null=True, verbose_name='pH')
     bristol = models.DecimalField(max_digits=3, decimal_places=1, blank=True,
                                   null=True)
-    note = models.ManyToManyField('Note')
+    note = models.ManyToManyField('Note', blank=True)
     # SCFA stuff
     # relatives seem to be calculated with lots of digits
     scfa_abs_kw = dict(max_digits=8, decimal_places=3, blank=True, null=True)
@@ -686,7 +686,7 @@ class FecalSample(Model):
 
 class Note(Model):
     name = models.CharField(max_length=100, unique=True)
-    text = models.TextField(max_length=5000)
+    text = models.TextField(max_length=5000, blank=True)
 
 
 class Participant(Model):
@@ -707,12 +707,13 @@ class Participant(Model):
         help_text='Did the participant consumed at least 75% of the starch '
                   'they were prescribed?'
     )
-    note = models.ManyToManyField('Note')
+    note = models.ManyToManyField('Note', blank=True)
     has_consented = models.BooleanField(
-        null=True, help_text='Corresponds to the Use_Data field in several '
+        default=False,
+        help_text='Corresponds to the Use_Data field in several '
         'original tables',
     )
-    has_consented_future = models.BooleanField(null=True,
+    has_consented_future = models.BooleanField(null=True, blank=True,
         help_text='Use Data in Unspecified Future Research')
     has_consented_contact = models.CharField(max_length=20, blank=True,
         help_text='Contact for Future Study Participation')
@@ -805,7 +806,7 @@ class Sequencing(Model):
                                null=True)
     r2_file = models.CharField(max_length=300, unique=True, blank=True,
                                null=True)
-    note = models.ManyToManyField('Note')
+    note = models.ManyToManyField('Note', blank=True)
     run = models.ForeignKey('SequencingRun', on_delete=models.CASCADE,
                             blank=True, null=True)
     plate = models.PositiveSmallIntegerField(blank=True, null=True)
