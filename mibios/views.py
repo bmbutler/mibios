@@ -17,7 +17,7 @@ from .dataset import DATASET
 from .forms import UploadFileForm
 from .load import GeneralLoader
 from .management.import_base import AbstractImportCommand
-from .models import FecalSample, Q
+from .models import FecalSample, Q, get_data_models
 from .tables import CountColumn, ManyToManyColumn, NONE_LOOKUP, Table
 from .utils import getLogger
 
@@ -352,17 +352,6 @@ class TableView(UserRequiredMixin, SingleTableView):
                 c.base_columns[i.replace('__', '.')].verbose_name = j
         return c
 
-    @classmethod
-    def get_model_names(cls):
-        """
-        Helper to get list of all model names
-        """
-        return sorted([
-            i._meta.model_name
-            for i
-            in apps.get_app_config('mibios').get_models()
-        ])
-
     def get_sort_by_field(self):
         field = self.request.GET.get(self.get_table()._meta.order_by_field)
         if not field:
@@ -376,7 +365,9 @@ class TableView(UserRequiredMixin, SingleTableView):
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['model_names'] = self.get_model_names()
+        ctx['model_names'] = sorted(
+            [i._meta.model_name for i in get_data_models()]
+        )
         ctx['data_sets'] = DATASET.keys()
         ctx['page_title'] = apps.get_app_config('mibios').verbose_name
         if self.model is None:

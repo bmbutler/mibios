@@ -557,6 +557,17 @@ class Model(models.Model):
             raise ValidationError(errors)
 
 
+def get_data_models():
+    """
+    Helper to get all models derived from mibios.models.Model
+    """
+    return [
+        i for i
+        in apps.get_app_config('mibios').get_models()
+        if issubclass(i, Model)
+    ]
+
+
 class ChangeRecord(models.Model):
     """
     Model representing a changelog entry
