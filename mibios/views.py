@@ -471,11 +471,12 @@ class ImportView(CuratorRequiredMixin, FormView):
 
     def form_valid(self, form):
         # do data import
-        f = io.TextIOWrapper(form.files['file'])
-        print('Importing into {}: {}'.format(self.dataset, f))
+        f = form.files['file']
+        ff = io.TextIOWrapper(f)
+        log.debug('Importing into {}: {}'.format(self.dataset, ff))
         try:
             stats = GeneralLoader.load_file(
-                f,
+                ff,
                 self.dataset,
                 dry_run=form.cleaned_data['dry_run'],
                 can_overwrite=form.cleaned_data['overwrite'],
@@ -498,7 +499,7 @@ class ImportView(CuratorRequiredMixin, FormView):
 
         f.close()
         messages.add_message(self.request, msg_level, msg)
-        print('Import stats:\n', msg)
+        log.info('IMPORT:', self.request.user, f, msg)
 
         return super().form_valid(form)
 
