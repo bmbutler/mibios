@@ -4,7 +4,7 @@ import re
 import sys
 
 from django.apps import apps
-from django.core.exceptions import FieldDoesNotExist
+from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import transaction, IntegrityError
 
 from .dataset import DATASET, UserDataError
@@ -134,6 +134,7 @@ class AbstractLoader():
         )
         if is_new:
             self.new[model_name] += 1
+            obj.full_clean()
             obj.save()
         elif from_row is not None:
             consistent, diff = obj.compare(from_row)
@@ -152,6 +153,7 @@ class AbstractLoader():
                 if consistent or self.can_overwrite:
                     for k, v in from_row.items():
                         setattr(obj, k, v)
+                    obj.full_clean()
                     obj.save()
 
         self.rec[model_name] = obj
@@ -200,40 +202,55 @@ class AbstractLoader():
         try:
             with transaction.atomic():
                 self.process_row()
-        except Exception as e:
+        except (ValidationError, IntegrityError, UserDataError) as e:
+            # Catch errors to be presented to the user;
             # some user errors in the data come up as IntegrityErrors, e.g.
-            # violations of UNIQUE, IntegrityError should not be caught insie
-            # an atomic() (cf. Django docs)
-            msg1 = 'at line {}: {}'.format(self.linenum, e)
-            msg2 = ', current row:\n{}'.format(self.row)
-            if self.warn_on_error \
-                    and isinstance(e, (IntegrityError, UserDataError)):
-                if self.last_warning is None:
-                    self.last_warning = (e, self.linenum, self.linenum)
-                else:
-                    last_e, first_line, last_line = self.last_warning
-                    if str(e) == str(last_e) and last_line + 1 == self.linenum:
-                        self.last_warning = (e, first_line, self.linenum)
-                    else:
-                        self.warnings.append(
-                            'skipping row: at line {}: {}'
-                            ''.format(first_line, last_e)
-                        )
-                        if last_line != first_line:
-                            self.warnings.append(
-                                '    (and for next {} lines)'
-                                ''.format(last_line - first_line)
-                            )
-                        self.last_warning = (e, self.linenum, self.linenum)
-                # reset stats:
-                self.new = new_
-                self.added = added_
-                self.changed = changed_
+            # violations of UNIQUE, IntegrityError should not be caught
+            # inside an atomic() (cf. Django docs)
+            if isinstance(e, ValidationError):
+                msg = str(e.message_dict)
             else:
+                msg = str(e)
+
+            if not self.warn_on_error:
                 # re-raise with row info added
-                msg1 = 'at line {}: {}'.format(self.linenum, e)
-                msg2 = ', current row:\n{}'.format(self.row)
-                raise type(e)(msg1 + msg2) from e
+                msg = 'at line {}: {}, current row:\n{}' \
+                      ''.format(self.linenum, msg, self.row)
+                raise type(e)(msg) from e
+
+            # manage repeated warnings
+            err_name = type(e).__name__
+            if self.last_warning is None:
+                self.last_warning = \
+                        (err_name, msg, self.linenum, self.linenum)
+            else:
+                last_err, last_msg, first_line, last_line = \
+                        self.last_warning
+                if msg == last_msg and last_line + 1 == self.linenum:
+                    # same warning as last line
+                    self.last_warning = \
+                            (last_err, msg, first_line, self.linenum)
+                else:
+                    # emit old warning
+                    self.warnings.append(
+                        'skipping row: at line {}: {} ({})'
+                        ''.format(first_line, last_msg, last_err)
+                    )
+                    if last_line != first_line:
+                        self.warnings.append(
+                            '    (and for next {} lines)'
+                            ''.format(last_line - first_line)
+                        )
+                    self.last_warning = \
+                            (err_name, msg, self.linenum, self.linenum)
+            # reset stats:
+            self.new = new_
+            self.added = added_
+            self.changed = changed_
+        except Exception as e:
+            msg = 'at line {}: {}, current row:\n{}' \
+                  ''.format(self.linenum, e, self.row)
+            raise type(e)(msg) from e
 
         self.count += 1
 
@@ -714,7 +731,7 @@ class GeneralLoader(AbstractLoader):
 
                 # replace with real object
                 self.rec[k] = obj
-            except (IntegrityError, UserDataError):
+            except (IntegrityError, UserDataError, ValidationError):
                 raise
             except Exception as e:
                 raise RuntimeError(

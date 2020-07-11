@@ -6,7 +6,7 @@ from django.apps import apps
 from django.contrib.auth.models import User
 from django.core import serializers
 from django.urls import reverse
-from django.core.exceptions import FieldDoesNotExist
+from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import models
 import pandas
 
@@ -541,6 +541,20 @@ class Model(models.Model):
 
     def delete(self, *args, **kwargs):
         super().delete(*args, **kwargs)
+
+    def full_clean(self, *args, **kwargs):
+        """
+        Validate the object
+
+        Add model name to super()'s error dict
+        """
+        try:
+            super().full_clean(*args, **kwargs)
+        except ValidationError as e:
+            errors = e.update_error_dict({
+                'model_name': self._meta.model_name,
+            })
+            raise ValidationError(errors)
 
 
 class ChangeRecord(models.Model):

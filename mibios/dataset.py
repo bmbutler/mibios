@@ -79,8 +79,8 @@ class SCFA_indv(Dataset):
         ('participant__semester', 'Semester'),
         # ('use_data', 'Use_Data'),
         ('participant__quantity_compliant', 'Quantity_compliant'),
-        ('participant__supplement__frequency', 'Frequency'),
-        ('participant__supplement__composition', 'Supplement_consumed'),
+        # ('participant__supplement__frequency', 'Frequency'),
+        # ('participant__supplement__composition', 'Supplement_consumed'),
         ('final_weight', 'Final_weight'),
         ('acetate_abs', 'Acetate_mM'),
         ('acetate_rel', 'Acetate_mmol_kg'),
@@ -179,10 +179,7 @@ class ParticipantList(Dataset):
         """
         Turn mostly yes/no column into bool
         """
-        txt = txt.casefold()
-        if not txt:
-            return None
-        if txt == 'yes':
+        if txt.casefold() == 'yes':
             return True
         return False
 
