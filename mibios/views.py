@@ -6,7 +6,7 @@ from django.db.models import Count
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.urls import reverse
 from django.utils.http import urlencode
 from django.views.generic.edit import FormView
@@ -17,8 +17,9 @@ from .dataset import DATASET
 from .forms import UploadFileForm
 from .load import GeneralLoader
 from .management.import_base import AbstractImportCommand
-from .models import FecalSample, Q, get_data_models
-from .tables import CountColumn, ManyToManyColumn, NONE_LOOKUP, Table
+from .models import FecalSample, Q, get_data_models, ChangeRecord
+from .tables import (CountColumn, HistoryTable, ManyToManyColumn, NONE_LOOKUP,
+                     Table)
 from .utils import getLogger
 
 
@@ -503,3 +504,42 @@ class ImportView(CuratorRequiredMixin, FormView):
 
     def get_success_url(self):
         return reverse('queryset_index', kwargs=dict(dataset=self.dataset))
+
+
+class HistoryView(UserRequiredMixin, SingleTableView):
+    table_class = HistoryTable
+    record = None
+
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+
+        for i in get_data_models():
+            if i._meta.model_name == kwargs['dataset']:
+                self.record_model = i
+                self.record_model_name = kwargs['dataset']
+                break
+        else:
+            raise Http404
+        self.record_pk = kwargs['pk']
+        try:
+            self.record = self.record_model.objects.get(pk=self.record_pk)
+        except self.record_model.DoesNotExist:
+            # e.g. was deleted
+            pass
+
+    def get_queryset(self):
+        if not hasattr(self, 'object_list'):
+            f = dict(
+                record_model_name=self.record_model_name,
+                record_pk=self.record_pk,
+            )
+            self.object_list = ChangeRecord.objects.filter(**f)
+
+        return self.object_list
+
+    def get_context_data(self, **ctx):
+
+        ctx = super().get_context_data(**ctx)
+        ctx['record_model'] = self.record_model._meta.verbose_name
+        ctx['natural_key'] = self.get_queryset().first().record_natural
+        return ctx

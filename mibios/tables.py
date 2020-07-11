@@ -3,7 +3,7 @@ from django.utils.html import format_html
 
 import django_tables2 as tables
 
-from .models import Sequencing
+from .models import ChangeRecord, Sequencing
 
 
 NONE_LOOKUP = 'NULL'
@@ -76,3 +76,12 @@ class SequencingTable(tables.Table):
 
 class Table(tables.Table):
     pass
+
+
+class HistoryTable(tables.Table):
+    class Meta:
+        model = ChangeRecord
+        fields = (
+            'timestamp', 'is_created', 'is_deleted', 'user', 'file', 'line',
+            'command_line', 'fields',
+        )
