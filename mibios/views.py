@@ -385,7 +385,7 @@ class TableView(UserRequiredMixin, SingleTableView):
             in self.filter.items()
         ]
         ctx['applied_excludes_list'] = [
-            (e, self.to_query_string(without=[e]))
+            (i, self.to_query_string(without=[i]))
             for i
             in self.excludes
         ]
