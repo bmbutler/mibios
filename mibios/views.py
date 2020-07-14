@@ -179,7 +179,7 @@ class TableView(UserRequiredMixin, SingleTableView):
                             v = None
                         try:
                             v = int(v)
-                        except ValueError:
+                        except (TypeError, ValueError):
                             pass
                         e[k] = v
                     excludes.append(e)
