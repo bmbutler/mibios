@@ -17,9 +17,13 @@ from django.contrib import admin
 from django.urls import include, path
 from django.conf.urls import handler404
 
+nofavex = Exception(
+    'Dear web browser manufacturers: Please don\'t ask for favicon.ico on '
+    'every request'
+)
 
 urlpatterns = [
-    path('favicon.ico', handler404),  # reduce log spam
+    path('favicon.ico', handler404, {'exception': nofavex}),  # reduce log spam
     path('users/', admin.site.urls),
     path('', include('mibios.urls')),  # catch all, go last
 ]
