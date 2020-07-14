@@ -523,14 +523,16 @@ class HistoryView(UserRequiredMixin, SingleTableView):
 
         self.record_pk = kwargs['pk']
         try:
-            self.content_type = ContentType.objects.get_by_natural_key(
+            # record_type: can't name this content_type, that's taken in
+            # TemplateResponseMixin
+            self.record_type = ContentType.objects.get_by_natural_key(
                 'mibios',
                 kwargs['dataset'],
             )
         except ContentType.DoesNotExist:
             raise Http404
 
-        model_class = self.content_type.model_class()
+        model_class = self.record_type.model_class()
         try:
             self.record = model_class.objects.get(pk=self.record_pk)
         except model_class.DoesNotExist:
@@ -539,7 +541,7 @@ class HistoryView(UserRequiredMixin, SingleTableView):
     def get_queryset(self):
         if not hasattr(self, 'object_list'):
             f = dict(
-                record_type=self.content_type,
+                record_type=self.record_type,
                 record_pk=self.record_pk,
             )
             self.object_list = ChangeRecord.objects.filter(**f)
@@ -548,6 +550,6 @@ class HistoryView(UserRequiredMixin, SingleTableView):
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['record_model'] = self.content_type.name
+        ctx['record_model'] = self.record_type.name
         ctx['natural_key'] = self.get_queryset().first().record_natural
         return ctx
