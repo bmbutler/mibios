@@ -1,0 +1,34 @@
+#!/bin/bash
+# This script should be copied to and run from the deployment directory
+
+VENV_DIR=venv
+REPO_DIR=~heinro/src/mibios
+set -Eeuo pipefail
+trap 'rm -rf -- "$tmprepo"' ERR
+
+if [[ ! "$(pwd)" == "$REPO_DIR" ]]; then
+    echo >&2 "can't run upgrade script form the repo directory"
+    exit 1
+fi
+
+# ensure venv
+if [[ -d ./"$VENV_DIR" ]]; then
+    need_install=false
+else
+    python3 -m venv --prompt "mibios" ./"$VENV_DIR"
+    need_install=true
+fi
+
+. "$VENV_DIR"/bin/activate
+
+$need_install && pip install -r "$REPO_DIR"/requirements.txt
+
+tmprepo=$(mktemp -d)
+git clone --no-local --branch master -- "$REPO_DIR" "$tmprepo"
+# TODO: auto upgrade requirements?
+( cd "$tmprepo" && python3 setup.py build install; )
+rm -rf "$tmprepo"
+manage_mibios collectstatic --no-input
+manage_mibios check --deploy
+manage_mibios migrate
+# not actually needed? su --command="systemctl reload apache2.service" -
