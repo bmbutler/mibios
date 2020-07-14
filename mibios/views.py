@@ -6,6 +6,7 @@ from django.db.models import Count
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.contrib.contenttypes.models import ContentType
 from django.http import Http404, HttpResponse
 from django.urls import reverse
 from django.utils.http import urlencode
@@ -509,29 +510,29 @@ class ImportView(CuratorRequiredMixin, FormView):
 
 class HistoryView(UserRequiredMixin, SingleTableView):
     table_class = HistoryTable
-    record = None
 
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)
 
-        for i in get_data_models():
-            if i._meta.model_name == kwargs['dataset']:
-                self.record_model = i
-                self.record_model_name = kwargs['dataset']
-                break
-        else:
-            raise Http404
         self.record_pk = kwargs['pk']
         try:
-            self.record = self.record_model.objects.get(pk=self.record_pk)
-        except self.record_model.DoesNotExist:
-            # e.g. was deleted
-            pass
+            self.content_type = ContentType.objects.get_by_natural_key(
+                'mibios',
+                kwargs['dataset'],
+            )
+        except ContentType.DoesNotExist:
+            raise Http404
+
+        model_class = self.content_type.model_class()
+        try:
+            self.record = model_class.objects.get(pk=self.record_pk)
+        except model_class.DoesNotExist:
+            self.record = None
 
     def get_queryset(self):
         if not hasattr(self, 'object_list'):
             f = dict(
-                record_model_name=self.record_model_name,
+                record_type=self.content_type,
                 record_pk=self.record_pk,
             )
             self.object_list = ChangeRecord.objects.filter(**f)
@@ -539,8 +540,7 @@ class HistoryView(UserRequiredMixin, SingleTableView):
         return self.object_list
 
     def get_context_data(self, **ctx):
-
         ctx = super().get_context_data(**ctx)
-        ctx['record_model'] = self.record_model._meta.verbose_name
+        ctx['record_model'] = self.content_type.name
         ctx['natural_key'] = self.get_queryset().first().record_natural
         return ctx

@@ -4,6 +4,8 @@ import sys
 
 from django.apps import apps
 from django.contrib.auth.models import User
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 from django.core import serializers
 from django.urls import reverse
 from django.core.exceptions import FieldDoesNotExist, ValidationError
@@ -518,8 +520,7 @@ class Model(models.Model):
             file=file,
             line=line,
             command_line=cmdline,
-            record_model_name=self._meta.model_name,
-            record_pk=self.id,
+            record=self,
             record_natural=self.natural,
             fields=serializers.serialize(
                 'json',
@@ -579,12 +580,13 @@ class ChangeRecord(models.Model):
     )
     command_line = models.CharField(
         max_length=200, blank=True, help_text='management command for import')
-    record_model_name = models.CharField(max_length=100)
-    record_pk = models.IntegerField()
+    record_type = models.ForeignKey(ContentType, on_delete=models.PROTECT)
+    record_pk = models.PositiveIntegerField()
+    record = GenericForeignKey('record_type', 'record_pk')
     record_natural = models.CharField(max_length=300, blank=True)
     fields = models.TextField()
-    is_created = models.BooleanField(verbose_name='new record')
-    is_deleted = models.BooleanField(verbose_name='deleted')
+    is_created = models.BooleanField(default=False, verbose_name='new record')
+    is_deleted = models.BooleanField(default=False)
 
     def __str__(self):
         user = ' ' + self.user.username if self.user else ''
