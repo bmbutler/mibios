@@ -153,11 +153,36 @@ class QuerySet(models.QuerySet):
 
 
 class Manager(models.Manager):
+    _base_filter = None
+
     def get_queryset(self):
-        return QuerySet(self.model, using=self._db)
+        qs = QuerySet(self.model, using=self._db)
+        if self._base_filter is not None:
+            qs = qs.filter(**self._base_filter)
+        return qs
 
     def get_by_natural_key(self, key):
         return self.get(**self.model.natural_lookup(key))
+
+    def get_base_filter(self, prefix=''):
+        """
+        Return the base filter as Q object or None if _base_filter is not set
+
+        The return value (None or a Q object) will be used for the
+        filterkeyword in calls to Aggregate() and friends, e.g. Count()
+
+        Prefix and the model name will be added to the lookup lhs
+        """
+        if self._base_filter:
+            prefix0 = self.model._meta.model_name
+            if prefix:
+                prefix = prefix + '__' + prefix0
+            else:
+                prefix = prefix0
+            f = {prefix + '__' + k: v for k, v in self._base_filter.items()}
+            return f
+        else:
+            return None
 
 
 Fields = namedtuple('Fields', ['fields', 'names', 'verbose'])

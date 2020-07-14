@@ -115,7 +115,10 @@ class TableView(UserRequiredMixin, SingleTableView):
         # raises on invalid model name
         self.model = apps.get_app_config('mibios').get_model(model)
 
-        if kwargs['dataset'] not in DATASET:
+        if kwargs['dataset'] in DATASET:
+            if dataset.manager:
+                self.queryset = getattr(self.model, dataset.manager).all()
+        else:
             # normal model
             self.dataset_name = self.model._meta.model_name
             self.dataset_verbose_name = self.model._meta.verbose_name
@@ -275,7 +278,11 @@ class TableView(UserRequiredMixin, SingleTableView):
             return []
 
         # add reverse relation count annotations
-        cts = [Count(i.name) for i in self.model._meta.related_objects]
+        cts = {
+            i.related_model._meta.model_name + '__count':
+            Count(i.name, filter=i.related_model.objects.get_base_filter())
+            for i in self.model._meta.related_objects
+        }
 
         excludes = []
         for i in self.dataset_excludes + self.excludes:
@@ -288,7 +295,7 @@ class TableView(UserRequiredMixin, SingleTableView):
             q = ~q
 
         log.debug('QUERYSET FILTER:', q, 'ANNOTATION:', cts)
-        return super().get_queryset().filter(q).annotate(*cts)
+        return super().get_queryset().filter(q).annotate(**cts)
 
     def get_table_class(self):
         """
