@@ -43,6 +43,12 @@ setuptools.setup(
     long_description_content_type='text/markdown',
     url='https://sites.google.com/a/umich.edu/the-schmidt-lab/home',
     python_requires='>=3.8',
+    install_requires=[
+        'django',
+        'django-tables2',
+        'django-extensions',
+        'pandas',
+    ],
     packages=setuptools.find_packages(),
     package_data={
         'mibios': ['templates/' + NAME + '/*.html',
