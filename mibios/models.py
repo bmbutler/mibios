@@ -739,6 +739,14 @@ class Note(Model):
     text = models.TextField(max_length=5000, blank=True)
 
 
+class ParticipantManager(Manager):
+    _base_filter = dict(has_consented=True)
+
+
+class ParticipantNonconsentingManager(Manager):
+    _base_filter = dict(has_consented=False)
+
+
 class Participant(Model):
     name = models.CharField(max_length=50, unique=True)
     sex = models.CharField(max_length=50, blank=True)
@@ -780,6 +788,8 @@ class Participant(Model):
         help_text='the "Blood" field from the participant list',
     )
 
+    objects = ParticipantManager()
+    non_consenting = ParticipantNonconsentingManager()
 
     class Meta:
         ordering = ['semester', 'name']
