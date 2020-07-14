@@ -429,6 +429,7 @@ class Model(models.Model):
                 # any natural lookup should be str (or int for pk), if it's
                 # not, then the resulting error will be probably be misleading
                 ret[lhs] = rhs
+                continue
 
             cur_model = cls
 
