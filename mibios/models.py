@@ -540,9 +540,6 @@ class Model(models.Model):
         self.history.add(self.change)
         del self.change
 
-    def delete(self, *args, **kwargs):
-        super().delete(*args, **kwargs)
-
     def full_clean(self, *args, **kwargs):
         """
         Validate the object
