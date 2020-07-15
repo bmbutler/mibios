@@ -15,9 +15,10 @@ class UploadFileForm(forms.Form):
         initial=False,
         required=False,
         label='data import mode',
-        help_text='whether to allow overwriting existing data (when your data '
-                  'differs from what\'s in the database and the field in the '
-                  'database is not empty) or just fill in missing information.'
+        help_text='whether to allow overwriting non-empty fields in existing '
+                  'data records or restrict data import to new records and '
+                  'fill in missig information in existing records.'
                   '  By uploading a file no data will be deleted even if a '
-                  'field in the uploaded table is empty.',
+                  'field in the uploaded table is empty.  Use the admin '
+                  'interface to delete records or blank a field.',
     )

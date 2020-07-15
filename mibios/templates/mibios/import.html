@@ -7,8 +7,13 @@
 {% endblock %}
 
 {% block content %}
-<h2>Upload a file with {{ view.dataset }} data</h2>
-<form action="{% url 'import' dataset=view.dataset %}" method="post" enctype="multipart/form-data">
+<h2>Upload a file with {{ view.dataset_name }} data</h2>
+<p>
+Recognized table columns: {{ col_names|join:", " }}
+<br>
+A name or id column is required.  Other columns may be omitted.  Additional columns will be ignored.
+</p>
+<form action="{% url 'import' dataset=view.dataset_name %}" method="post" enctype="multipart/form-data">
     {% csrf_token %}
     {{ form.as_p }}
     <input type="submit" value="Submit">

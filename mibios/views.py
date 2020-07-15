@@ -541,6 +541,12 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['page_title'] += ' data import: ' + self.dataset_name
+        # col_names are for django_tables2's benefit, so we need to use the
+        # field names if the col name is None:
+        ctx['col_names'] = [
+            (j if j else i.capitalize())
+            for i, j in zip(self.fields, self.col_names)
+        ]
         return ctx
 
 
