@@ -10,6 +10,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.http import Http404, HttpResponse
 from django.urls import reverse
 from django.utils.http import urlencode
+from django.views.generic.base import ContextMixin
 from django.views.generic.edit import FormView
 
 from django_tables2 import SingleTableView, A, Column
@@ -54,7 +55,21 @@ class CuratorRequiredMixin(UserRequiredMixin, UserPassesTestMixin):
         return self.request.user.groups.filter(name=self.group_name).exists()
 
 
-class TableView(UserRequiredMixin, SingleTableView):
+class BaseMixin(ContextMixin):
+    """
+    Mixin to populate context for the base template
+    """
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['model_names'] = sorted(
+            [i._meta.model_name for i in get_data_models()]
+        )
+        ctx['data_sets'] = DATASET.keys()
+        ctx['page_title'] = apps.get_app_config('mibios').verbose_name
+        return ctx
+
+
+class TableView(BaseMixin, UserRequiredMixin, SingleTableView):
     template_name = 'mibios/model_index.html'
     QUERY_FILTER = 'filter'
     QUERY_EXCLUDE = 'exclude'
@@ -374,16 +389,12 @@ class TableView(UserRequiredMixin, SingleTableView):
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['model_names'] = sorted(
-            [i._meta.model_name for i in get_data_models()]
-        )
-        ctx['data_sets'] = DATASET.keys()
-        ctx['page_title'] = apps.get_app_config('mibios').verbose_name
         if self.model is None:
             return ctx
 
         ctx['model'] = self.model._meta.model_name
         ctx['dataset_name'] = self.dataset_name
+        ctx['page_title'] += ' ' + self.dataset_name
         ctx['dataset_verbose_name'] = self.dataset_verbose_name
         ctx['count'] = self.get_queryset().count()
 
@@ -469,7 +480,7 @@ class ExportView(TableView):
         return response
 
 
-class ImportView(CuratorRequiredMixin, FormView):
+class ImportView(BaseMixin, CuratorRequiredMixin, FormView):
     template_name = 'mibios/import.html'
     form_class = UploadFileForm
 
@@ -514,8 +525,13 @@ class ImportView(CuratorRequiredMixin, FormView):
     def get_success_url(self):
         return reverse('queryset_index', kwargs=dict(dataset=self.dataset))
 
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['page_title'] += ' data import: ' + self.dataset
+        return ctx
 
-class HistoryView(UserRequiredMixin, SingleTableView):
+
+class HistoryView(BaseMixin, UserRequiredMixin, SingleTableView):
     table_class = HistoryTable
 
     def setup(self, request, *args, **kwargs):
@@ -551,5 +567,7 @@ class HistoryView(UserRequiredMixin, SingleTableView):
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['record_model'] = self.record_type.name
-        ctx['natural_key'] = self.get_queryset().first().record_natural
+        natural_key = self.get_queryset().first().record_natural
+        ctx['natural_key'] = natural_key
+        ctx['page_title'] += ' - history of ' + natural_key
         return ctx
