@@ -285,7 +285,7 @@ class Model(models.Model):
             if not isinstance(i, exclude) and i.name != 'history'
         ]
         names = [i.name for i in fields]
-        verbose = [i.verbose_name for i in fields]
+        verbose = [getattr(i, 'verbose_name', i.name) for i in fields]
         return Fields(fields=fields, names=names, verbose=verbose)
 
     def export(self):
