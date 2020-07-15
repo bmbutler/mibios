@@ -69,26 +69,21 @@ class BaseMixin(ContextMixin):
         return ctx
 
 
-class TableView(BaseMixin, UserRequiredMixin, SingleTableView):
-    template_name = 'mibios/model_index.html'
-    QUERY_FILTER = 'filter'
-    QUERY_EXCLUDE = 'exclude'
-    QUERY_NEGATE = 'inverse'
-    QUERY_LIST_SEP = ','
-    QUERY_KEY_VAL_SEP = ':'
+class DatasetMixin():
+    """
+    Mixin for views that deal with one dataset/model
 
-    # set by setup()
-    model = None
-    fields = None
-    col_names = None
-    filter = None
-    excludes = None
-    negate = None
-    dataset_filter = None
-    dataset_excludes = None
-
+    The url to which the inheriting view responds must supply a 'dataset' kwarg
+    that identifies the dataset or model.
+    """
     def setup(self, request, *args, **kwargs):
+        """
+        Set up dataset/model attributes of instance
+
+        This overrides (but calls first) View.setup()
+        """
         super().setup(request, *args, **kwargs)
+        dataset_name = kwargs.get('dataset', None)
 
         self.filter = {}
         self.excludes = []
@@ -96,16 +91,16 @@ class TableView(BaseMixin, UserRequiredMixin, SingleTableView):
         self.dataset_excludes = []
         self.fields = []
         self.col_names = []
-        if 'dataset' not in kwargs:
+        if dataset_name is None:
             self.model = None
             return
 
         # load special dataset
-        dataset = DATASET.get(kwargs['dataset'])
-        if kwargs['dataset'] in DATASET:
-            dataset = DATASET[kwargs['dataset']]
-            self.dataset_name = kwargs['dataset']
-            self.dataset_verbose_name = kwargs['dataset']
+        dataset = DATASET.get(dataset_name)
+        if dataset_name in DATASET:
+            dataset = DATASET[dataset_name]
+            self.dataset_name = dataset_name
+            self.dataset_verbose_name = dataset_name
             model = dataset.model
             self.dataset_filter = dataset.filter
             self.dataset_excludes = dataset.excludes
@@ -125,12 +120,12 @@ class TableView(BaseMixin, UserRequiredMixin, SingleTableView):
                 self.col_names.append(colname)
             del fieldname, colname
         else:
-            model = kwargs['dataset']
+            model = dataset_name
 
         # raises on invalid model name
         self.model = apps.get_app_config('mibios').get_model(model)
 
-        if kwargs['dataset'] in DATASET:
+        if dataset_name in DATASET:
             if dataset.manager:
                 self.queryset = getattr(self.model, dataset.manager).all()
         else:
@@ -156,6 +151,25 @@ class TableView(BaseMixin, UserRequiredMixin, SingleTableView):
                 # add column for natural name
                 self.fields = ['name'] + self.fields
                 self.col_names = [None] + self.col_names
+
+
+class TableView(BaseMixin,DatasetMixin, UserRequiredMixin, SingleTableView):
+    template_name = 'mibios/model_index.html'
+    QUERY_FILTER = 'filter'
+    QUERY_EXCLUDE = 'exclude'
+    QUERY_NEGATE = 'inverse'
+    QUERY_LIST_SEP = ','
+    QUERY_KEY_VAL_SEP = ':'
+
+    # set by setup()
+    model = None
+    fields = None
+    col_names = None
+    filter = None
+    excludes = None
+    negate = None
+    dataset_filter = None
+    dataset_excludes = None
 
     def get(self, request, *args, **kwargs):
         f, e, n = self.get_filter_from_url()
@@ -483,13 +497,9 @@ class ExportView(TableView):
         return response
 
 
-class ImportView(BaseMixin, CuratorRequiredMixin, FormView):
+class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
     template_name = 'mibios/import.html'
     form_class = UploadFileForm
-
-    def setup(self, request, *args, **kwargs):
-        super().setup(request, *args, **kwargs)
-        self.dataset = kwargs.get('dataset')
 
     def form_valid(self, form):
         # do data import
@@ -530,7 +540,7 @@ class ImportView(BaseMixin, CuratorRequiredMixin, FormView):
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['page_title'] += ' data import: ' + self.dataset
+        ctx['page_title'] += ' data import: ' + self.dataset_name
         return ctx
 
 
