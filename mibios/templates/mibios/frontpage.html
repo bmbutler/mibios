@@ -1,0 +1,33 @@
+{% extends "mibios/base.html" %}
+{% load render_table from django_tables2 %}
+{% load static mibios_extras %}
+
+{% block link %}
+<link rel="stylesheet" href="{% static 'mibios/css/bootstrap.min.css' %}" />
+{% endblock %}
+
+{% block content %}
+
+<h3>number of records:</h3>
+<p>
+{{ counts|prettyformat }}
+<p>
+<h3>most recent change:</h3>
+<p>
+{% if latest %}
+    On {{ latest.timestamp|date:"DATE_FORMAT" }} at {{ latest.timestamp|time }}
+    {% if latest.is_created %}
+	added
+	{% elif latest.is_deleted %}
+	deleted
+	{% else %}
+	changed
+    {% endif %}
+    by {{ latest.user|default:"admin" }}: {{ latest.record_type }} {{ latest.record_natural }}
+{% else %}
+no change history
+{% endif %}
+</p>
+
+{% endblock %}
+

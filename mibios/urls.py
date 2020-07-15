@@ -10,7 +10,7 @@ urlpatterns = [
     path('admin/mibios/<str:dataset>/<int:pk>/history/',
          views.HistoryView.as_view(), name='history'),
     path('admin/', admin_site.urls),
-    path('', TableView.as_view(), name='top'),
+    path('', views.FrontPageView.as_view(), name='top'),
     # path('test/', TestView.as_view(), name='test'),
     path('<str:dataset>/', views.TableView.as_view(), name='queryset_index'),
     path('<str:dataset>/import/', views.ImportView.as_view(), name='import'),

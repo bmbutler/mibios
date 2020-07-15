@@ -10,7 +10,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.http import Http404, HttpResponse
 from django.urls import reverse
 from django.utils.http import urlencode
-from django.views.generic.base import ContextMixin
+from django.views.generic.base import ContextMixin, TemplateView
 from django.views.generic.edit import FormView
 
 from django_tables2 import SingleTableView, A, Column
@@ -573,4 +573,22 @@ class HistoryView(BaseMixin, UserRequiredMixin, SingleTableView):
         natural_key = self.get_queryset().first().record_natural
         ctx['natural_key'] = natural_key
         ctx['page_title'] += ' - history of ' + natural_key
+        return ctx
+
+
+class FrontPageView(BaseMixin, UserRequiredMixin, TemplateView):
+    template_name = 'mibios/frontpage.html'
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['counts'] = {}
+        models = get_data_models()
+        for i in sorted(models, key=lambda x: x._meta.verbose_name):
+            count = i.objects.count()
+            if count:
+                ctx['counts'][i._meta.verbose_name] = count
+
+        try:
+            ctx['latest'] = ChangeRecord.objects.latest()
+        except ChangeRecord.DoestNotExist:
+            pass
         return ctx
