@@ -537,8 +537,7 @@ class Model(models.Model):
         Create a change record attribute for this object
 
         If the object has no id/pk yet the change will be "is_created".  The
-        serialized fields will contain a pk of null, but we can set record_pk
-        to the real pk once it is known.
+        fields will remain empty until save()
         """
         self.change = ChangeRecord(
             user=user,
@@ -547,12 +546,6 @@ class Model(models.Model):
             command_line=cmdline,
             record=self,
             record_natural=self.natural,
-            fields=serializers.serialize(
-                'json',
-                [self],
-                fields=self.get_fields(skip_auto=True, with_m2m=False).names,
-                use_natural_foreign_keys=True
-            ),
             is_created=self.id is None,
             is_deleted=is_deleted,
         )
@@ -561,9 +554,9 @@ class Model(models.Model):
         super().save(*args, **kwargs)
         if not hasattr(self, 'change'):
             self.add_change_record()
-        self.change.record_pk = self.id
-        self.change.save()
-        self.history.add(self.change)
+        if self.change.has_changed():
+            self.change.save()
+            self.history.add(self.change)
         del self.change
 
     def full_clean(self, *args, **kwargs):
@@ -613,6 +606,9 @@ class ChangeRecord(models.Model):
     is_created = models.BooleanField(default=False, verbose_name='new record')
     is_deleted = models.BooleanField(default=False)
 
+    class Meta:
+        get_latest_by = 'timestamp'
+
     def __str__(self):
         user = ' ' + self.user.username if self.user else ''
 
@@ -625,6 +621,45 @@ class ChangeRecord(models.Model):
         dots = '...' if len(self.fields) > 80 else ''
         return '{}{}{} - {}{}'.format(self.timestamp, user, new,
                                       self.fields[:80], dots)
+
+    def has_changed(self):
+        """
+        Compare with previous change record of same object
+        """
+        qs = self.record.history
+        if self.timestamp is not None:
+            qs = qs.filter(timestamp__lt=self.timestamp)
+
+        try:
+            prev = qs.latest()
+        except self.DoesNotExist:
+            # we are first
+            return True
+
+        if self.record_natural != prev.record_natural:
+            return True
+
+        if not self.fields:
+            self.serialize()
+
+        if self.fields != prev.fields:
+            return True
+
+        return False
+
+    def serialize(self):
+        """
+        Serialize field content
+        """
+        if self.is_deleted:
+            return
+
+        self.fields = serializers.serialize(
+            'json',
+            [self.record],
+            fields=self.record.get_fields(skip_auto=True, with_m2m=True).names,
+            use_natural_foreign_keys=True
+        )
 
 
 class Supplement(Model):
