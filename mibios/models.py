@@ -554,6 +554,10 @@ class Model(models.Model):
         super().save(*args, **kwargs)
         if not hasattr(self, 'change'):
             self.add_change_record()
+        # set record (again) as super().save() resets this to None for unknown
+        # reasons:
+        self.change.record = self
+        self.change.serialize()
         if self.change.has_changed():
             self.change.save()
             self.history.add(self.change)
