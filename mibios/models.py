@@ -9,7 +9,8 @@ from django.contrib.contenttypes.models import ContentType
 from django.core import serializers
 from django.urls import reverse
 from django.core.exceptions import FieldDoesNotExist, ValidationError
-from django.db import models
+from django.db import models, transaction
+
 import pandas
 
 from .utils import getLogger
@@ -550,6 +551,7 @@ class Model(models.Model):
             is_deleted=is_deleted,
         )
 
+    @transaction.atomic
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
         if not hasattr(self, 'change'):
@@ -562,6 +564,14 @@ class Model(models.Model):
             self.change.save()
             self.history.add(self.change)
         del self.change
+
+    def delete(self, *args, **kwargs):
+        if not hasattr(self, 'change'):
+            self.add_change_record(is_delete=True)
+        self.change.serialize()
+        with transaction.atomic():
+            self.change.save()
+            super().delete(*args, **kwargs)
 
     def full_clean(self, *args, **kwargs):
         """
