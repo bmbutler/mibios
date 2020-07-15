@@ -293,11 +293,14 @@ class TableView(BaseMixin, UserRequiredMixin, SingleTableView):
             return []
 
         # add reverse relation count annotations
-        cts = {
-            i.related_model._meta.model_name + '__count':
-            Count(i.name, filter=i.related_model.objects.get_base_filter())
-            for i in self.model._meta.related_objects
-        }
+        cts = {}
+        for i in self.model._meta.related_objects:
+            kwargs = {}
+            f = i.related_model.objects.get_base_filter()
+            if f:
+                kwargs = dict(filter=Q(**f))
+            cts[i.related_model._meta.model_name + '__count'] \
+                = Count(i.name, **kwargs)
 
         excludes = []
         for i in self.dataset_excludes + self.excludes:
