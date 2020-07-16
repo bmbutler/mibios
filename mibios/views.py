@@ -605,6 +605,6 @@ class FrontPageView(BaseMixin, UserRequiredMixin, TemplateView):
 
         try:
             ctx['latest'] = ChangeRecord.objects.latest()
-        except ChangeRecord.DoestNotExist:
+        except ChangeRecord.DoesNotExist:
             pass
         return ctx
