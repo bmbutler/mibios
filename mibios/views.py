@@ -551,7 +551,7 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
         return ctx
 
 
-class HistoryView(BaseMixin, UserRequiredMixin, SingleTableView):
+class HistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
     table_class = HistoryTable
 
     def setup(self, request, *args, **kwargs):
