@@ -106,7 +106,6 @@ class DeepRecord():
         style) or a list
         of dict keys
         """
-        # FIXME: at this point dicts of dict should really get their own class
         cur = self._
         key = self.split(key)
 
@@ -139,7 +138,6 @@ class DeepRecord():
                 cur = cur[i]
             except TypeError:
                 # value at cur already set
-                print('THE BORK\n', self)
                 raise KeyError('Invalid key: {}, a value has already been set:'
                                ' {}'.format(key, cur))
 
