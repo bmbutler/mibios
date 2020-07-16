@@ -8,10 +8,9 @@ class PrintLikeLogging(logging.LoggerAdapter):
     """
     Adapter to log just like print
     """
-    def log(self, level, *msg, sep=' ',
-            **kwargs):
+    def log(self, level, *msg, sep=' ', **kwargs):
         """
-        Adapt to log just like print
+        Adapter to log just like print
 
         Except end, file, and flush keyword args are not to be used
         """
