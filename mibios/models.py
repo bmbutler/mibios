@@ -641,6 +641,7 @@ class ChangeRecord(models.Model):
 
     class Meta:
         get_latest_by = 'timestamp'
+        ordering = ['-timestamp']
 
     def __str__(self):
         user = ' ' + self.user.username if self.user else ''
