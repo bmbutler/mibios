@@ -16,4 +16,6 @@ urlpatterns = [
     path('<str:dataset>/import/', views.ImportView.as_view(), name='import'),
     path('<str:dataset>/export/<str:format>/', views.ExportView.as_view(),
          name='export'),
+    path('<str:dataset>/history/deleted/', views.DeletedHistoryView.as_view(),
+         name='deleted_history'),
 ]

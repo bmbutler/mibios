@@ -85,3 +85,20 @@ class HistoryTable(tables.Table):
             'timestamp', 'is_created', 'is_deleted', 'user', 'file', 'line',
             'command_line', 'fields',
         )
+
+
+class DeletedHistoryTable(tables.Table):
+    record_natural = tables.Column(
+        verbose_name='record name',
+        linkify=(
+            'history',
+            {
+                'dataset': tables.A('record_type.model'),
+                'pk': tables.A('record_pk')
+            }
+        )
+    )
+
+    class Meta:
+        model = ChangeRecord
+        fields = ('timestamp', 'user', 'record_natural',)

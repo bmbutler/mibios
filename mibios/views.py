@@ -20,8 +20,8 @@ from .forms import UploadFileForm
 from .load import GeneralLoader
 from .management.import_base import AbstractImportCommand
 from .models import FecalSample, Q, get_data_models, ChangeRecord
-from .tables import (CountColumn, HistoryTable, ManyToManyColumn, NONE_LOOKUP,
-                     Table)
+from .tables import (CountColumn, DeletedHistoryTable, HistoryTable,
+                     ManyToManyColumn, NONE_LOOKUP, Table)
 from .utils import getLogger
 
 
@@ -590,6 +590,42 @@ class HistoryView(BaseMixin, UserRequiredMixin, SingleTableView):
         natural_key = self.get_queryset().first().record_natural
         ctx['natural_key'] = natural_key
         ctx['page_title'] += ' - history of ' + natural_key
+        return ctx
+
+
+class DeletedHistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
+    template_name = 'mibios/deleted_history.html'
+    table_class = DeletedHistoryTable
+
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+
+        try:
+            # record_type: can't name this content_type, that's taken in
+            # TemplateResponseMixin
+            self.record_type = ContentType.objects.get_by_natural_key(
+                'mibios',
+                kwargs['dataset'],
+            )
+        except ContentType.DoesNotExist:
+            raise Http404
+
+        model_class = self.record_type.model_class()
+
+    def get_queryset(self):
+        if not hasattr(self, 'object_list'):
+            f = dict(
+                is_deleted=True,
+                record_type=self.record_type,
+            )
+            self.object_list = ChangeRecord.objects.filter(**f)
+
+        return self.object_list
+
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['record_model'] = self.record_type.name
+        ctx['page_title'] += ' - deleted records'
         return ctx
 
 
