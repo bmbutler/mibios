@@ -587,7 +587,14 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['record_model'] = self.record_type.name
-        natural_key = self.get_queryset().first().record_natural
+        if self.record:
+            natural_key = self.record.natural
+        else:
+            try:
+                natural_key = self.get_queryset().first().record_natural
+            except AttributeError:
+                # if no history saved, first() returns None
+                natural_key = '???'
         ctx['natural_key'] = natural_key
         ctx['page_title'] += ' - history of ' + natural_key
         return ctx
