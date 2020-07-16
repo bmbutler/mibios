@@ -20,7 +20,7 @@ class Dataset():
     filter = {}
     excludes = []
     missing_data = []
-    manager = None
+    manager = 'published'
 
     # instance container for subclass singletons
     __instance = {}

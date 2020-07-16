@@ -154,34 +154,51 @@ class QuerySet(models.QuerySet):
 
 
 class Manager(models.Manager):
-    _base_filter = None
-
     def get_queryset(self):
-        qs = QuerySet(self.model, using=self._db)
-        if self._base_filter is not None:
-            qs = qs.filter(**self._base_filter)
-        return qs
+        return QuerySet(self.model, using=self._db)
 
     def get_by_natural_key(self, key):
         return self.get(**self.model.natural_lookup(key))
 
-    def get_base_filter(self, prefix=''):
-        """
-        Return the base filter as Q object or None if _base_filter is not set
 
-        The return value (None or a Q object) will be used for the
-        filterkeyword in calls to Aggregate() and friends, e.g. Count()
+class PublishManager(Manager):
+    """
+    Manager to implement publishable vs. hidden data
+    """
+    def __init__(self, *args, filter={}, exclude={}, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.filter = filter.copy()
+        self.exclude = exclude.copy()
 
-        Prefix and the model name will be added to the lookup lhs
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.filter is not None:
+            qs = qs.filter(**self.filter)
+        if self.exclude is not None:
+            qs = qs.exclude(**self.exclude)
+        return qs
+
+    def get_publish_filter(self):
         """
-        if self._base_filter:
-            prefix0 = self.model._meta.model_name
-            if prefix:
-                prefix = prefix + '__' + prefix0
-            else:
-                prefix = prefix0
-            f = {prefix + '__' + k: v for k, v in self._base_filter.items()}
-            return f
+        Return the publish filter/exclude as Q object
+
+        A Q return value can be used for the filter keyword in calls to
+        Aggregate() and friends, e.g. Count().  A None return value can be used
+        to determine that no such filter needs tpo be applied.
+
+        The model name will be added to the lookup lhs.
+        """
+        prefix = self.model._meta.model_name + '__'
+        f = {prefix + k: v for k, v in self.filter.items()}
+        e = {prefix + k: v for k, v in self.exclude.items()}
+        if e:
+            args = [~Q(**e)]
+        else:
+            args = []
+
+        q = Q(*args, **f)
+        if q:
+            return q
         else:
             return None
 
@@ -218,8 +235,10 @@ class Model(models.Model):
 
     class Meta:
         abstract = True
+        default_manager_name = 'objects'
 
     objects = Manager()
+    published = PublishManager()
 
     @classmethod
     def pd_type(cls, field):
@@ -788,14 +807,6 @@ class Note(Model):
     text = models.TextField(max_length=5000, blank=True)
 
 
-class ParticipantManager(Manager):
-    _base_filter = dict(has_consented=True)
-
-
-class ParticipantNonconsentingManager(Manager):
-    _base_filter = dict(has_consented=False)
-
-
 class Participant(Model):
     name = models.CharField(max_length=50, unique=True)
     sex = models.CharField(max_length=50, blank=True)
@@ -837,8 +848,9 @@ class Participant(Model):
         help_text='the "Blood" field from the participant list',
     )
 
-    objects = ParticipantManager()
-    non_consenting = ParticipantNonconsentingManager()
+    objects = Manager()
+    published = PublishManager(filter=dict(has_consented=True))
+    non_consenting = PublishManager(exclude=dict(has_consented=True))
 
     class Meta:
         ordering = ['semester', 'name']

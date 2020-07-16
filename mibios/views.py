@@ -130,6 +130,7 @@ class DatasetMixin():
                 self.queryset = getattr(self.model, dataset.manager).all()
         else:
             # normal model
+            self.queryset = self.model.published.all()
             self.dataset_name = self.model._meta.model_name
             self.dataset_verbose_name = self.model._meta.verbose_name
             # set default fields - just the "simple" ones
@@ -310,9 +311,9 @@ class TableView(BaseMixin,DatasetMixin, UserRequiredMixin, SingleTableView):
         cts = {}
         for i in self.model._meta.related_objects:
             kwargs = {}
-            f = i.related_model.objects.get_base_filter()
+            f = i.related_model.published.get_publish_filter()
             if f:
-                kwargs = dict(filter=Q(**f))
+                kwargs = dict(filter=f)
             cts[i.related_model._meta.model_name + '__count'] \
                 = Count(i.name, **kwargs)
 
