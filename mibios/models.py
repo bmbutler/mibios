@@ -165,17 +165,56 @@ class PublishManager(Manager):
     """
     Manager to implement publishable vs. hidden data
     """
-    def __init__(self, *args, filter={}, exclude={}, **kwargs):
+    filter = None
+    excludes = None
+
+    def __init__(self, *args, filter={}, excludes=[], **kwargs):
         super().__init__(*args, **kwargs)
-        self.filter = filter.copy()
-        self.exclude = exclude.copy()
+        # Setting base filters, must be completed after all the managers are
+        # fully initialized but that won't happen until the models are set up
+        self.base_filter = filter.copy()
+        self.base_excludes = []
+        for i in excludes:
+            self.base_excludes.append(i.copy())
+
+    def ensure_filter_setup(self):
+        """
+        Follow foreign key relations recursively to set up filters
+
+        TODO: handle cycles
+        """
+        if self.filter is not None and self.excludes is not None:
+            return
+
+        filter = self.base_filter.copy()
+        excludes = [i.copy() for i in self.base_excludes]
+
+        for i in self.model.get_fields().fields:
+            if i.is_relation and i.many_to_one:
+                # is a foreign key
+                other = i.related_model.published
+                prefix = i.name + '__'
+                other.ensure_filter_setup()
+                # FIXME: infinite recursion is waiting to happen
+                for k, v in other.filter.items():
+                    filter[prefix + k] = v
+                for i in other.excludes:
+                    e = {prefix + k: v for k, v in i.items()}
+                    if e:
+                        excludes.append(e)
+
+        self.filter = filter
+        self.excludes = excludes
 
     def get_queryset(self):
+        self.ensure_filter_setup()
         qs = super().get_queryset()
+
         if self.filter is not None:
             qs = qs.filter(**self.filter)
-        if self.exclude is not None:
-            qs = qs.exclude(**self.exclude)
+        for i in self.excludes:
+            qs = qs.exclude(**i)
+
         return qs
 
     def get_publish_filter(self):
@@ -188,15 +227,14 @@ class PublishManager(Manager):
 
         The model name will be added to the lookup lhs.
         """
+        self.ensure_filter_setup()
         prefix = self.model._meta.model_name + '__'
         f = {prefix + k: v for k, v in self.filter.items()}
-        e = {prefix + k: v for k, v in self.exclude.items()}
-        if e:
-            args = [~Q(**e)]
-        else:
-            args = []
-
-        q = Q(*args, **f)
+        e = [
+            ~Q(**{prefix + k: v for k, v in i.items()})
+            for i in self.excludes if i
+        ]
+        q = Q(*e, **f)
         if q:
             return q
         else:
@@ -235,7 +273,6 @@ class Model(models.Model):
 
     class Meta:
         abstract = True
-        default_manager_name = 'objects'
 
     objects = Manager()
     published = PublishManager()
@@ -850,8 +887,8 @@ class Participant(Model):
     )
 
     objects = Manager()
-    published = PublishManager(filter=dict(has_consented=True))
-    non_consenting = PublishManager(exclude=dict(has_consented=True))
+    published = PublishManager(excludes=[dict(has_consented=False)])
+    non_consenting = PublishManager(filter=dict(has_consented=False))
 
     class Meta:
         ordering = ['semester', 'name']
