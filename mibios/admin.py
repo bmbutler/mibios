@@ -16,6 +16,7 @@ site = AdminSite(name=app_config.name)
 
 class ModelAdmin(admin.ModelAdmin):
     exclude = ['history']
+    actions = None
 
     def save_model(self, request, obj, form, change):
         obj.add_change_record(user=request.user)
