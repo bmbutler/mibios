@@ -432,21 +432,36 @@ class TableView(BaseMixin,DatasetMixin, UserRequiredMixin, SingleTableView):
             ctx['sort_by_field'] = sort_by_field
             qs = self.get_queryset()
             stats = qs.get_field_stats(sort_by_field, natural=True)
-            filter_link_data = [
-                (
-                    value,
-                    count,
-                    # TODO: applying filter to negated queryset is more
-                    # complicated
-                    self.to_query_string(filter={sort_by_field: value})
-                )
-                for value, count
-                in stats.get('choice_counts', {}).items()
-            ]
-            uniform_field = stats.get('uniform')
-            if uniform_field:
-                ctx['uniform_field'] = list(uniform_field.items())[0]
-            ctx['filter_link_data'] = filter_link_data
+            if 'uniform' in stats or 'unique' in stats:
+                try:
+                    del stats['choice_counts']
+                    del stats['description']
+                except KeyError:
+                    pass
+            else:
+                # a non-boring column
+                if 'description' in stats:
+                    # only give these for numeric columns
+                    try:
+                        if stats['description'].dtype.kind == 'f':
+                            del stats['choice_counts']
+                        else:
+                            del stats['description']
+                    except KeyError:
+                        pass
+
+                filter_link_data = [
+                    (
+                        value,
+                        count,
+                        # TODO: applying filter to negated queryset is more
+                        # complicated
+                        self.to_query_string(filter={sort_by_field: value})
+                    )
+                    for value, count
+                    in stats.get('choice_counts', {}).items()
+                ]
+                ctx['filter_link_data'] = filter_link_data
             ctx['sort_by_stats'] = stats
 
         query = self.request.GET.urlencode()

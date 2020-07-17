@@ -50,9 +50,18 @@
 	    {% endfor %}
 	    <br>
 	{% endif %}
+    {% elif stats_type == 'description' %}
+	Column stats for {{ sort_by_field }}:
+	{% for k, v in stats_obj.items %}
+	    {% if k != 'count' %}
+		{{ k }}: {{ v|floatformat }}{% if not forloop.last %},{% endif %}
+	    {% endif %}
+	{% endfor %}
+	<br>
     {% elif stats_type == 'uniform' %}
-	Sorted column: "{{ sort_by_field }}" has single value: "{{ uniform_field|first|default:table.default }}"({{ uniform_field|last }})
-	    <br>
+	Sorted column: "{{ sort_by_field }}" has unique value:
+	{% for val, count in stats_obj.items %}"{{ val|default:table.default }}"({{ count }}){% endfor %}
+	<br>
     {% elif stats_type == 'unique' %}
 	Sorted column "{{ sort_by_field }}": all values unique<br>
     {% endif %}

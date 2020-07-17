@@ -123,34 +123,39 @@ class QuerySet(models.QuerySet):
         try:
             col = qs.as_dataframe(fieldname, natural=natural)[fieldname]
         except Exception as e:
-            # as_dataframe does not support all data types (e.g. Decimal)
+            # as_dataframe may not support some data types
             log.debug('get_field_stats() failed:', type(e), e)
             raise
             return {}
 
-        stats = col.value_counts(dropna=False).sort_index()
+        count_stats = col.value_counts(dropna=False).sort_index()
 
-        if stats.count() == 1:
+        ret = {
+            'choice_counts': count_stats,
+            'description': col.describe(),
+        }
+
+        if count_stats.count() == 1:
             # all values the same
-            return {'uniform': stats.to_dict()}
+            ret['uniform'] = count_stats.to_dict()
 
-        if stats.max() < 2:
+        if count_stats.max() < 2:
             # column values are unique
-            return {'unique': stats.max()}
+            ret['unique'] = count_stats.max()
 
         try:
-            not_blank = stats.drop(index='')
+            not_blank = count_stats.drop(index='')
         except KeyError:
             pass
         else:
             if not_blank.max() < 2:
                 # column unique except for empties
-                return {'unique_blank': {
-                    'BLANK': stats[''],
+                ret['unique_blank'] = {
+                    'BLANK': count_stats[''],
                     'NOT_BLANK': not_blank.sum(),
-                }}
+                }
 
-        return {'choice_counts': stats}
+        return ret
 
 
 class Manager(models.Manager):
@@ -297,6 +302,8 @@ class Model(models.Model):
             dtype = pandas.Int64Dtype()
         elif isinstance(field, models.BooleanField):
             dtype = bool
+        elif isinstance(field, models.DecimalField):
+            dtype = float
         else:
             raise ValueError('Field type not supported: {}: {}'
                              ''.format(field, field.get_internal_type()))
