@@ -775,7 +775,7 @@ class FecalSample(Model):
     note = models.ManyToManyField('Note', blank=True)
     # SCFA stuff
     # relatives seem to be calculated with lots of digits
-    scfa_abs_kw = dict(max_digits=8, decimal_places=3, blank=True, null=True)
+    scfa_abs_kw = dict(max_digits=6, decimal_places=2, blank=True, null=True)
     scfa_rel_kw = dict(max_digits=22, decimal_places=16, blank=True, null=True)
     final_weight = models.DecimalField(**scfa_abs_kw)
     acetate_abs = models.DecimalField(**scfa_abs_kw, verbose_name='Acetate_mM')
