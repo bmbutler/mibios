@@ -261,6 +261,85 @@ class AutoField(models.AutoField):
         self.verbose_name = self.model._meta.model_name + '_' + self.name
 
 
+class ChangeRecord(models.Model):
+    """
+    Model representing a changelog entry
+    """
+    timestamp = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    file = models.FileField(upload_to='import/%Y/', null=True,
+                            verbose_name='data source file')
+    line = models.IntegerField(
+        null=True, help_text='The corresponding line in the input file',
+    )
+    command_line = models.CharField(
+        max_length=200, blank=True, help_text='management command for import')
+    record_type = models.ForeignKey(ContentType, on_delete=models.PROTECT)
+    record_pk = models.PositiveIntegerField()
+    record = GenericForeignKey('record_type', 'record_pk')
+    record_natural = models.CharField(max_length=300, blank=True)
+    fields = models.TextField()
+    is_created = models.BooleanField(default=False, verbose_name='new record')
+    is_deleted = models.BooleanField(default=False)
+
+    class Meta:
+        #app_label = 'mibios'
+        get_latest_by = 'timestamp'
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        user = ' ' + self.user.username if self.user else ''
+
+        if self.is_deleted:
+            return '{}{} (deleted) - {} (pk:{})'.format(
+                self.timestamp, user, self.record_natural, self.record_pk
+            )
+
+        new = ' (new)' if self.is_created else ''
+        dots = '...' if len(self.fields) > 80 else ''
+        return '{}{}{} - {}{}'.format(self.timestamp, user, new,
+                                      self.fields[:80], dots)
+
+    def has_changed(self):
+        """
+        Compare with previous change record of same object
+        """
+        qs = self.record.history
+        if self.timestamp is not None:
+            qs = qs.filter(timestamp__lt=self.timestamp)
+
+        try:
+            prev = qs.latest()
+        except self.DoesNotExist:
+            # we are first
+            return True
+
+        if self.record_natural != prev.record_natural:
+            return True
+
+        if not self.fields:
+            self.serialize()
+
+        if self.fields != prev.fields:
+            return True
+
+        return False
+
+    def serialize(self):
+        """
+        Serialize field content
+        """
+        if self.is_deleted:
+            return
+
+        self.fields = serializers.serialize(
+            'json',
+            [self.record],
+            fields=self.record.get_fields(skip_auto=True, with_m2m=True).names,
+            use_natural_foreign_keys=True
+        )
+
+
 class Model(models.Model):
     """
     Adds some extras to Django's Model
@@ -274,7 +353,7 @@ class Model(models.Model):
 
     # replace the default auto field that Django adds
     id = AutoField(primary_key=True)
-    history = models.ManyToManyField('ChangeRecord')
+    history = models.ManyToManyField(ChangeRecord)
 
     class Meta:
         abstract = True
@@ -660,84 +739,6 @@ def get_data_models():
         in apps.get_app_config('mibios').get_models()
         if issubclass(i, Model)
     ]
-
-
-class ChangeRecord(models.Model):
-    """
-    Model representing a changelog entry
-    """
-    timestamp = models.DateTimeField(auto_now_add=True)
-    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
-    file = models.FileField(upload_to='import/%Y/', null=True,
-                            verbose_name='data source file')
-    line = models.IntegerField(
-        null=True, help_text='The corresponding line in the input file',
-    )
-    command_line = models.CharField(
-        max_length=200, blank=True, help_text='management command for import')
-    record_type = models.ForeignKey(ContentType, on_delete=models.PROTECT)
-    record_pk = models.PositiveIntegerField()
-    record = GenericForeignKey('record_type', 'record_pk')
-    record_natural = models.CharField(max_length=300, blank=True)
-    fields = models.TextField()
-    is_created = models.BooleanField(default=False, verbose_name='new record')
-    is_deleted = models.BooleanField(default=False)
-
-    class Meta:
-        get_latest_by = 'timestamp'
-        ordering = ['-timestamp']
-
-    def __str__(self):
-        user = ' ' + self.user.username if self.user else ''
-
-        if self.is_deleted:
-            return '{}{} (deleted) - {} (pk:{})'.format(
-                self.timestamp, user, self.record_natural, self.record_pk
-            )
-
-        new = ' (new)' if self.is_created else ''
-        dots = '...' if len(self.fields) > 80 else ''
-        return '{}{}{} - {}{}'.format(self.timestamp, user, new,
-                                      self.fields[:80], dots)
-
-    def has_changed(self):
-        """
-        Compare with previous change record of same object
-        """
-        qs = self.record.history
-        if self.timestamp is not None:
-            qs = qs.filter(timestamp__lt=self.timestamp)
-
-        try:
-            prev = qs.latest()
-        except self.DoesNotExist:
-            # we are first
-            return True
-
-        if self.record_natural != prev.record_natural:
-            return True
-
-        if not self.fields:
-            self.serialize()
-
-        if self.fields != prev.fields:
-            return True
-
-        return False
-
-    def serialize(self):
-        """
-        Serialize field content
-        """
-        if self.is_deleted:
-            return
-
-        self.fields = serializers.serialize(
-            'json',
-            [self.record],
-            fields=self.record.get_fields(skip_auto=True, with_m2m=True).names,
-            use_natural_foreign_keys=True
-        )
 
 
 # utility functions
