@@ -19,28 +19,13 @@ from .dataset import DATASET
 from .forms import UploadFileForm
 from .load import GeneralLoader
 from .management.import_base import AbstractImportCommand
-from .models import FecalSample, Q, get_data_models, ChangeRecord
+from .models import Q, get_data_models, ChangeRecord
 from .tables import (CountColumn, DeletedHistoryTable, HistoryTable,
                      ManyToManyColumn, NONE_LOOKUP, Table)
 from .utils import getLogger
 
 
 log = getLogger(__name__)
-
-
-class TestTable(Table):
-    class Meta:
-        model = FecalSample
-        fields = ['number', 'participant', A('participant.name'),
-                  A('participant.supplement.dose')]
-
-
-class TestView(SingleTableView):
-    template_name = 'mibios/test.html'
-    table_class = TestTable
-
-    def get_queryset(self):
-        return FecalSample.objects.all()
 
 
 class UserRequiredMixin(LoginRequiredMixin):

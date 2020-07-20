@@ -3,7 +3,7 @@ from django.utils.html import format_html
 
 import django_tables2 as tables
 
-from .models import ChangeRecord, Sequencing
+from .models import ChangeRecord
 
 
 NONE_LOOKUP = 'NULL'
@@ -62,16 +62,6 @@ class ManyToManyColumn(tables.ManyToManyColumn):
             kwargs['default'] = ''
 
         super().__init__(*args, **kwargs)
-
-
-class SequencingTable(tables.Table):
-    class Meta:
-        model = Sequencing
-        template_name = 'django_tables2/bootstrap.html'
-        fields = (
-            'name', 'sample.participant', 'sample', 'sample.week',
-            'sample.participant.semester', 'batch', 'note',
-        )
 
 
 class Table(tables.Table):
