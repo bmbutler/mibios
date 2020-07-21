@@ -147,17 +147,21 @@ LOGGING = {
             'class': 'logging.FileHandler',
             'filename': './debug.log',
         },
+        'mail_admins': {
+            'level': 'ERROR',
+            'class': 'django.utils.log.AdminEmailHandler',
+        },
     },
     'loggers': {
         'django': {
             # log to file if DJANGO_LOG_LEVEL=DEBUG in env
             # FIXME: this does not work as we want to
-            'handlers': ['file'],
+            'handlers': ['file', 'mail_admins'],
             'level': 'DEBUG',
             'propagate': True,
         },
         'mibios': {
-            'handlers': ['console', 'file'],
+            'handlers': ['console', 'file', 'mail_admins'],
             'level': 'DEBUG',
             'propagate': True,
         },
