@@ -10,7 +10,7 @@ DEFAULT_SETTINGS = 'mibios.ops.settings'
 LOCAL_SETTINGS = 'settings'
 
 
-def manage(settings=None):
+def manage(settings=None, default_settings=DEFAULT_SETTINGS):
     """
     The original manage.py
 
@@ -30,7 +30,7 @@ def manage(settings=None):
                 sys.path = [''] + sys.path
             else:
                 # last resort but usually for development
-                settings = DEFAULT_SETTINGS
+                settings = default_settings
     else:
         # passed as argument, has top priority
         pass
