@@ -10,6 +10,7 @@ app_config = apps.get_app_config('mibios')
 
 class AdminSite(admin.AdminSite):
     site_header = 'Administration'
+    index_title = 'Data Curation'
     site_url = reverse_lazy('top')
 
     def register_all(self):

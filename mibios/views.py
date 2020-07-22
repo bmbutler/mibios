@@ -49,6 +49,8 @@ class BaseMixin(ContextMixin):
         ctx['model_names'] = sorted(registry.get_model_names())
         ctx['data_sets'] = sorted(registry.get_dataset_names())
         ctx['page_title'] = apps.get_app_config('mibios').verbose_name
+        ctx['user_is_curator'] = \
+            self.request.user.groups.filter(name='curators').exists()
         return ctx
 
 
