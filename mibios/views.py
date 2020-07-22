@@ -560,7 +560,7 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
             # record_type: can't name this content_type, that's taken in
             # TemplateResponseMixin
             self.record_type = ContentType.objects.get_by_natural_key(
-                'mibios',
+                kwargs['app'],
                 kwargs['dataset'],
             )
         except ContentType.DoesNotExist:

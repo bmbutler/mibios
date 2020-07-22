@@ -6,7 +6,7 @@ from . import views
 
 urlpatterns = [
     # take over admin history view with our own
-    path('admin/mibios/<str:dataset>/<int:pk>/history/',
+    path('admin/<str:app>/<str:dataset>/<int:pk>/history/',
          views.HistoryView.as_view(), name='history'),
     path('admin/', admin.site.urls),
     path('', views.FrontPageView.as_view(), name='top'),
