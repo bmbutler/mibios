@@ -1,15 +1,14 @@
-# from django.apps import apps
+from django.contrib import admin
 from django.urls import path
 
 from . import views
-from .admin import site as admin_site
 
 
 urlpatterns = [
     # take over admin history view with our own
     path('admin/mibios/<str:dataset>/<int:pk>/history/',
          views.HistoryView.as_view(), name='history'),
-    path('admin/', admin_site.urls),
+    path('admin/', admin.site.urls),
     path('', views.FrontPageView.as_view(), name='top'),
     # path('test/', TestView.as_view(), name='test'),
     path('<str:dataset>/', views.TableView.as_view(), name='queryset_index'),

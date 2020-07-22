@@ -667,7 +667,7 @@ class Model(models.Model):
         return ret[0] if len(ret) == 1 else tuple(ret)
 
     def get_absolute_url(self):
-        name = 'mibios:{app}_{model}_change' \
+        name = 'admin:{app}_{model}_change' \
                ''.format(app=self._meta.app_label, model=self._meta.model_name)
         return reverse(name, kwargs=dict(object_id=self.pk))
 

@@ -13,7 +13,6 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
-from django.contrib import admin
 from django.urls import include, path
 from django.conf.urls import handler404
 
@@ -24,6 +23,5 @@ nofavex = Exception(
 
 urlpatterns = [
     path('favicon.ico', handler404, {'exception': nofavex}),  # reduce log spam
-    path('users/', admin.site.urls),
     path('', include('mibios.urls')),  # catch all, go last
 ]

@@ -32,7 +32,7 @@ ALLOWED_HOSTS = ['localhost']
 
 # Application definition
 INSTALLED_APPS = [
-    'django.contrib.admin',
+    'mibios.apps.AdminConfig',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',

@@ -9,11 +9,41 @@ app_config = apps.get_app_config('mibios')
 
 
 class AdminSite(admin.AdminSite):
-    site_header = app_config.verbose_name + ' Administration'
+    site_header = 'Administration'
     site_url = reverse_lazy('top')
 
+    def register_all(self):
+        """
+        Register all the admins
 
-site = AdminSite(name=app_config.name)
+        To be called from AppConfig.ready().  Normally, registration is done
+        when this module is imported, but is seems even when following the
+        documentation at
+        https://docs.djangoproject.com/en/2.2/ref/contrib/admin/#overriding-the-default-admin-site
+        we lose all registrations, possibly because site gets re-instantiated
+        later, maybe has to do with module auto-discovery.  """
+        from .models import ChangeRecord
+        self.register(ChangeRecord)
+
+        for i in registry.get_models():
+            self.register(i, ModelAdmin)
+
+    def get_app_list(self, request):
+        """
+        Get the app list but change order a bit
+
+        The auth app shall go last
+        """
+        auth_admin = None
+        app_list = []
+        for i in super().get_app_list(request):
+            if i['app_label'] == 'auth':
+                auth_admin = i
+            else:
+                app_list.append(i)
+        if auth_admin is not None:
+            app_list.append(auth_admin)
+        return app_list
 
 
 class ModelAdmin(admin.ModelAdmin):
@@ -27,7 +57,3 @@ class ModelAdmin(admin.ModelAdmin):
     def delete_model(self, request, obj):
         obj.add_change_record(user=request.user, is_deleted=True)
         super().delete_model(request, obj)
-
-
-for i in registry.get_models():
-    site.register(i, ModelAdmin)
