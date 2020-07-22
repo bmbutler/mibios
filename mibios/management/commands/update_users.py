@@ -14,8 +14,8 @@ class Command(BaseCommand):
         argp.add_argument(
             'usertable',
             help='Input file, composed of lines that list (space-separated)'
-                 'the uniqname, email, and, as required, the keywords editor '
-                 'and/or superuser',
+                 'the uniqname, email, and, as required, the keywords "'
+                 + EDITOR + '" and/or "' + SUPERUSER + '"',
         )
         argp.add_argument(
             '-k', '--keep',
