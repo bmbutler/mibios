@@ -730,17 +730,6 @@ class Model(models.Model):
             raise ValidationError(errors)
 
 
-def get_data_models():
-    """
-    Helper to get all models derived from mibios.models.Model
-    """
-    return [
-        i for i
-        in apps.get_app_config('mibios').get_models()
-        if issubclass(i, Model)
-    ]
-
-
 # utility functions
 def erase_all_data(verbose=False):
     """

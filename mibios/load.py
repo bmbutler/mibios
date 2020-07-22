@@ -2,11 +2,10 @@ from collections import Counter, defaultdict
 import re
 import sys
 
-from django.apps import apps
 from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import transaction, IntegrityError
 
-from .dataset import DATASET, UserDataError
+from .dataset import UserDataError, registry
 from .models import (Model, NaturalKeyLookupError)
 from .utils import DeepRecord, getLogger
 
@@ -258,16 +257,15 @@ class GeneralLoader(AbstractLoader):
     """
     dataset = None
 
-    def __init__(self, dataset, colnames, **kwargs):
-        if dataset in DATASET:
-            self.dataset = DATASET[dataset]
-            model_name = self.dataset.model
+    def __init__(self, data_name, colnames, **kwargs):
+        try:
+            self.dataset = registry.datasets[data_name]
+        except KeyError:
+            self.model = registry.models[data_name]
         else:
-            model_name = dataset
+            self.model = self.dataset.model
 
-        self.conf = apps.get_app_config('mibios')
-        self.model = self.conf.get_model(model_name)
-
+        model_name = self.model._meta.model_name
         if self.dataset:
             self.COLS = [
                 (col, model_name + '__' + accs)
@@ -340,7 +338,9 @@ class GeneralLoader(AbstractLoader):
         """
         helper to get model class from accessor
         """
-        m = self.conf.get_model(accessor[0])
+        name = accessor[0]
+        m = registry.models[name]  # may raise KeyError
+
         for i in accessor[1:]:
             try:
                 m = m._meta.get_field(i).related_model

@@ -2,6 +2,8 @@ from django.apps import apps
 from django.contrib import admin
 from django.urls import reverse_lazy
 
+from .dataset import registry
+
 
 app_config = apps.get_app_config('mibios')
 
@@ -27,7 +29,5 @@ class ModelAdmin(admin.ModelAdmin):
         super().delete_model(request, obj)
 
 
-for i in app_config.get_models():
-    if i._meta.model_name == 'changerecord':
-        continue
+for i in registry.get_models():
     site.register(i, ModelAdmin)

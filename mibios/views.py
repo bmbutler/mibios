@@ -15,11 +15,11 @@ from django.views.generic.edit import FormView
 
 from django_tables2 import SingleTableView, A, Column
 
-from .dataset import DATASET
+from .dataset import registry
 from .forms import UploadFileForm
 from .load import GeneralLoader
 from .management.import_base import AbstractImportCommand
-from .models import Q, get_data_models, ChangeRecord
+from .models import Q, ChangeRecord
 from .tables import (CountColumn, DeletedHistoryTable, HistoryTable,
                      ManyToManyColumn, NONE_LOOKUP, Table)
 from .utils import getLogger
@@ -46,10 +46,8 @@ class BaseMixin(ContextMixin):
     """
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['model_names'] = sorted(
-            [i._meta.model_name for i in get_data_models()]
-        )
-        ctx['data_sets'] = DATASET.keys()
+        ctx['model_names'] = sorted(registry.get_model_names())
+        ctx['data_sets'] = sorted(registry.get_dataset_names())
         ctx['page_title'] = apps.get_app_config('mibios').verbose_name
         return ctx
 
@@ -68,7 +66,7 @@ class DatasetMixin():
         This overrides (but calls first) View.setup()
         """
         super().setup(request, *args, **kwargs)
-        dataset_name = kwargs.get('dataset', None)
+        data_name = kwargs.get('dataset', None)
 
         self.filter = {}
         self.excludes = []
@@ -76,17 +74,47 @@ class DatasetMixin():
         self.dataset_excludes = []
         self.fields = []
         self.col_names = []
-        if dataset_name is None:
+        if data_name is None:
             self.model = None
             return
 
         # load special dataset
-        dataset = DATASET.get(dataset_name)
-        if dataset_name in DATASET:
-            dataset = DATASET[dataset_name]
-            self.dataset_name = dataset_name
-            self.dataset_verbose_name = dataset_name
-            model = dataset.model
+        try:
+            dataset = registry.datasets[data_name]
+        except KeyError:
+            try:
+                self.model = registry.models[data_name]
+            except KeyError:
+                raise Http404
+            else:
+                # setup for normal model
+                self.queryset = self.model.published.all()
+                self.dataset_name = self.model._meta.model_name
+                self.dataset_verbose_name = self.model._meta.verbose_name
+                # set default fields - just the "simple" ones
+                no_name_field = True
+                fields = self.model.get_fields()
+                for name, verbose_name in zip(fields.names, fields.verbose):
+                    if name == 'name':
+                        no_name_field = False
+                    self.fields.append(name)
+                    if name == verbose_name:
+                        # None: will be capitalized by django-tables2
+                        self.col_names.append(None)
+                    else:
+                        # e.g. when letter case is important, like for 'pH'
+                        self.col_names.append(verbose_name)
+                del name, verbose_name, fields
+
+                if no_name_field and hasattr(self.model, 'name'):
+                    # add column for natural name
+                    self.fields = ['name'] + self.fields
+                    self.col_names = [None] + self.col_names
+        else:
+            # setup for special dataset
+            self.dataset_name = data_name
+            self.dataset_verbose_name = data_name
+            self.model = dataset.model
             self.dataset_filter = dataset.filter
             self.dataset_excludes = dataset.excludes
             for i in dataset.fields:
@@ -104,39 +132,9 @@ class DatasetMixin():
                 self.fields.append(fieldname)
                 self.col_names.append(colname)
             del fieldname, colname
-        else:
-            model = dataset_name
 
-        # raises on invalid model name
-        self.model = apps.get_app_config('mibios').get_model(model)
-
-        if dataset_name in DATASET:
             if dataset.manager:
                 self.queryset = getattr(self.model, dataset.manager).all()
-        else:
-            # normal model
-            self.queryset = self.model.published.all()
-            self.dataset_name = self.model._meta.model_name
-            self.dataset_verbose_name = self.model._meta.verbose_name
-            # set default fields - just the "simple" ones
-            no_name_field = True
-            fields = self.model.get_fields()
-            for name, verbose_name in zip(fields.names, fields.verbose):
-                if name == 'name':
-                    no_name_field = False
-                self.fields.append(name)
-                if name == verbose_name:
-                    # None: will be capitalized by django-tables2
-                    self.col_names.append(None)
-                else:
-                    # e.g. when letter case is important, like for 'pH'
-                    self.col_names.append(verbose_name)
-            del name, verbose_name, fields
-
-            if no_name_field and hasattr(self.model, 'name'):
-                # add column for natural name
-                self.fields = ['name'] + self.fields
-                self.col_names = [None] + self.col_names
 
 
 class TableView(BaseMixin,DatasetMixin, UserRequiredMixin, SingleTableView):
@@ -641,7 +639,7 @@ class FrontPageView(BaseMixin, UserRequiredMixin, TemplateView):
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['counts'] = {}
-        models = get_data_models()
+        models = registry.get_models()
         for i in sorted(models, key=lambda x: x._meta.verbose_name):
             count = i.objects.count()
             if count:
