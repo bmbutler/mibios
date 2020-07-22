@@ -670,8 +670,8 @@ class Model(models.Model):
         return ret[0] if len(ret) == 1 else tuple(ret)
 
     def get_absolute_url(self):
-        name = '{app}:{app}_{model}_change' \
-               ''.format(app='mibios', model=self._meta.model_name)
+        name = 'mibios:{app}_{model}_change' \
+               ''.format(app=self._meta.app_label, model=self._meta.model_name)
         return reverse(name, kwargs=dict(object_id=self.pk))
 
     def add_change_record(self, is_deleted=False, file=None, line=None,
