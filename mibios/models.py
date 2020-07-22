@@ -1,8 +1,5 @@
 from collections import namedtuple, OrderedDict
-import re
-import sys
 
-from django.apps import apps
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
@@ -728,22 +725,3 @@ class Model(models.Model):
                 'model_name': self._meta.model_name,
             })
             raise ValidationError(errors)
-
-
-# utility functions
-def erase_all_data(verbose=False):
-    """
-    Delete all data
-    """
-    if verbose:
-        print('Erasing all data...', file=sys.stderr)
-    for m in apps.get_app_config('mibios').get_models():
-        m.objects.all().delete()
-
-
-def show_stats():
-    """
-    print db stats
-    """
-    for m in apps.get_app_config('mibios').get_models():
-        print('{}: {}'.format(m._meta.label, m.objects.count()))
