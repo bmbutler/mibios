@@ -1,5 +1,6 @@
 from django.apps import apps
 from django.contrib import admin
+from django.db.transaction import atomic
 from django.urls import reverse_lazy
 
 from .dataset import registry
@@ -48,7 +49,6 @@ class AdminSite(admin.AdminSite):
 
 class ModelAdmin(admin.ModelAdmin):
     exclude = ['history']
-    actions = None
 
     def get_list_display(self, request):
         return self.model.get_fields().names
@@ -60,6 +60,16 @@ class ModelAdmin(admin.ModelAdmin):
     def delete_model(self, request, obj):
         obj.add_change_record(user=request.user, is_deleted=True)
         super().delete_model(request, obj)
+
+    @atomic
+    def delete_queryset(self, request, queryset):
+        for i in queryset:
+            i.add_change_record(is_deleted=True, user=request.user)
+            # and since Model.delete() won't be called:
+            i.change.serialize()
+            i.change.save()
+
+        super().delete_queryset(request, queryset)
 
     def history_view(self, request, object_id, extra_context=None):
         record = self.model.objects.get(pk=object_id)

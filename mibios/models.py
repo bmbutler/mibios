@@ -675,6 +675,8 @@ class Model(models.Model):
 
         If the object has no id/pk yet the change will be "is_created".  The
         fields will remain empty until save()
+
+        Call this before the objects save() or delete() method.
         """
         self.change = ChangeRecord(
             user=user,
