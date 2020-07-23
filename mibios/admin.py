@@ -22,10 +22,8 @@ class AdminSite(admin.AdminSite):
         documentation at
         https://docs.djangoproject.com/en/2.2/ref/contrib/admin/#overriding-the-default-admin-site
         we lose all registrations, possibly because site gets re-instantiated
-        later, maybe has to do with module auto-discovery.  """
-        from .models import ChangeRecord
-        self.register(ChangeRecord)
-
+        later, maybe has to do with module auto-discovery.
+        """
         for i in registry.get_models():
             self.register(i, ModelAdmin)
 
