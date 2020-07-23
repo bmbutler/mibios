@@ -66,7 +66,6 @@ class ModelAdmin(admin.ModelAdmin):
         for i in queryset:
             i.add_change_record(is_deleted=True, user=request.user)
             # and since Model.delete() won't be called:
-            i.change.serialize()
             i.change.save()
 
         super().delete_queryset(request, queryset)

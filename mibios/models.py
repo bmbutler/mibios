@@ -338,6 +338,19 @@ class ChangeRecord(models.Model):
             use_natural_foreign_keys=True
         )
 
+    def save(self, *args, **kwargs):
+        """
+        Save change record
+
+        Before saving, serialize the record.  After saving we remove the change
+        record from the data record to ensure that for subsequent changes a new
+        change records is created.
+        """
+        self.serialize()
+        super().save(*args, **kwargs)
+        self.record.history.add(self)
+        del self.record.change
+
 
 class Model(models.Model):
     """
@@ -673,7 +686,7 @@ class Model(models.Model):
                ''.format(app=self._meta.app_label, model=self._meta.model_name)
         return reverse(name, kwargs=dict(object_id=self.pk))
 
-    def add_change_record(self, is_deleted=False, file=None, line=None,
+    def add_change_record(self, is_created=None, is_deleted=False, file=None, line=None,
                           user=None, cmdline=''):
         """
         Create a change record attribute for this object
@@ -690,28 +703,25 @@ class Model(models.Model):
             command_line=cmdline,
             record=self,
             record_natural=self.natural,
-            is_created=self.id is None,
+            is_created=is_created or (self.id is None),
             is_deleted=is_deleted,
         )
 
     @transaction.atomic
     def save(self, *args, **kwargs):
+        is_created = self.id is None
         super().save(*args, **kwargs)
         if not hasattr(self, 'change'):
-            self.add_change_record()
+            self.add_change_record(is_created=is_created)
         # set record (again) as super().save() resets this to None for unknown
         # reasons:
         self.change.record = self
-        self.change.serialize()
         if self.change.has_changed():
             self.change.save()
-            self.history.add(self.change)
-        del self.change
 
     def delete(self, *args, **kwargs):
         if not hasattr(self, 'change'):
             self.add_change_record(is_deleted=True)
-        self.change.serialize()
         with transaction.atomic():
             self.change.save()
             super().delete(*args, **kwargs)
