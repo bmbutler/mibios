@@ -263,19 +263,24 @@ class ChangeRecord(models.Model):
     Model representing a changelog entry
     """
     timestamp = models.DateTimeField(auto_now_add=True)
-    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
-    file = models.FileField(upload_to='import/%Y/', null=True,
+    user = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    file = models.FileField(upload_to='import/%Y/', null=True, blank=True,
                             verbose_name='data source file')
     line = models.IntegerField(
-        null=True, help_text='The corresponding line in the input file',
+        null=True, blank=True,
+        help_text='The corresponding line in the input file',
     )
     command_line = models.CharField(
         max_length=200, blank=True, help_text='management command for import')
-    record_type = models.ForeignKey(ContentType, on_delete=models.PROTECT)
-    record_pk = models.PositiveIntegerField()
+    record_type = models.ForeignKey(
+        ContentType, on_delete=models.SET_NULL, null=True, blank=True,
+    )
+    record_pk = models.PositiveIntegerField(null=True, blank=True)
     record = GenericForeignKey('record_type', 'record_pk')
     record_natural = models.CharField(max_length=300, blank=True)
-    fields = models.TextField()
+    fields = models.TextField(blank=True)
     is_created = models.BooleanField(default=False, verbose_name='new record')
     is_deleted = models.BooleanField(default=False)
 
