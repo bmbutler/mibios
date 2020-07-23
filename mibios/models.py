@@ -706,7 +706,7 @@ class Model(models.Model):
 
     def delete(self, *args, **kwargs):
         if not hasattr(self, 'change'):
-            self.add_change_record(is_delete=True)
+            self.add_change_record(is_deleted=True)
         self.change.serialize()
         with transaction.atomic():
             self.change.save()
