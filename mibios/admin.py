@@ -49,6 +49,9 @@ class ModelAdmin(admin.ModelAdmin):
     exclude = ['history']
     actions = None
 
+    def get_list_display(self, request):
+        return self.model.get_fields().names
+
     def save_model(self, request, obj, form, change):
         obj.add_change_record(user=request.user)
         super().save_model(request, obj, form, change)
