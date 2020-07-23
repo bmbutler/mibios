@@ -553,33 +553,75 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
 
 class HistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
     table_class = HistoryTable
+    record = None
 
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)
 
-        self.record_pk = kwargs['pk']
+        if 'record' in kwargs:
+            # coming in through mibios.ModelAdmin history
+            self.record = kwargs['record']
+            self.record_pk = self.record.pk
+            self.record_natural = self.record.natural
+            app_label = self.record._meta.app_label
+            data_name = self.record._meta.model_name
+        else:
+            # via other url conf, NOTE: has no current users
+            try:
+                self.record_pk = int(kwargs['natural'])
+                self.record_natural = None
+            except ValueError:
+                self.record_pk = None
+                self.record_natural = kwargs['natural']
+
+            data_name = kwargs['dataset']
+            try:
+                model_class = registry.models[data_name]
+            except KeyError:
+                raise Http404
+            else:
+                app_label = model_class._meta.app_label
+
         try:
             # record_type: can't name this content_type, that's taken in
             # TemplateResponseMixin
             self.record_type = ContentType.objects.get_by_natural_key(
-                kwargs['app'],
-                kwargs['dataset'],
+                app_label,
+                data_name,
             )
         except ContentType.DoesNotExist:
             raise Http404
 
-        model_class = self.record_type.model_class()
-        try:
-            self.record = model_class.objects.get(pk=self.record_pk)
-        except model_class.DoesNotExist:
-            self.record = None
+        if self.record is None:
+            model_class = self.record_type.model_class()
+            get_kw = {}
+            if self.record_natural:
+                get_kw['natural'] = self.record_natural
+            elif self.record_pk:
+                get_kw['pk'] = self.record_pk
+
+            try:
+                self.record = model_class.objects.get(**get_kw)
+            except (model_class.DoesNotExist,
+                    model_class.MultipleObjectsReturned):
+                self.record = None
+
+        if kwargs.get('extra_context'):
+            if self.extra_context is None:
+                self.extra_context = kwargs['extra_context']
+            else:
+                self.extra_context.update(kwargs['extra_context'])
 
     def get_queryset(self):
         if not hasattr(self, 'object_list'):
             f = dict(
                 record_type=self.record_type,
-                record_pk=self.record_pk,
             )
+            if self.record_natural:
+                f['record_natural'] = self.record_natural
+            elif self.record_pk:
+                f['record_pk'] = self.record_pk
+
             self.object_list = ChangeRecord.objects.filter(**f)
 
         return self.object_list
@@ -608,16 +650,19 @@ class DeletedHistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
         super().setup(request, *args, **kwargs)
 
         try:
+            model = registry.models[kwargs['dataset']]
+        except KeyError:
+            raise Http404
+
+        try:
             # record_type: can't name this content_type, that's taken in
             # TemplateResponseMixin
             self.record_type = ContentType.objects.get_by_natural_key(
-                'mibios',
-                kwargs['dataset'],
+                model._meta.app_label,
+                model._meta.model_name,
             )
         except ContentType.DoesNotExist:
             raise Http404
-
-        model_class = self.record_type.model_class()
 
     def get_queryset(self):
         if not hasattr(self, 'object_list'):

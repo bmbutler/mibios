@@ -81,10 +81,10 @@ class DeletedHistoryTable(tables.Table):
     record_natural = tables.Column(
         verbose_name='record name',
         linkify=(
-            'history',
+            'record_history',
             {
                 'dataset': tables.A('record_type.model'),
-                'pk': tables.A('record_pk')
+                'natural': tables.A('record_natural') or tables.A('record_pk'),
             }
         )
     )

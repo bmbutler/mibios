@@ -3,6 +3,7 @@ from django.contrib import admin
 from django.urls import reverse_lazy
 
 from .dataset import registry
+from .views import HistoryView
 
 
 app_config = apps.get_app_config('mibios')
@@ -59,3 +60,8 @@ class ModelAdmin(admin.ModelAdmin):
     def delete_model(self, request, obj):
         obj.add_change_record(user=request.user, is_deleted=True)
         super().delete_model(request, obj)
+
+    def history_view(self, request, object_id, extra_context=None):
+        record = self.model.objects.get(pk=object_id)
+        return HistoryView.as_view()(
+                request, record=record, extra_context=extra_context)
