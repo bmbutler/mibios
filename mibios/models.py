@@ -326,9 +326,6 @@ class ChangeRecord(models.Model):
         """
         Serialize field content
         """
-        if self.is_deleted:
-            return
-
         self.fields = serializers.serialize(
             'json',
             [self.record],
