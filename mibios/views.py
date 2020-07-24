@@ -506,11 +506,11 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
         # do data import
         f = form.files['file']
         ff = io.TextIOWrapper(f)
-        log.debug('Importing into {}: {}'.format(self.dataset, ff))
+        log.debug('Importing into {}: {}'.format(self.dataset_name, ff))
         try:
             stats = GeneralLoader.load_file(
                 ff,
-                self.dataset,
+                self.dataset_name,
                 dry_run=form.cleaned_data['dry_run'],
                 can_overwrite=form.cleaned_data['overwrite'],
                 warn_on_error=True,
@@ -537,7 +537,8 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
         return super().form_valid(form)
 
     def get_success_url(self):
-        return reverse('queryset_index', kwargs=dict(dataset=self.dataset))
+        return reverse('queryset_index',
+                       kwargs=dict(dataset=self.dataset_name))
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
