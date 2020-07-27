@@ -1,5 +1,6 @@
 import csv
 import io
+from math import isnan
 
 from django.apps import apps
 from django.db.models import Count
@@ -437,17 +438,28 @@ class TableView(BaseMixin,DatasetMixin, UserRequiredMixin, SingleTableView):
                     except KeyError:
                         pass
 
-                filter_link_data = [
-                    (
-                        value,
-                        count,
-                        # TODO: applying filter to negated queryset is more
-                        # complicated
-                        self.to_query_string(filter={sort_by_field: value})
-                    )
-                    for value, count
-                    in stats.get('choice_counts', {}).items()
-                ]
+                filter_link_data = []
+                if 'choice_counts' in stats:
+                    # TODO / FIXME: s/nan/None/ for foreign key columns
+                    # here, bit this might not what we want for actual
+                    # numeric columns, the nan in put in by
+                    # pandas.Series.value_counts(dropna=False)
+                    counts = {
+                        None if isinstance(k, float) and isnan(k) else k: v
+                        for k, v in
+                        stats['choice_counts'].items()
+                    }
+                    filter_link_data = [
+                        (
+                            value,
+                            count,
+                            # TODO: applying filter to negated queryset is more
+                            # complicated
+                            self.to_query_string(filter={sort_by_field: value})
+                        )
+                        for value, count
+                        in counts.items()
+                    ]
                 ctx['filter_link_data'] = filter_link_data
             ctx['sort_by_stats'] = stats
 

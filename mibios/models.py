@@ -77,9 +77,10 @@ class QuerySet(models.QuerySet):
             if i.choices:
                 col_dat = pandas.Categorical(col_dat)
             else:
-                if dtype is str:
+                if dtype is str and not i.is_relation:
                     # None become empty str
                     # prevents 'None' string to enter df str columns
+                    # (but not for foreign key columns)
                     col_dat = ('' if i is None else i for i in col_dat)
                 kwargs['dtype'] = dtype
             df[i.name] = pandas.Series(col_dat, **kwargs)
