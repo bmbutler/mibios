@@ -32,14 +32,16 @@ class AbstractLoader():
     process_line(), that are not calls via process_file(), only when
     process_file() is about to finish, dry_run will cause a rollback.
     """
-    missing_data = ['']
-
+    # FIXME: this class should now be incorporated into GeneralLoder,
+    # the fields/COLS/cols dance should be simplified, the complexity is not
+    # needed now
     def __init__(self, colnames, sep='\t', can_overwrite=True,
                  warn_on_error=False, strict_sample_id=False, dry_run=False,
                  user=None):
         # use internal names for columns:
         _cols = {i.casefold(): j for i, j in self.COLS}
         self.cols = []  # internal names for columns in file
+        self.blanks = {None: ['']}
         self.ignored_columns = []  # columns that won't be processed
         for i in colnames:
             if i.casefold() in _cols:
@@ -154,22 +156,24 @@ class AbstractLoader():
 
         self.rec[model_name] = obj
 
-    def non_empty(self, value):
+    def is_blank(self, col_name, value):
         """
         Say if a value is "empty" or missing.
 
         An empty value is something like whitespace-only or Null or None
-        or 'NA' etc.
+        or 'NA' or equal to a specified blank value etc.
+
+        Values are assumed to be trimmed of whitespace already.
         """
-        for i in self.missing_data:
+        for i in self.blanks[None] + self.blanks.get(col_name, []):
             if isinstance(i, re.Pattern):
                 if i.match(value):
-                    return False
+                    return True
             elif value == i:
-                return False
+                return True
         if Model.decode_blank(value) == '':
-            return False
-        return True
+            return True
+        return False
 
     def process_line(self, line):
         """
@@ -187,7 +191,7 @@ class AbstractLoader():
             k: v
             for k, v
             in zip(self.cols, row)
-            if self.non_empty(v) and k in valid_cols
+            if k in valid_cols and not self.is_blank(k, v)
         }
         # rec: accumulates bits of processing before final assembly
         self.rec = {}
@@ -267,12 +271,15 @@ class GeneralLoader(AbstractLoader):
 
         model_name = self.model._meta.model_name
         if self.dataset:
-            self.COLS = [
-                (col, model_name + '__' + accs)
-                for accs, col
-                in self.dataset.fields
-            ]
-            self.missing_data += self.dataset.missing_data
+            self.COLS = []
+            for accr, col, *extra in self.dataset.fields:
+                accr = model_name + '__' + accr
+                self.COLS.append((col, accr))
+                for i in extra:
+                    if 'blanks' in i:
+                        if accr not in self.blanks:
+                            self.blanks[accr] = []
+                        self.blanks[accr] += i['blanks']
         else:
             # set COLS from model, start with id column
             fields = self.model.get_fields()
@@ -282,6 +289,9 @@ class GeneralLoader(AbstractLoader):
             ]
 
         super().__init__(colnames, **kwargs)
+
+        if self.dataset:
+            self.blanks[None] += self.dataset.blanks
 
     @classmethod
     def load_file(cls, file, dataset=None, sep='\t', **kwargs):
