@@ -350,16 +350,15 @@ class GeneralLoader(AbstractLoader):
             except Exception as e:
                 # assume parse_fun is error-free and blame user
                 for i, j in self.COLS:
-                    print(i, j, accessor)
                     if j == accessor:
-                        cols = i
+                        col = i
                         break
                 else:
                     col = '??'
                 raise UserDataError(
                     'Failed parsing value "{}" in column {}: {}:{}'
                     ''.format(value, col, type(e).__name__, e)
-                )
+                ) from e
 
         if isinstance(ret, dict):
             # put prefix back
