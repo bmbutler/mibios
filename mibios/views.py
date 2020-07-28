@@ -37,6 +37,7 @@ class UserRequiredMixin(LoginRequiredMixin):
 class CuratorRequiredMixin(UserRequiredMixin, UserPassesTestMixin):
     group_name = 'curators'
     permission_denied_message = 'You are not a curator'
+
     def test_func(self):
         return self.request.user.groups.filter(name=self.group_name).exists()
 
@@ -140,7 +141,7 @@ class DatasetMixin():
                 self.queryset = getattr(self.model, dataset.manager).all()
 
 
-class TableView(BaseMixin,DatasetMixin, UserRequiredMixin, SingleTableView):
+class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
     template_name = 'mibios/model_index.html'
     QUERY_FILTER = 'filter'
     QUERY_EXCLUDE = 'exclude'
@@ -177,7 +178,7 @@ class TableView(BaseMixin,DatasetMixin, UserRequiredMixin, SingleTableView):
         filter = {}
         excludes = []
         negate = False
-        for qkey, qvals  in self.request.GET.lists():
+        for qkey, qvals in self.request.GET.lists():
             if qkey == self.QUERY_FILTER:
                 for i in qvals:
                     for j in i.split(self.QUERY_LIST_SEP):
@@ -699,6 +700,7 @@ class DeletedHistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
 
 class FrontPageView(BaseMixin, UserRequiredMixin, TemplateView):
     template_name = 'mibios/frontpage.html'
+
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['counts'] = {}

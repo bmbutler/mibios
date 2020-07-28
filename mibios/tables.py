@@ -20,7 +20,7 @@ class CountColumn(tables.Column):
 
         if 'linkify' not in kwargs:
             def linkify(record):
-                f = {our_name : record.natural}
+                f = {our_name: record.natural}
                 query = view.build_query_string(filter=f)
                 return url + query
 
@@ -34,14 +34,16 @@ class CountColumn(tables.Column):
             e = {our_name + '__' + k: v for k, v in i.items()}
             if e:
                 elist.append(e)
-        # if there is a filter selecting for us, then skip exclusion of missing data:
+        # if there is a filter selecting for us, then skip exclusion of missing
+        # data:
         for i in f:
             if i.startswith(our_name):
                 break
         else:
             elist.append({our_name: NONE_LOOKUP})
 
-        q = view.build_query_string(filter=f, excludes=elist, negate=view.negate)
+        q = view.build_query_string(filter=f, excludes=elist,
+                                    negate=view.negate)
         self.footer_url = url + q
 
         super().__init__(self, **kwargs)

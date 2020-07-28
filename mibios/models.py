@@ -54,7 +54,7 @@ class QuerySet(models.QuerySet):
         :param: natural bool: If true, then replace id/pk of foreign
                               relation with natural representation.
         """
-        index=self.values_list('id', flat=True)
+        index = self.values_list('id', flat=True)
         df = pandas.DataFrame([], index=index)
         for i in self.model._meta.get_fields():
             if fields and i.name not in fields:
@@ -286,7 +286,6 @@ class ChangeRecord(models.Model):
     is_deleted = models.BooleanField(default=False)
 
     class Meta:
-        #app_label = 'mibios'
         get_latest_by = 'timestamp'
         ordering = ['-timestamp']
 
@@ -694,8 +693,8 @@ class Model(models.Model):
                ''.format(app=self._meta.app_label, model=self._meta.model_name)
         return reverse(name, kwargs=dict(object_id=self.pk))
 
-    def add_change_record(self, is_created=None, is_deleted=False, file=None, line=None,
-                          user=None, cmdline=''):
+    def add_change_record(self, is_created=None, is_deleted=False, file=None,
+                          line=None, user=None, cmdline=''):
         """
         Create a change record attribute for this object
 

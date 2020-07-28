@@ -63,7 +63,7 @@ class AbstractLoader():
         self.warn_on_error = warn_on_error
         self.strict_sample_id = strict_sample_id
         self.dry_run = dry_run
-        self.user=user
+        self.user = user
         self.erase_on_blank = erase_on_blank
         for col, name in self.COLS:
             setattr(self, 'name', None)
@@ -265,7 +265,7 @@ class AbstractLoader():
                             ''.format(last_line - first_line)
                         )
                     self.last_warning = \
-                            (err_name, msg, self.linenum, self.linenum)
+                        (err_name, msg, self.linenum, self.linenum)
             # reset stats:
             self.new = new_
             self.added = added_
@@ -411,7 +411,7 @@ class GeneralLoader(AbstractLoader):
 
         for k, v in self.rec.items(leaves_first=True):
             model, id_arg, obj, new = [None] * 4
-            _k, _v, data = [None] *3
+            _k, _v, data = [None] * 3
             try:
                 try:
                     # try as model
@@ -422,7 +422,7 @@ class GeneralLoader(AbstractLoader):
 
                 # remove nodes not in row/data
                 # FIXME: commented out / still needed?
-                #for _k, _v in self.tget(k).items():
+                # for _k, _v in self.tget(k).items():
                 #    if isinstance(_v, dict):
                 #        print('BORK DEL', _k, _v)
                 #        del data[_k]
@@ -481,7 +481,7 @@ class GeneralLoader(AbstractLoader):
                         elif field.blank:
                             data1[_k] = ''
                         else:
-                            # rm the field, will get default value for new objects
+                            # rm the field, will get default value for new objs
                             # TODO: issue a warning
                             continue
                     else:
