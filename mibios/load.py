@@ -430,6 +430,10 @@ class GeneralLoader(AbstractLoader):
                 if isinstance(v, dict):
                     data = v.copy()
                     id_arg = {}
+                elif isinstance(v, model):
+                    # value was instantiated by parse_value()
+                    # nothing left to do, skip accounting
+                    continue
                 elif v:
                     id_arg = dict(natural=v)
                     data = {}
