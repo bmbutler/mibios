@@ -14,7 +14,7 @@ class Dataset():
     fields = []
     filter = {}
     excludes = []
-    missing_data = []
+    blanks = ['']
     manager = 'published'
 
     # instance container for subclass singletons
