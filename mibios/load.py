@@ -1,4 +1,5 @@
 from collections import Counter, defaultdict
+from inspect import signature
 import re
 import sys
 
@@ -345,8 +346,12 @@ class GeneralLoader(AbstractLoader):
         if parse_fun is None:
             ret = value
         else:
+            args = [value]
+            if len(signature(parse_fun).parameters) == 2:
+                args.append(self.rec)
+
             try:
-                ret = parse_fun(value)
+                ret = parse_fun(*args)
             except Exception as e:
                 # assume parse_fun is error-free and blame user
                 for i, j in self.COLS:
