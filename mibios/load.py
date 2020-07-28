@@ -441,7 +441,7 @@ class GeneralLoader(AbstractLoader):
                     # where to make that determination
                     raise RuntimeError(
                         'oops here: data: {}\nk:{}\nv:{}\nstate:{}'
-                        ''.format(data, k, v, self.template)
+                        ''.format(data, k, v, self.rec)
                     )
 
                 # separate identifiers from other fields
