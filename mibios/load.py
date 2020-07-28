@@ -323,18 +323,6 @@ class GeneralLoader(AbstractLoader):
         loader = cls(dataset, colnames, sep=sep, **kwargs)
         return loader.process_file(file)
 
-    def row_with_missing_columns(self):
-        """
-        Get row data with missing columns having an explicit blank
-
-        DEPRECATED -- superceded by get_template etc.
-        """
-        row = self.row.copy()
-        for col, accr in self.COLS:
-            if accr not in row:
-                row[accr] = ''
-        return row
-
     def parse_value(self, accessor, value):
         """
         Delegate to specified parsing method
@@ -420,13 +408,6 @@ class GeneralLoader(AbstractLoader):
                     # assume a field
                     continue
 
-                # remove nodes not in row/data
-                # FIXME: commented out / still needed?
-                # for _k, _v in self.tget(k).items():
-                #    if isinstance(_v, dict):
-                #        print('BORK DEL', _k, _v)
-                #        del data[_k]
-
                 if isinstance(v, dict):
                     data = v.copy()
                     id_arg = {}
@@ -441,12 +422,6 @@ class GeneralLoader(AbstractLoader):
                     # TODO: ?not get correct blank value for field?
                     continue
                 else:
-                    # SUPER FIXME:when does this happen now?
-                    # finally the primary row object but can't do
-                    # anything with it?
-                    # FIXME: should raise UserDataError if id or name
-                    # column in empty, but have to find the right place
-                    # where to make that determination
                     raise RuntimeError(
                         'oops here: data: {}\nk:{}\nv:{}\nstate:{}'
                         ''.format(data, k, v, self.rec)
@@ -526,8 +501,3 @@ class GeneralLoader(AbstractLoader):
                     ''.format(k, v, model, id_arg, data,
                               self.rec.pretty(indent=(3, 2)))
                 ) from e
-            # if k == parts:
-            #   print(f'X {k=} {v=} {model=} {id_arg=} {data=}' + 'template={}'
-            #          ''.format(self.template))
-            # else:
-            #    print(parts)
