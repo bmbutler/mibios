@@ -514,7 +514,7 @@ class Model(models.Model):
                 else:
                     theirs = set(getattr(other, i.name).all())
                 if theirs - ours:
-                    diff.append(i.name)
+                    only_them.append(i.name)
             elif isinstance(i, models.OneToOneField):
                 raise NotImplementedError()
             else:
