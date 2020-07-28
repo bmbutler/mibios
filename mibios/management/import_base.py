@@ -56,6 +56,17 @@ class AbstractImportCommand(BaseCommand):
                  'database.',
         )
         parser.add_argument(
+            '--erase-on-blank',
+            action='store_true',
+            help='Erase fields in the database if the input file has the '
+                 'corresponding column but the field is empty/blank.  Which '
+                 'values are considered blank depends on the table and column.'
+                 ' By default existing data is not touched.  This option is '
+                 'separate from --overwrite and only affects the case when an '
+                 'empty value overwrites a non-empty while --overwrite allows '
+                 'to overwrite a non-empty value with a non-empty.'
+        )
+        parser.add_argument(
             '-s', '--sep',
             default=self.DEFAULT_SEPARATOR,
             help='Column separator, default is <tab>',
@@ -93,6 +104,7 @@ class AbstractImportCommand(BaseCommand):
                 options['file'],
                 sep=options['sep'],
                 can_overwrite=options['overwrite'],
+                erase_on_blank=options['erase_on_blank'],
                 dry_run=options['dry_run'],
                 warn_on_error=options['warn_on_error'],
                 **self.load_file_kwargs(**options),
@@ -109,7 +121,7 @@ class AbstractImportCommand(BaseCommand):
 
     @classmethod
     def format_import_stats(cls, count=0, new={}, added={}, changed={},
-                            ignored=[], warnings=[], **options):
+                            ignored=[], warnings=[], erased={}, **options):
         out = ''
         if options.get('dry_run', False):
             out += ' (dry run)'
@@ -152,7 +164,26 @@ class AbstractImportCommand(BaseCommand):
                             row.append('{}: {} -> {}'.format(field, old, new))
                         out += '   {} {}: {}\n'.format(m, obj, ' | '.join(row))
 
-        else:
+        if erased:
+            if options.get('erase_on_blank'):
+                msg = ' Erased:\n'
+            else:
+                msg = (' Blank values: (use "erase-on-blank" option to erase):'
+                       '\n')
+            out += msg + '\n'.join([
+                '  {}: {}'.format(k, len(v))
+                for k, v
+                in erased.items()
+            ]) + '\n'
+            if options.get('erase_on_blank') and options.get('verbose_changes'):
+                for m, m_items in erased.items():
+                    for obj, field_values in m_items.items():
+                        row = []
+                        for field, val in field_values:
+                            row.append('{}: {}'.format(field, val))
+                        out += '   {} {}: {}\n'.format(m, obj, ' | '.join(row))
+
+        if not changed and not erased:
             out += ' No existing records modified\n'
 
         if warnings:

@@ -527,6 +527,7 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
                 self.dataset_name,
                 dry_run=form.cleaned_data['dry_run'],
                 can_overwrite=form.cleaned_data['overwrite'],
+                erase_on_blank=form.cleaned_data['erase_on_blank'],
                 warn_on_error=True,
                 user=self.request.user,
             )

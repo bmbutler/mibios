@@ -471,10 +471,11 @@ class Model(models.Model):
 
         Returns a tuple (bool, int), the first component of which says if both
         objects are consistent with each other, i.e. if the only differences on
-        fields involve one of the fields being blank or null.  Differences on
-        many-to-many fields don't affect consistency.  The second component
-        contains the names of those fields that are null or blank in <self> but
-        not in <other> including additional many-to-many links.
+        fields allowed if our's is blank and the other's is not blank.
+        Differences on many-to-many fields don't affect consistency.  The
+        second component contains the names of those fields that are null or
+        blank in <self> but not in <other> including additional many-to-many
+        links.
 
         For two inconsistent objects the return value's second component is
         undefined (it may be usable for debugging.)
@@ -485,12 +486,14 @@ class Model(models.Model):
         elif not isinstance(other, dict):
             raise TypeError('can\'t compare to {} object'.format(type(other)))
 
-        diff = []
+        BLANKS = ['', None]
         is_consistent = True
-        non_matching = []
+        only_us = []
+        only_them = []
+        mismatch = []
         for i in self._meta.get_fields():
             if isinstance(other, dict) and i.name not in other:
-                # interpret as blank/None in other (dict version)
+                # other is silent on this field (dict version)
                 continue
 
             if isinstance(i, models.ManyToOneRel):
@@ -524,25 +527,29 @@ class Model(models.Model):
                 else:
                     theirs = getattr(other, i.name)
 
-                if theirs is None or theirs == '':
-                    # other data missing ok
+                if ours in BLANKS and theirs in BLANKS:
                     continue
-                elif ours is None or ours == '':
+
+                if ours not in BLANKS and theirs not in BLANKS:
+                    # both are real data
+                    # usually other dict has str values
+                    # try to cast to e.g. Decimal, ... (crossing fingers?)
+                    if isinstance(theirs, str):
+                        theirs = type(ours)(theirs)
+
+                    if ours != theirs:
+                        is_consistent = False
+                        mismatch.append(i.name)
+                elif ours in BLANKS:
                     # other has more data
-                    diff.append(i.name)
-                    continue
-
-                # both are real data
-                # usually other dict has str values
-                # try to cast to e.g. Decimal, ... (crossing fingers?)
-                if isinstance(theirs, str):
-                    theirs = type(ours)(theirs)
-
-                if ours != theirs:
+                    only_them.append(i.name)
+                else:
+                    # other has data missing
                     is_consistent = False
-                    non_matching.append(i.name)
+                    only_us.append(i.name)
 
-        return (is_consistent, diff if is_consistent else non_matching)
+        diffs = dict(only_us=only_us, only_them=only_them, mismatch=mismatch)
+        return (is_consistent, diffs)
 
     @property
     def natural(self):

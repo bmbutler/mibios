@@ -37,7 +37,7 @@ class AbstractLoader():
     # needed now
     def __init__(self, colnames, sep='\t', can_overwrite=True,
                  warn_on_error=False, strict_sample_id=False, dry_run=False,
-                 user=None):
+                 user=None, erase_on_blank=False):
         # use internal names for columns:
         _cols = {i.casefold(): j for i, j in self.COLS}
         self.cols = []  # internal names for columns in file
@@ -55,6 +55,7 @@ class AbstractLoader():
         self.new = Counter()
         self.added = Counter()
         self.changed = defaultdict(list)
+        self.erased = defaultdict(dict)
         self.count = 0
         self.fq_file_ids = set()
         self.can_overwrite = can_overwrite
@@ -62,6 +63,7 @@ class AbstractLoader():
         self.strict_sample_id = strict_sample_id
         self.dry_run = dry_run
         self.user=user
+        self.erase_on_blank = erase_on_blank
         for col, name in self.COLS:
             setattr(self, 'name', None)
 
@@ -98,10 +100,12 @@ class AbstractLoader():
             new=self.new,
             added=self.added,
             changed=self.changed,
+            erased=self.erased,
             ignored=self.ignored_columns,
             warnings=self.warnings,
             dry_run=self.dry_run,
             overwrite=self.can_overwrite,
+            erase_on_blank=self.erase_on_blank,
         )
 
     def get_from_row(self, *keys):
@@ -130,29 +134,46 @@ class AbstractLoader():
             user=self.user,
             cmdline=' '.join(sys.argv) if self.user is None else '',
         )
+        need_to_save = False
         if is_new:
             self.new[model_name] += 1
+            need_to_save = False
             obj.full_clean()
             obj.save()
         elif from_row is not None:
-            consistent, diff = obj.compare(from_row)
-            if diff:
-                if consistent:
+            consistent, diffs = obj.compare(from_row)
+            for k, v in from_row.items():
+                apply_change = False
+
+                if k in diffs['only_them']:
+                    apply_change = True
                     self.added[model_name] += 1
-                else:
+                elif k in diffs['only_us']:
+                    if obj not in self.erased[model_name]:
+                        self.erased[model_name][obj] = []
+                    self.erased[model_name][obj].append(
+                        (k, getattr(obj, k))
+                    )
+                    if self.erase_on_blank:
+                        apply_change = True
+                elif k in diffs['mismatch']:
                     self.changed[model_name].append((
                         obj,
                         [
                             (i, getattr(obj, i), from_row.get(i))
-                            for i in diff
+                            for i in diffs['mismatch']
                         ]
                     ))
+                    if self.can_overwrite:
+                        apply_change = True
 
-                if consistent or self.can_overwrite:
-                    for k, v in from_row.items():
-                        setattr(obj, k, v)
-                    obj.full_clean()
-                    obj.save()
+                if apply_change:
+                    need_to_save = True
+                    setattr(obj, k, v)
+
+        if need_to_save:
+            obj.full_clean()
+            obj.save()
 
         self.rec[model_name] = obj
 
@@ -188,10 +209,10 @@ class AbstractLoader():
         # row: the non-empty row content, whitespace-stripped, read-only
         valid_cols = [i[1] for i in self.COLS]
         self.row = {
-            k: v
+            k: None if self.is_blank(k, v) else v
             for k, v
             in zip(self.cols, row)
-            if k in valid_cols and not self.is_blank(k, v)
+            if k in valid_cols
         }
         # rec: accumulates bits of processing before final assembly
         self.rec = {}
@@ -199,6 +220,7 @@ class AbstractLoader():
         new_ = self.new
         added_ = self.added
         changed_ = self.changed
+        erased_ = self.erased
         try:
             with transaction.atomic():
                 self.process_row()
@@ -247,6 +269,7 @@ class AbstractLoader():
             self.new = new_
             self.added = added_
             self.changed = changed_
+            self.erased = erased_
         except Exception as e:
             msg = 'at line {}: {}, current row:\n{}' \
                   ''.format(self.linenum, e, self.row)
@@ -369,10 +392,11 @@ class GeneralLoader(AbstractLoader):
         """
         self.rec = DeepRecord()
         for k, v in self.row.items():
-            v = self.parse_value(k, v)
-            if v is None:
-                # parse_value said to ignore just this field
-                continue
+            if v is not None:
+                v = self.parse_value(k, v)
+                if v is None:
+                    # parse_value said to ignore just this field
+                    continue
 
             if isinstance(v, dict):
                 self.rec.update(**v)
@@ -405,6 +429,9 @@ class GeneralLoader(AbstractLoader):
                 elif v:
                     id_arg = dict(natural=v)
                     data = {}
+                elif v is None:
+                    # TODO: ?not get correct blank value for field?
+                    continue
                 else:
                     # SUPER FIXME:when does this happen now?
                     # finally the primary row object but can't do
@@ -430,6 +457,28 @@ class GeneralLoader(AbstractLoader):
                 }
                 for i in m2ms:
                     del data[i]
+                m2ms = {
+                    k: v for k, v in m2ms.items()
+                    # filter out Nones
+                    if v is not None
+                }
+
+                # ensure correct blank values
+                data1 = {}
+                for k, v in data.items():
+                    if v is None:
+                        field = model._meta.get_field(k)
+                        if field.null:
+                            data1[k] = None
+                        elif field.blank:
+                            data1[k] = ''
+                        else:
+                            # rm the field, will get default value for new objects
+                            # TODO: issue a warning
+                            continue
+                    else:
+                        data1[k] = v
+                data = data1
 
                 # if we don't have unique ids, use the "data" instead
                 if not id_arg:
