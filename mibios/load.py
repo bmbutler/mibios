@@ -466,26 +466,26 @@ class GeneralLoader(AbstractLoader):
                 for i in m2ms:
                     del data[i]
                 m2ms = {
-                    k: v for k, v in m2ms.items()
+                    _k: _v for _k, _v in m2ms.items()
                     # filter out Nones
-                    if v is not None
+                    if _v is not None
                 }
 
                 # ensure correct blank values
                 data1 = {}
-                for k, v in data.items():
-                    if v is None:
-                        field = model._meta.get_field(k)
+                for _k, _v in data.items():
+                    if _v is None:
+                        field = model._meta.get_field(_k)
                         if field.null:
-                            data1[k] = None
+                            data1[_k] = None
                         elif field.blank:
-                            data1[k] = ''
+                            data1[_k] = ''
                         else:
                             # rm the field, will get default value for new objects
                             # TODO: issue a warning
                             continue
                     else:
-                        data1[k] = v
+                        data1[_k] = _v
                 data = data1
 
                 # if we don't have unique ids, use the "data" instead
