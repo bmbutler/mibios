@@ -4,6 +4,9 @@ Utilities module
 import logging
 
 
+logging.addLevelName(25, 'SUCCESS')
+
+
 class PrintLikeLogging(logging.LoggerAdapter):
     """
     Adapter to log just like print

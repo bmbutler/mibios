@@ -91,7 +91,7 @@ class AbstractImportCommand(BaseCommand):
         return parser
 
     def handle(self, *args, **options):
-        logger = getLogger('mibios')
+        logger = getLogger('dataimport')
         if options['debug']:
             logger.setLevel('DEBUG')
         else:
@@ -115,7 +115,7 @@ class AbstractImportCommand(BaseCommand):
 
         kwargs = dict(**options)
         kwargs.update(**stats)
-        self.stdout.write(self.format_import_stats(**kwargs))
+        logger.info(self.format_import_stats(**kwargs))
         self.stdout.write(' All done.')
 
     @classmethod

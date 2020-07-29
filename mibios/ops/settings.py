@@ -160,6 +160,12 @@ LOGGING = {
             'class': 'logging.FileHandler',
             'filename': './debug.log',
         },
+        'import_log_file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': './import.log',
+            'formatter': 'verbose',
+        },
         'mail_admins': {
             'level': 'ERROR',
             'class': 'django.utils.log.AdminEmailHandler',
@@ -178,5 +184,11 @@ LOGGING = {
             'level': 'DEBUG',
             'propagate': True,
         },
+        'dataimport': {
+            'handlers': ['import_log_file'],
+            'level': 'INFO',
+        },
     },
 }
+
+UPLOAD_DIR = BASE_DIR / 'uploads'

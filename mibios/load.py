@@ -12,6 +12,7 @@ from .utils import DeepRecord, getLogger
 
 
 log = getLogger(__name__)
+importlog = getLogger('dataimport')
 
 
 class DryRunRollback(Exception):
@@ -37,6 +38,7 @@ class AbstractLoader():
     # the fields/COLS/cols dance should be simplified, the complexity is not
     # needed now
     DEFAULT_SEPARATOR = '\t'
+    log = log
 
     def __init__(self, colnames, sep=None, can_overwrite=True,
                  warn_on_error=False, strict_sample_id=False, dry_run=False,
@@ -69,6 +71,10 @@ class AbstractLoader():
         self.erase_on_blank = erase_on_blank
         for col, name in self.COLS:
             setattr(self, 'name', None)
+        if dry_run:
+            self.log = log
+        else:
+            self.log = importlog
 
     @classmethod
     def load_file(cls, file, sep='\t', **kwargs):
@@ -405,7 +411,11 @@ class GeneralLoader(AbstractLoader):
             else:
                 self.rec[k] = v
 
-        log.debug('line {}: record: {}'.format(self.linenum, self.rec))
+        msg = 'line {}: record: {}'.format(self.linenum, self.rec)
+        if self.dry_run:
+            log.debug(msg)
+        else:
+            importlog.info(msg)
 
         for k, v in self.rec.items(leaves_first=True):
             model, id_arg, obj, new = [None] * 4

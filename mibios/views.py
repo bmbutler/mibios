@@ -516,17 +516,27 @@ class ExportView(TableView):
 class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
     template_name = 'mibios/import.html'
     form_class = UploadFileForm
+    log = getLogger('dataimport')
 
     def form_valid(self, form):
         # do data import
         f = form.files['file']
         ff = io.TextIOWrapper(f)
-        log.debug('Importing into {}: {}'.format(self.dataset_name, ff))
+        dry_run = form.cleaned_data['dry_run']
+        if dry_run:
+            log.debug(
+                '[dry run] Importing into {}: {}'.format(self.dataset_name, ff)
+            )
+        else:
+            self.log.info(
+                'Importing into {}: {}'.format(self.dataset_name, ff)
+            )
+
         try:
             stats = GeneralLoader.load_file(
                 ff,
                 self.dataset_name,
-                dry_run=form.cleaned_data['dry_run'],
+                dry_run=dry_run,
                 can_overwrite=form.cleaned_data['overwrite'],
                 erase_on_blank=form.cleaned_data['erase_on_blank'],
                 warn_on_error=True,
@@ -548,7 +558,11 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
 
         f.close()
         messages.add_message(self.request, msg_level, msg)
-        log.info('IMPORT:', self.request.user, f, msg)
+        args = (msg_level, 'user:', self.request.user, 'file:', f, '\n', msg)
+        if dry_run:
+            log.log(*args)
+        else:
+            self.log.log(*args)
 
         return super().form_valid(form)
 
