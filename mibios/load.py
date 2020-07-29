@@ -36,7 +36,9 @@ class AbstractLoader():
     # FIXME: this class should now be incorporated into GeneralLoder,
     # the fields/COLS/cols dance should be simplified, the complexity is not
     # needed now
-    def __init__(self, colnames, sep='\t', can_overwrite=True,
+    DEFAULT_SEPARATOR = '\t'
+
+    def __init__(self, colnames, sep=None, can_overwrite=True,
                  warn_on_error=False, strict_sample_id=False, dry_run=False,
                  user=None, erase_on_blank=False):
         # use internal names for columns:
@@ -52,7 +54,7 @@ class AbstractLoader():
                 self.ignored_columns.append(i)
 
         self.warnings = []
-        self.sep = sep
+        self.sep = self.DEFAULT_SEPARATOR if sep is None else sep
         self.new = Counter()
         self.added = Counter()
         self.changed = defaultdict(list)
@@ -318,8 +320,16 @@ class GeneralLoader(AbstractLoader):
             self.blanks[None] += self.dataset.blanks
 
     @classmethod
-    def load_file(cls, file, dataset=None, sep='\t', **kwargs):
-        colnames = file.readline().strip().split(sep)
+    def load_file(cls, file, dataset=None, sep=None, **kwargs):
+        first_line = file.readline()
+        if sep is None:
+            # auto-detect sep, defaults to normal split() on whitespace
+            SEPARATORS = ['\t', ',']
+            for i in SEPARATORS:
+                if i in first_line:
+                    sep = i
+                    break
+        colnames = first_line.strip().split(sep)
         loader = cls(dataset, colnames, sep=sep, **kwargs)
         return loader.process_file(file)
 

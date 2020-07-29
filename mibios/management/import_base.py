@@ -11,8 +11,6 @@ class AbstractImportCommand(BaseCommand):
     # an implementation of mibios.load.AbstractLoader
     loader_class = None
 
-    DEFAULT_SEPARATOR = '\t'
-
     def load_file_kwargs(self, **options):
         """
         Override to pass additional kwargs to load_file()
@@ -68,8 +66,9 @@ class AbstractImportCommand(BaseCommand):
         )
         parser.add_argument(
             '-s', '--sep',
-            default=self.DEFAULT_SEPARATOR,
-            help='Column separator, default is <tab>',
+            default=None,
+            help='Column separator, if not given the script will auto-detect '
+                 'and if that fails default to <tab>',
         )
         parser.add_argument(
             '--verbose-changes',
