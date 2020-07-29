@@ -122,12 +122,15 @@ class AbstractImportCommand(BaseCommand):
     @classmethod
     def format_import_stats(cls, count=0, new={}, added={}, changed={},
                             ignored=[], warnings=[], erased={}, **options):
-        out = ''
-        if options.get('dry_run', False):
-            out += ' (dry run)'
-        out += ' {} rows processed\n'.format(count)
+        out = ' Options:\n  '
+        out += '\n  '.join([
+            str(k) if v is True else '{}: {}'.format(k, v)
+            for k, v in options.items()
+            if v
+        ]) + '\n'
+        out += ' Rows processed: {}\n'.format(count)
         if ignored:
-            out += ' {} column(s) not processd: '.format(len(ignored))
+            out += ' Column(s) not processd ({}): '.format(len(ignored))
             out += ', '.join(ignored) + '\n'
         if new:
             out += ' Imported:\n' + '\n'.join([
@@ -175,7 +178,8 @@ class AbstractImportCommand(BaseCommand):
                 for k, v
                 in erased.items()
             ]) + '\n'
-            if options.get('erase_on_blank') and options.get('verbose_changes'):
+            if options.get('erase_on_blank') \
+                    and options.get('verbose_changes'):
                 for m, m_items in erased.items():
                     for obj, field_values in m_items.items():
                         row = []
@@ -187,7 +191,7 @@ class AbstractImportCommand(BaseCommand):
             out += ' No existing records modified\n'
 
         if warnings:
-            out += '{} warnings:\n'.format(len(warnings))
+            out += ' Warnings ({}):\n'.format(len(warnings))
             for i in warnings:
                 out += '  {}\n'.format(i)
 
