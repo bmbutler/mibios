@@ -1,13 +1,15 @@
 from collections import Counter, defaultdict
 from inspect import signature
+from io import TextIOWrapper
 import re
 import sys
 
 from django.core.exceptions import FieldDoesNotExist, ValidationError
+from django.core.files import File
 from django.db import transaction, IntegrityError
 
 from .dataset import UserDataError, registry
-from .models import (Model, NaturalKeyLookupError)
+from .models import ImportFile, Model, NaturalKeyLookupError
 from .utils import DeepRecord, getLogger
 
 
@@ -82,27 +84,34 @@ class AbstractLoader():
         loader = cls(colnames, sep=sep, **kwargs)
         return loader.process_file(file)
 
-    def process_file(self, file):
+    def process_file(self, file, orig_file_object=None):
         """
         Load data from given file
         """
-        self.file = file
+        file_object = File(orig_file_object)
+        self.file_record = ImportFile(name=file_object.name, file=file_object)
         self.linenum = 1
         self.last_warning = None
         try:
             with transaction.atomic():
+                self.file_record.full_clean()
+                self.file_record.save()
                 for i in file:
                     self.process_line(i)
 
                 if self.dry_run:
                     raise DryRunRollback
-        except DryRunRollback:
-            pass
-        except UserDataError:
-            # FIXME: needs to be reported; and (when) does this happen?
-            raise
         except Exception as e:
-            raise RuntimeError('Failed processing line:\n{}'.format(i)) from e
+            self.file_record.file.delete(save=False)
+            if isinstance(e, DryRunRollback):
+                pass
+            elif isinstance(e, UserDataError):
+                # FIXME: needs to be reported; and (when) does this happen?
+                raise
+            else:
+                raise RuntimeError(
+                    'Failed processing line:\n{}'.format(i)
+                ) from e
 
         return dict(
             count=self.count,
@@ -138,7 +147,7 @@ class AbstractLoader():
         """
         model_name = obj._meta.model_name
         obj.add_change_record(
-            file=self.file.name,
+            file=self.file_record,
             line=self.linenum,
             user=self.user,
             cmdline=' '.join(sys.argv) if self.user is None else '',
@@ -327,7 +336,8 @@ class GeneralLoader(AbstractLoader):
 
     @classmethod
     def load_file(cls, file, dataset=None, sep=None, **kwargs):
-        first_line = file.readline()
+        text_file = TextIOWrapper(file)
+        first_line = text_file.readline()
         if sep is None:
             # auto-detect sep, defaults to normal split() on whitespace
             SEPARATORS = ['\t', ',']
@@ -337,7 +347,7 @@ class GeneralLoader(AbstractLoader):
                     break
         colnames = first_line.strip().split(sep)
         loader = cls(dataset, colnames, sep=sep, **kwargs)
-        return loader.process_file(file)
+        return loader.process_file(text_file, orig_file_object=file)
 
     def parse_value(self, accessor, value):
         """

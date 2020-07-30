@@ -259,6 +259,25 @@ class AutoField(models.AutoField):
         self.verbose_name = self.model._meta.model_name + '_' + self.name
 
 
+class ImportFile(models.Model):
+    """
+    Represents the imported files
+    """
+    timestamp = models.DateTimeField(auto_now_add=True)
+    name = models.CharField(max_length=300, verbose_name='original filename',)
+    file = models.FileField(
+        upload_to='imported/%Y/', verbose_name='data source file',
+    )
+
+    class Meta:
+        get_latest_by = 'timestamp'
+        ordering = ['-timestamp']
+        verbose_name = 'uploaded and imported file'
+
+    def __str__(self):
+        return '{} {}'.format(self.timestamp, self.name)
+
+
 class ChangeRecord(models.Model):
     """
     Model representing a changelog entry
@@ -267,8 +286,7 @@ class ChangeRecord(models.Model):
     user = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True
     )
-    file = models.FileField(upload_to='import/%Y/', null=True, blank=True,
-                            verbose_name='data source file')
+    file = models.ForeignKey(ImportFile, on_delete=models.PROTECT, null=True)
     line = models.IntegerField(
         null=True, blank=True,
         help_text='The corresponding line in the input file',

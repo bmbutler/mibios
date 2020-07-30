@@ -1,5 +1,4 @@
 import csv
-import io
 from math import isnan
 
 from django.apps import apps
@@ -521,20 +520,19 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
     def form_valid(self, form):
         # do data import
         f = form.files['file']
-        ff = io.TextIOWrapper(f)
         dry_run = form.cleaned_data['dry_run']
         if dry_run:
             log.debug(
-                '[dry run] Importing into {}: {}'.format(self.dataset_name, ff)
+                '[dry run] Importing into {}: {}'.format(self.dataset_name, f)
             )
         else:
             self.log.info(
-                'Importing into {}: {}'.format(self.dataset_name, ff)
+                'Importing into {}: {}'.format(self.dataset_name, f)
             )
 
         try:
             stats = GeneralLoader.load_file(
-                ff,
+                f,
                 self.dataset_name,
                 dry_run=dry_run,
                 can_overwrite=form.cleaned_data['overwrite'],
@@ -555,8 +553,9 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
                 verbose_changes=True,
             )
             msg_level = messages.SUCCESS
+        finally:
+            f.close()
 
-        f.close()
         messages.add_message(self.request, msg_level, msg)
         args = (msg_level, 'user:', self.request.user, 'file:', f, '\n', msg)
         if dry_run:

@@ -4,6 +4,7 @@ from django.db.transaction import atomic
 from django.urls import reverse_lazy
 
 from .dataset import registry
+from .models import ImportFile
 from .views import HistoryView
 
 
@@ -28,6 +29,8 @@ class AdminSite(admin.AdminSite):
         """
         for i in registry.get_models():
             self.register(i, ModelAdmin)
+
+        self.register(ImportFile, ImportFileAdmin)
 
     def get_app_list(self, request):
         """
@@ -74,3 +77,8 @@ class ModelAdmin(admin.ModelAdmin):
         record = self.model.objects.get(pk=object_id)
         return HistoryView.as_view()(
                 request, record=record, extra_context=extra_context)
+
+
+class ImportFileAdmin(admin.ModelAdmin):
+    actions = None
+    list_display = ('timestamp', 'name', 'file')
