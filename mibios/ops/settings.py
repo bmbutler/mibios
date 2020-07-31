@@ -80,6 +80,8 @@ WSGI_APPLICATION = 'mibios.ops.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/2.2/ref/settings/#databases
 
+SNAPSHOT_DIR = BASE_DIR / 'snapshots'
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',

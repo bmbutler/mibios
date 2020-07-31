@@ -1,5 +1,8 @@
 from collections import namedtuple, OrderedDict
+from pathlib import Path
+from shutil import copy2
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
@@ -368,6 +371,72 @@ class ChangeRecord(models.Model):
         super().save(*args, **kwargs)
         self.record.history.add(self)
         del self.record.change
+
+
+def _default_snapshot_name():
+    from .dataset import registry  # avoid circular import
+    try:
+        last_pk = Snapshot.objects.latest().pk
+    except Snapshot.DoesNotExist:
+        last_pk = 0
+
+    if hasattr(registry, 'name'):
+        name = registry.name
+    else:
+        name = Path(settings.DATABASES['default']['NAME']).stem
+    return name + ' version ' + str(last_pk + 1)
+
+
+class Snapshot(models.Model):
+    """
+    Snapshot of database
+
+    An instance will make a copy the first time it is saved.  After that, the
+    name and the note can be edited.  Deleting the object from the database
+    will also delete the snapsopt file
+    """
+    timestamp = models.DateTimeField(auto_now_add=True)
+    name = models.CharField(
+        max_length=100, default=_default_snapshot_name, unique=True,
+    )
+    dbfile = models.FilePathField(
+        path=str(settings.SNAPSHOT_DIR),
+        editable=False,
+        verbose_name='archived database file',
+    )
+    note = models.TextField(blank=True)
+
+    class Meta:
+        get_latest_by = 'timestamp'
+        ordering = ['-timestamp']
+        verbose_name = 'database version'
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def path(self):
+        return Path(self._meta.get_field('dbfile').path) / self.dbfile
+
+    def save(self, *args, **kwargs):
+        if not self.pk:
+            # only take snapshot when saving instance for first time
+            self._create_snapshot()
+        super().save(*args, **kwargs)
+
+    def _create_snapshot(self):
+        if not settings.SNAPSHOT_DIR.is_dir():
+            settings.SNAPSHOT_DIR.mkdir(mode=0o770, parents=True)
+        src = settings.DATABASES['default']['NAME']
+        fname = '{}.sqlite3'.format('_'.join(self.name.split()))
+        dst = settings.SNAPSHOT_DIR / fname
+        self.dbfile = str(dst)
+        copy2(src, str(dst))
+        dst.chmod(0o440)  # set read-only
+
+    def delete(self, *args, **kwargs):
+        self.path.unlink(missing_ok=True)
+        super().delete(*args, **kwargs)
 
 
 class Model(models.Model):
