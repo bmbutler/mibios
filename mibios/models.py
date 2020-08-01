@@ -10,6 +10,8 @@ from django.core import serializers
 from django.urls import reverse
 from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import models, transaction
+from django.db.utils import DEFAULT_DB_ALIAS, ConnectionHandler
+
 
 import pandas
 
@@ -429,6 +431,26 @@ class Snapshot(models.Model):
     def path(self):
         return Path(self._meta.get_field('dbfile').path) / self.dbfile
 
+    @property
+    def dbalias(self):
+        """
+        Get the db alias from settings
+
+        Returns None if no corresponding database is configured
+        """
+        start = 'file:'
+        end = '?mode=ro'
+        for alias, opts in settings.DATABASES.items():
+            name = opts['NAME']
+            if name.startswith(start):
+                name = name[len(start):]
+            if name.endswith(end):
+                name = name[:-len(end)]
+
+            if Path(name) == self.path:
+                return alias
+        return None
+
     def save(self, *args, **kwargs):
         if not self.pk:
             # only take snapshot when saving instance for first time
@@ -448,6 +470,76 @@ class Snapshot(models.Model):
     def delete(self, *args, **kwargs):
         self.path.unlink(missing_ok=True)
         super().delete(*args, **kwargs)
+
+    def do_sql(self, sql, params=[], descr=False):
+        """
+        Connect to snapshot db, run sql and fetchall rows
+        """
+        db = {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': 'file:{}?mode=ro'.format(self.dbfile),
+            'OPTIONS': {'uri': True, },
+        }
+        conf = {DEFAULT_DB_ALIAS: db}
+        conn_h = ConnectionHandler(conf)
+        conn = conn_h[DEFAULT_DB_ALIAS]
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+        except Exception:
+            raise
+        else:
+            if descr:
+                return rows, cur.description
+            else:
+                return rows
+        finally:
+            conn.close()
+
+    def get_table_names(self):
+        """
+        Get list of the snapshot's table names
+        """
+        sql = ('select name from sqlite_master where '
+               'type = "table" and name like %s '
+               'and name not like "%%_history"')
+        name = get_registry().name
+        pat = name + '_%'
+
+        rows = self.do_sql(sql, [pat])
+
+        return list([i[0] for i in rows])
+
+    def get_table_name_data(self):
+        """
+        Get list of the snapshot's table names as dict
+
+        This is suitable return value for a ListView.get_queryset()
+        """
+        return [
+            dict(table=i[len(get_registry().name) + 1:])
+            for i in self.get_table_names()
+        ]
+
+    def get_table_data(self, untrusted_table_name):
+        """
+        Return table content
+        """
+        # verify table name
+        untrusted_table_name = get_registry().name + '_' + untrusted_table_name
+        if untrusted_table_name in self.get_table_names():
+            table_name = untrusted_table_name
+        else:
+            raise ValueError('not a valid table name')
+
+        rows, descr = self.do_sql('select * from ' + table_name, descr=True)
+
+        columns = [i[0] for i in descr]
+        return columns, rows
+
+    def get_absolute_url(self):
+        return reverse('snapshot', kwargs=dict(name=self.name))
 
 
 class Model(models.Model):

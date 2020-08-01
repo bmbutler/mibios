@@ -1,0 +1,15 @@
+{% extends "mibios/base.html" %}
+{% load render_table from django_tables2 %}
+{% load static %}
+
+{% block link %}
+<link rel="stylesheet" href="{% static 'mibios/css/bootstrap.min.css' %}" />
+{% endblock %}
+
+{% block content %}
+<h2>Archived versions of {{ view.registry.verbose_name }}</h2>
+
+{% render_table table %}
+
+{% endblock %}
+

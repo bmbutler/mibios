@@ -3,7 +3,7 @@ from django.utils.html import format_html
 
 import django_tables2 as tables
 
-from .models import ChangeRecord
+from .models import ChangeRecord, Snapshot
 
 
 NONE_LOOKUP = 'NULL'
@@ -94,3 +94,28 @@ class DeletedHistoryTable(tables.Table):
     class Meta:
         model = ChangeRecord
         fields = ('timestamp', 'user', 'record_natural',)
+
+
+class SnapshotListTable(tables.Table):
+    """
+    Table of database snapshots
+
+    The name of each snapshotlinks to a page listing the tables available for
+    that snapshot
+    """
+    name = tables.Column(linkify=('snapshot', {'name': tables.A('name')}))
+
+    class Meta:
+        model = Snapshot
+        fields = ('timestamp', 'name', 'note')
+
+
+class SnapshotTableColumn(tables.Column):
+    def __init__(self, snapshot_name, **kwargs):
+        def linkify(record):
+            return reverse(
+                'snapshot_table',
+                kwargs=dict(name=snapshot_name, table=record['table'])
+            )
+        super().__init__(self, linkify=linkify, **kwargs)
+        self.verbose_name = 'available tables'

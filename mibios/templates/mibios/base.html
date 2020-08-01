@@ -18,7 +18,10 @@
         <a href="{% url 'queryset_index' i %}">{{ i }}</a>
     {% endfor %}
 {% endif %}
+{% if snapshots_exist %}
 <br>
+<a href="{% url 'snapshot_list' %}">Archived database versions</a>
+{% endif %}
 {% if user_is_curator %}
 <br>
 Data curation: <a href="{% url 'admin:index' %}">admin interface</a>

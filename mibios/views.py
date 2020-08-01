@@ -19,9 +19,10 @@ from .dataset import registry
 from .forms import UploadFileForm
 from .load import GeneralLoader
 from .management.import_base import AbstractImportCommand
-from .models import Q, ChangeRecord
+from .models import Q, ChangeRecord, Snapshot
 from .tables import (CountColumn, DeletedHistoryTable, HistoryTable,
-                     ManyToManyColumn, NONE_LOOKUP, Table)
+                     ManyToManyColumn, NONE_LOOKUP,
+                     SnapshotListTable, SnapshotTableColumn, Table)
 from .utils import getLogger
 
 
@@ -52,6 +53,7 @@ class BaseMixin(ContextMixin):
         ctx['page_title'] = apps.get_app_config('mibios').verbose_name
         ctx['user_is_curator'] = \
             self.request.user.groups.filter(name='curators').exists()
+        ctx['snapshots_exist'] = Snapshot.objects.exists()
         return ctx
 
 
@@ -745,3 +747,88 @@ class FrontPageView(BaseMixin, UserRequiredMixin, TemplateView):
         except ChangeRecord.DoesNotExist:
             ctx['latest'] = None
         return ctx
+
+
+class SnapshotListView(UserRequiredMixin, SingleTableView):
+    """
+    View presenting a list of snapshots with links to SnapshotView
+    """
+    model = Snapshot
+    table_class = SnapshotListTable
+
+
+class SnapshotView(UserRequiredMixin, SingleTableView):
+    """
+    View of a single snapshot, displays the list of available tables
+    """
+    template_name = 'mibios/snapshot.html'
+
+    def get_table_class(self):
+        meta_opts = dict(
+            # model=self.model,
+            # template_name='django_tables2/bootstrap.html',
+        )
+        Meta = type('Meta', (object,), meta_opts)
+        table_opts = dict(Meta=Meta)
+        table_opts.update(table=SnapshotTableColumn(self.snapshot.name))
+        name = ''.join(self.snapshot.name.split()).capitalize()
+        name += 'SnapshotTable'
+        # FIXME: call django_tables2.table_factory??
+        klass = type(name, (Table,), table_opts)
+        return klass
+
+    def get(self, request, *args, **kwargs):
+        try:
+            self.snapshot = Snapshot.objects.get(name=kwargs['name'])
+        except Snapshot.DoesNotExist:
+            raise Http404
+
+        return super().get(request, *args, **kwargs)
+
+    def get_queryset(self):
+        return self.snapshot.get_table_name_data()
+
+
+class SnapshotTableView(UserRequiredMixin, SingleTableView):
+    """
+    Display one table from a snapshot (with all data)
+    """
+    template_name = 'mibios/snapshot_table.html'
+
+    def get(self, request, *args, **kwargs):
+        snapshot = kwargs['name']
+        self.table_name = kwargs['table']
+        try:
+            self.snapshot = Snapshot.objects.get(name=snapshot)
+        except Snapshot.DoesNotExist:
+            raise Http404
+
+        try:
+            self.columns, rows = self.snapshot.get_table_data(self.table_name)
+        except ValueError:
+            # invalid table name
+            raise Http404
+
+        self.filename = self.snapshot.name + '_' + self.table_name
+        self.queryset = [dict(zip(self.columns, i)) for i in rows]
+
+        return super().get(request, *args, **kwargs)
+
+    def get_table_class(self):
+        meta_opts = dict()
+        Meta = type('Meta', (object,), meta_opts)
+        table_opts = dict(Meta=Meta)
+        for i in self.columns:
+            table_opts.update(**{i: Column()})
+        name = ''.join(self.snapshot.name.split()).capitalize()
+        name += 'SnapshotTableTable'
+        # FIXME: call django_tables2.table_factory??
+        klass = type(name, (Table,), table_opts)
+        return klass
+
+
+class ExportSnapshotTableView(ExportMixin, SnapshotTableView):
+    filename_from = 'filename'
+
+    def get_values(self):
+        return self.get_table().as_values()
