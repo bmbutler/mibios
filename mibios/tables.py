@@ -74,8 +74,8 @@ class HistoryTable(tables.Table):
     class Meta:
         model = ChangeRecord
         fields = (
-            'timestamp', 'is_created', 'is_deleted', 'user', 'file.file', 'line',
-            'command_line', 'fields',
+            'timestamp', 'is_created', 'is_deleted', 'user', 'file.file',
+            'line', 'command_line', 'fields',
         )
 
 
