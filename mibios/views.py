@@ -479,15 +479,24 @@ class CSVRenderer():
         self.writer.writerow(row)
 
 
-class ExportView(TableView):
+class ExportMixin():
     """
-    Export a queryset as file download
+    Export table data as file download
+
+    Requires kwargs['format'] to be set by url conf.
+
+    Implementing views need to provide a get_values() method that provides the
+    data to be exported as an iterable over rows (which are lists of values).
+    The first row should contain the column headers.
     """
     # Supported export format registry
     # (name, file suffix, http content type, renderer class)
     FORMATS = (
         ('csv', '.csv', 'text/csv', CSVRenderer),
     )
+
+    filename_from = ''
+    """ set this to the name of the view attribute that hold the filename """
 
     def render_to_response(self, context):
         for name, suffix, content_type, renderer_class in self.FORMATS:
@@ -498,18 +507,26 @@ class ExportView(TableView):
                              ''.format(format))
 
         response = HttpResponse(content_type=content_type)
-        f = context['dataset_name'] + suffix
+        f = getattr(self, self.filename_from, 'data') + suffix
         response['Content-Disposition'] = 'attachment; filename="{}"'.format(f)
 
         r = renderer_class(response)
+        for i in self.get_values():
+            r.render_row(i)
+
+        return response
+
+
+class ExportView(ExportMixin, TableView):
+    filename_from = 'dataset_name'
+
+    def get_values(self):
+        # do not export count columns
         count_cols = [
             i.name + '__count'
             for i in self.model._meta.related_objects
         ]
-        for i in self.get_table().as_values(exclude_columns=count_cols):
-            r.render_row(i)
-
-        return response
+        return self.get_table().as_values(exclude_columns=count_cols)
 
 
 class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
