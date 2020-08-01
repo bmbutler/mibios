@@ -17,6 +17,18 @@ from .utils import getLogger
 
 
 log = getLogger(__name__)
+_registry = None
+
+
+def get_registry():
+    """
+    Make Dataset.registry accessible without circular imports
+    """
+    global _registry
+    if _registry is None:
+        from .dataset import registry as registry
+        _registry = registry
+    return _registry
 
 
 class NaturalKeyLookupError(Exception):
@@ -374,14 +386,13 @@ class ChangeRecord(models.Model):
 
 
 def _default_snapshot_name():
-    from .dataset import registry  # avoid circular import
     try:
         last_pk = Snapshot.objects.latest().pk
     except Snapshot.DoesNotExist:
         last_pk = 0
 
-    if hasattr(registry, 'name'):
-        name = registry.name
+    if hasattr(get_registry(), 'name'):
+        name = get_registry().name
     else:
         name = Path(settings.DATABASES['default']['NAME']).stem
     return name + ' version ' + str(last_pk + 1)
