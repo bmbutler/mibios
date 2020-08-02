@@ -7,6 +7,7 @@ from django.contrib.auth.models import User
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.core import serializers
+from django.core.management import call_command
 from django.urls import reverse
 from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import models, transaction
@@ -417,6 +418,11 @@ class Snapshot(models.Model):
         editable=False,
         verbose_name='archived database file',
     )
+    jsondump = models.FilePathField(
+        path=str(settings.SNAPSHOT_DIR),
+        editable=False,
+        verbose_name='JSON formatted archive',
+    )
     note = models.TextField(blank=True)
 
     class Meta:
@@ -464,8 +470,21 @@ class Snapshot(models.Model):
         fname = '{}.sqlite3'.format('_'.join(self.name.split()))
         dst = settings.SNAPSHOT_DIR / fname
         self.dbfile = str(dst)
+
         copy2(src, str(dst))
         dst.chmod(0o440)  # set read-only
+
+        self.jsondump = str(dst.with_suffix('.json'))
+        call_command(
+            'dumpdata',
+            get_registry().name,
+            format='json',
+            indent=4,
+            database='default',
+            natural_foreign=True,
+            natural_primary=True,
+            output=self.jsondump,
+        )
 
     def delete(self, *args, **kwargs):
         self.path.unlink(missing_ok=True)

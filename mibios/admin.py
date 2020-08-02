@@ -86,4 +86,4 @@ class ImportFileAdmin(admin.ModelAdmin):
 
 
 class SnapshotAdmin(admin.ModelAdmin):
-    list_display = ('timestamp', 'name', 'dbfile', 'note')
+    list_display = ('timestamp', 'name', 'dbfile', 'jsondump', 'note')
