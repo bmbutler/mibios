@@ -1,8 +1,14 @@
 from django.contrib import admin
-from django.urls import path
+from django.urls import include, path
+from rest_framework import routers
 
 from . import views
+from .dataset import registry
 
+
+rest_router = routers.DefaultRouter()
+for i in registry.get_models():
+    rest_router.register(i._meta.model_name, i.get_rest_api_viewset_class())
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -15,6 +21,7 @@ urlpatterns = [
     path('archive/<str:name>/<str:table>/export/<str:format>/',
          views.ExportSnapshotTableView.as_view(),
          name='export_snapshot_table'),
+    path('api/', include(rest_router.urls)),
     # fixed string paths go above this comment
     path('<str:dataset>/', views.TableView.as_view(), name='queryset_index'),
     path('<str:dataset>/import/', views.ImportView.as_view(), name='import'),

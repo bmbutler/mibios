@@ -12,6 +12,8 @@ from django.urls import reverse
 from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import models, transaction
 from django.db.utils import DEFAULT_DB_ALIAS, ConnectionHandler
+from rest_framework.serializers import HyperlinkedModelSerializer
+from rest_framework.viewsets import ReadOnlyModelViewSet
 
 
 import pandas
@@ -955,3 +957,30 @@ class Model(models.Model):
                 'model_name': self._meta.model_name,
             })
             raise ValidationError(errors)
+
+    @classmethod
+    def get_serializer_class(self):
+        """
+        Return REST API Serializer class
+        """
+        fields = ['url'] + self.get_fields().names
+        for i in self._meta.related_objects:
+            fields.append(i.name + '_set')
+
+        meta_opts = dict(model=self._meta.model, fields=fields)
+        Meta = type('Meta', (object,), meta_opts)
+        name = self._meta.model_name.capitalize() + 'Serializer'
+        opts = dict(Meta=Meta)
+        return type(name, (HyperlinkedModelSerializer,), opts)
+
+    @classmethod
+    def get_rest_api_viewset_class(self):
+        """
+        Return REST framework ViewSet class
+        """
+        opts = dict(
+            queryset=self.published.all(),
+            serializer_class=self.get_serializer_class(),
+        )
+        name = self._meta.model_name.capitalize() + 'RESTViewSet'
+        return type(name, (ReadOnlyModelViewSet,), opts)

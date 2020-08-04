@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'mibios.apps.MibiosConfig',
     'django_tables2',
+    'rest_framework',
 ]
 
 
@@ -193,3 +194,12 @@ LOGGING = {
 }
 
 UPLOAD_DIR = BASE_DIR / 'uploads'
+
+REST_FRAMEWORK = {
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.DjangoModelPermissions',
+    ],
+    'DEFAULT_PAGINATION_CLASS':
+        'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10,
+}
