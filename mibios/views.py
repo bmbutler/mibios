@@ -42,7 +42,23 @@ class CuratorRequiredMixin(UserRequiredMixin, UserPassesTestMixin):
         return self.request.user.groups.filter(name=self.group_name).exists()
 
 
-class BaseMixin(ContextMixin):
+class BasicBaseMixin(ContextMixin):
+    """
+    Mixin to populate context for the base template without model/dataset info
+    """
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['page_title'] = getattr(
+                registry,
+                'verbose_name',
+                apps.get_app_config('mibios').verbose_name
+        )
+        ctx['user_is_curator'] = \
+            self.request.user.groups.filter(name='curators').exists()
+        return ctx
+
+
+class BaseMixin(BasicBaseMixin):
     """
     Mixin to populate context for the base template
     """
@@ -50,9 +66,6 @@ class BaseMixin(ContextMixin):
         ctx = super().get_context_data(**ctx)
         ctx['model_names'] = sorted(registry.get_model_names())
         ctx['data_sets'] = sorted(registry.get_dataset_names())
-        ctx['page_title'] = apps.get_app_config('mibios').verbose_name
-        ctx['user_is_curator'] = \
-            self.request.user.groups.filter(name='curators').exists()
         ctx['snapshots_exist'] = Snapshot.objects.exists()
         return ctx
 
@@ -749,7 +762,7 @@ class FrontPageView(BaseMixin, UserRequiredMixin, TemplateView):
         return ctx
 
 
-class SnapshotListView(UserRequiredMixin, SingleTableView):
+class SnapshotListView(BasicBaseMixin, UserRequiredMixin, SingleTableView):
     """
     View presenting a list of snapshots with links to SnapshotView
     """
@@ -757,7 +770,7 @@ class SnapshotListView(UserRequiredMixin, SingleTableView):
     table_class = SnapshotListTable
 
 
-class SnapshotView(UserRequiredMixin, SingleTableView):
+class SnapshotView(BasicBaseMixin, UserRequiredMixin, SingleTableView):
     """
     View of a single snapshot, displays the list of available tables
     """
@@ -789,7 +802,7 @@ class SnapshotView(UserRequiredMixin, SingleTableView):
         return self.snapshot.get_table_name_data()
 
 
-class SnapshotTableView(UserRequiredMixin, SingleTableView):
+class SnapshotTableView(BasicBaseMixin, UserRequiredMixin, SingleTableView):
     """
     Display one table from a snapshot (with all data)
     """
