@@ -58,10 +58,12 @@ setuptools.setup(
     url='https://sites.google.com/a/umich.edu/the-schmidt-lab/home',
     python_requires='>=3.8',
     install_requires=[
-        'django',
-        'django-tables2',
-        'django-extensions',
-        'pandas',
+        'Django~=2.2.0',
+        'django-extensions~=2.2.0',
+        'djangorestframework~=3.11.0',
+        'django-tables2~=2.1.0',
+        'pandas~=0.25.0',
+        'wheel~=0.34.0',
     ],
     packages=setuptools.find_packages(),
     package_data={
