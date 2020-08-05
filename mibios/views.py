@@ -10,16 +10,17 @@ from django.contrib.contenttypes.models import ContentType
 from django.http import Http404, HttpResponse
 from django.urls import reverse
 from django.utils.http import urlencode
-from django.views.generic.base import ContextMixin, TemplateView
+from django.views.generic.base import ContextMixin, TemplateView, View
 from django.views.generic.edit import FormView
 
 from django_tables2 import SingleTableView, A, Column
 
+from . import __version__
 from .dataset import registry
 from .forms import UploadFileForm
 from .load import GeneralLoader
 from .management.import_base import AbstractImportCommand
-from .models import Q, ChangeRecord, Snapshot
+from .models import Q, ChangeRecord, ImportFile, Snapshot
 from .tables import (CountColumn, DeletedHistoryTable, HistoryTable,
                      ManyToManyColumn, NONE_LOOKUP,
                      SnapshotListTable, SnapshotTableColumn, Table)
@@ -845,3 +846,18 @@ class ExportSnapshotTableView(ExportMixin, SnapshotTableView):
 
     def get_values(self):
         return self.get_table().as_values()
+
+
+class ImportFileDownloadView(CuratorRequiredMixin, View):
+    """
+    Reply to file download request with X-Sendfile headed response
+    """
+    def get(self, request, *args, **kwargs):
+        path = 'imported/' + str(kwargs['year']) + '/' + kwargs['name']
+        try:
+            file = ImportFile.objects.get(file=path)
+        except ImportFile.DoesNotExist:
+            raise Http404
+        res = HttpResponse(content_type='')
+        res['X-Sendfile'] = str(file)
+        return res

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 from rest_framework import routers
@@ -22,6 +23,8 @@ urlpatterns = [
          views.ExportSnapshotTableView.as_view(),
          name='export_snapshot_table'),
     path('api/', include(rest_router.urls)),
+    path(settings.MEDIA_URL.lstrip('/') + 'imported/<int:year>/<str:name>',
+         views.ImportFileDownloadView.as_view(), name='import_file_download'),
     # fixed string paths go above this comment
     path('<str:dataset>/', views.TableView.as_view(), name='queryset_index'),
     path('<str:dataset>/import/', views.ImportView.as_view(), name='import'),
