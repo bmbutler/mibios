@@ -49,6 +49,8 @@ class Registry():
         self.datasets = {}
         # models are maps from name to Model subclass
         self.models = {}
+        # apps: a map from package name to dict of meta data
+        self.apps = {}
 
     def get_models(self):
         return list(self.models.values())

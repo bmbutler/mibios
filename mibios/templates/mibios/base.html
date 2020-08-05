@@ -5,6 +5,11 @@
     {% block link %}{% endblock %}
 </head>
 <body>
+
+<!-- version info:
+{% for k, v in version_info.items %}{{ k }}: {{ v|default:'(not available)' }}
+{% endfor %}-->
+
 {% if model_names %}
     Tables:
     {% for i in model_names %}
