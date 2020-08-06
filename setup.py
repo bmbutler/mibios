@@ -19,6 +19,8 @@ def get_version():
             stdout=subprocess.PIPE,
             check=True,
         ).stdout.decode().strip().lstrip('v')
+        # make PEP 440 conform (as local version) and normalize
+        _version = _version.replace('-', '+', 1).replace('-', '.')
     return _version
 
 
