@@ -56,7 +56,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://sites.google.com/a/umich.edu/the-schmidt-lab/home',
-    python_requires='>=3.8',
+    python_requires='>=3.7',
     install_requires=[
         'Django~=2.2.0',
         'django-extensions~=2.2.0',
