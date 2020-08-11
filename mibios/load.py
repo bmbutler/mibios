@@ -95,7 +95,14 @@ class AbstractLoader():
         try:
             with transaction.atomic():
                 self.file_record.full_clean()
+                # save position after header line, As least if the input file
+                # come from the local filesystem, ImportFile.save() via the
+                # original file handle does it's own seek(0) somewhere but will
+                # leave the position at the end.  Do uploaded files in memory
+                # do something else?
+                fpos = file.tell()
                 self.file_record.save()
+                file.seek(fpos)
                 for i in file:
                     self.process_line(i)
 
