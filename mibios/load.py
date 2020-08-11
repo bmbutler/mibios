@@ -1,6 +1,6 @@
 from collections import Counter, defaultdict
 from inspect import signature
-from io import TextIOWrapper
+from io import TextIOBase, TextIOWrapper
 import re
 import sys
 
@@ -343,8 +343,13 @@ class GeneralLoader(AbstractLoader):
 
     @classmethod
     def load_file(cls, file, dataset=None, sep=None, **kwargs):
-        text_file = TextIOWrapper(file)
-        first_line = text_file.readline()
+        # keep original filehandle to feed into ImportFile.file later so it can
+        # save the file "as is" without linebreak conversion etc.
+        orig_file = file
+        if not isinstance(file, TextIOBase):
+            # http uploaded files are binary
+            file = TextIOWrapper(file)
+        first_line = file.readline()
         if sep is None:
             # auto-detect sep, defaults to normal split() on whitespace
             SEPARATORS = ['\t', ',']
@@ -354,7 +359,7 @@ class GeneralLoader(AbstractLoader):
                     break
         colnames = first_line.strip().split(sep)
         loader = cls(dataset, colnames, sep=sep, **kwargs)
-        return loader.process_file(text_file, orig_file_object=file)
+        return loader.process_file(file, orig_file_object=orig_file)
 
     def parse_value(self, accessor, value):
         """
