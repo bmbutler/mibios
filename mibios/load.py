@@ -472,7 +472,7 @@ class GeneralLoader(AbstractLoader):
                 # separate identifiers from other fields
                 for i in ['natural', 'id', 'name']:
                     if i in data:
-                        id_arg.update(natural=data.pop(i))
+                        id_arg[i] = data.pop(i)
 
                 # separate many_to_many fields from data
                 m2ms = {
