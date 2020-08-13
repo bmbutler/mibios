@@ -61,8 +61,8 @@ class AbstractLoader():
         self.sep = self.DEFAULT_SEPARATOR if sep is None else sep
         self.new = Counter()
         self.added = Counter()
-        self.changed = defaultdict(list)
-        self.erased = defaultdict(dict)
+        self.changed = defaultdict(lambda: defaultdict(list))
+        self.erased = defaultdict(lambda: defaultdict(list))
         self.count = 0
         self.fq_file_ids = set()
         self.can_overwrite = can_overwrite
@@ -174,21 +174,15 @@ class AbstractLoader():
                     apply_change = True
                     self.added[model_name] += 1
                 elif k in diffs['only_us']:
-                    if obj not in self.erased[model_name]:
-                        self.erased[model_name][obj] = []
                     self.erased[model_name][obj].append(
                         (k, getattr(obj, k))
                     )
                     if self.erase_on_blank:
                         apply_change = True
                 elif k in diffs['mismatch']:
-                    self.changed[model_name].append((
-                        obj,
-                        [
-                            (i, getattr(obj, i), from_row.get(i))
-                            for i in diffs['mismatch']
-                        ]
-                    ))
+                    self.changed[model_name][obj].append(
+                        (k, getattr(obj, k), from_row.get(k))
+                    )
                     if self.can_overwrite:
                         apply_change = True
 

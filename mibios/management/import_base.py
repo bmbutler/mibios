@@ -160,7 +160,7 @@ class AbstractImportCommand(BaseCommand):
             ]) + '\n'
             if options.get('verbose_changes'):
                 for m, i in changed.items():
-                    for obj, change_list in i:
+                    for obj, change_list in i.items():
                         row = []
                         for field, old, new in change_list:
                             row.append('{}: {} -> {}'.format(field, old, new))
