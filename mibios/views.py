@@ -18,7 +18,7 @@ from django_tables2 import SingleTableView, A, Column
 from . import __version__
 from .dataset import registry
 from .forms import UploadFileForm
-from .load import GeneralLoader
+from .load import Loader
 from .management.import_base import AbstractImportCommand
 from .models import Q, ChangeRecord, ImportFile, Snapshot
 from .tables import (CountColumn, DeletedHistoryTable, HistoryTable,
@@ -567,7 +567,7 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
             )
 
         try:
-            stats = GeneralLoader.load_file(
+            stats = Loader.load_file(
                 f,
                 self.dataset_name,
                 dry_run=dry_run,

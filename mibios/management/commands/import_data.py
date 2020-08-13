@@ -1,10 +1,12 @@
 from mibios.dataset import registry
-from mibios.load import GeneralLoader
+from mibios.load import Loader
 from mibios.management.import_base import AbstractImportCommand
 
 
 class Command(AbstractImportCommand):
-    loader_class = GeneralLoader
+    # TODO: this is the only remaining and relevant implementation of the
+    # abstract command and should be unified with it
+    loader_class = Loader
     help = 'Import data for pre-defined dataset/table formats'
 
     def add_arguments(self, argp):
@@ -17,4 +19,4 @@ class Command(AbstractImportCommand):
         )
 
     def load_file_kwargs(self, **options):
-        return dict(dataset=options['data_set_name'])
+        return dict(data_name=options['data_set_name'])

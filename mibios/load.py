@@ -1,4 +1,5 @@
 from collections import Counter, defaultdict
+from csv import DictReader, Sniffer
 from inspect import signature
 from io import TextIOBase, TextIOWrapper
 import re
@@ -21,44 +22,45 @@ class DryRunRollback(Exception):
     pass
 
 
-class AbstractLoader():
+class Loader():
     """
-    Parent class for data importers
-
-    Implementation needed for:
-    COLS - a sequence of tuples, mapping column headers (as they appear in
-           input file) to internal names; Column names will be matched
-           casefolded.
-    process_row() - method to import data from the current row/line, method
-                    must be guarded by atomic transaction
-
-    The dry_run option will have no effect on individual calls to
-    process_line(), that are not calls via process_file(), only when
-    process_file() is about to finish, dry_run will cause a rollback.
+    Data importer
     """
-    # FIXME: this class should now be incorporated into GeneralLoder,
-    # the fields/COLS/cols dance should be simplified, the complexity is not
-    # needed now
-    DEFAULT_SEPARATOR = '\t'
     log = log
+    dataset = None
+    blanks = {None: ['']}
 
-    def __init__(self, colnames, sep=None, can_overwrite=True,
+    def __init__(self, data_name, sep=None, can_overwrite=True,
                  warn_on_error=False, strict_sample_id=False, dry_run=False,
                  user=None, erase_on_blank=False):
-        # use internal names for columns:
-        _cols = {i.casefold(): j for i, j in self.COLS}
-        self.cols = []  # internal names for columns in file
-        self.blanks = {None: ['']}
-        self.ignored_columns = []  # columns that won't be processed
-        for i in colnames:
-            if i.casefold() in _cols:
-                self.cols.append(_cols[i.casefold()])
-            else:
-                self.cols.append(i)
-                self.ignored_columns.append(i)
+        try:
+            self.dataset = registry.datasets[data_name]
+        except KeyError:
+            self.model = registry.models[data_name]
+        else:
+            self.model = self.dataset.model
+
+        model_name = self.model._meta.model_name
+        if self.dataset:
+            self.accr_map = {}
+            for accr, col, *extra in self.dataset.fields:
+                accr = model_name + '__' + accr
+                self.accr_map[col.casefold()] = accr
+                for i in extra:
+                    if 'blanks' in i:
+                        if accr not in self.blanks:
+                            self.blanks[accr] = []
+                        self.blanks[accr] += i['blanks']
+        else:
+            # set accessor map from model
+            fields = self.model.get_fields()
+            self.accr_map = {
+                v.casefold(): model_name + '__' + n
+                for v, n in zip(fields.verbose, fields.names)
+            }
 
         self.warnings = []
-        self.sep = self.DEFAULT_SEPARATOR if sep is None else sep
+        self.sep = sep
         self.new = Counter()
         self.added = Counter()
         self.changed = defaultdict(lambda: defaultdict(list))
@@ -71,40 +73,112 @@ class AbstractLoader():
         self.dry_run = dry_run
         self.user = user
         self.erase_on_blank = erase_on_blank
-        for col, name in self.COLS:
-            setattr(self, 'name', None)
         if dry_run:
             self.log = log
         else:
             self.log = importlog
 
-    @classmethod
-    def load_file(cls, file, sep='\t', **kwargs):
-        colnames = file.readline().strip().split(sep)
-        loader = cls(colnames, sep=sep, **kwargs)
-        return loader.process_file(file)
+        if self.dataset:
+            self.blanks[None] += self.dataset.blanks
 
-    def process_file(self, file, orig_file_object=None):
+    def process_header(self):
+        """
+        Process the first row
+
+        Helper for process_file()
+        """
+        self.ignored_columns = []  # columns that won't be processed
+        for i in self.reader.fieldnames:
+            if i.casefold() not in self.accr_map:
+                self.ignored_columns.append(i)
+
+        log.debug('accessor map:', self.accr_map)
+        log.debug('ignored fields:', self.ignored_columns)
+
+        if self.reader.fieldnames == self.ignored_columns:
+            log.debug('input fields:', self.reader.fieldnames)
+            raise UserDataError(
+                'input file does not have any expected field/column names'
+            )
+
+    def pre_process_row(self, row):
+        """
+        Map file-fields to internal field names
+
+        Remove fields not in spec, set blank fields to None
+        Helper for process_row()
+        """
+        ret = {}
+        for k, v in row.items():
+            try:
+                accessor = self.accr_map[k.casefold()]
+            except KeyError:
+                continue
+            if self.is_blank(accessor, v):
+                ret[accessor] = None
+            else:
+                ret[accessor] = v
+        return ret
+
+    def setup_reader(self, file):
+        """
+        Get the csv.DictReader all set up
+
+        Helper for process_file()
+        """
+        if not isinstance(file, TextIOBase):
+            # http uploaded files are binary
+            file = TextIOWrapper(file)
+
+        sniff_kwargs = {}
+        reader_kwargs = {}
+        if self.sep:
+            sniff_kwargs['delimiters'] = self.sep
+        try:
+            dialect = Sniffer().sniff(file.read(5000), **sniff_kwargs)
+        except Exception as e:
+            log.debug('csv sniffer failed:', e)
+            # trying fall-back (file might be too small)
+            dialect = 'excel'  # set fall-bak default
+            if self.sep:
+                reader_kwargs['delimiter'] = self.sep
+            else:
+                reader_kwargs['delimiter'] = '\t'  # set fall-back default
+        finally:
+            file.seek(0)
+            log.debug('sniffed:', vars(dialect))
+
+        self.reader = DictReader(file, dialect=dialect, **reader_kwargs)
+        self.sep = self.reader.reader.dialect.delimiter  # update if unset
+        log.debug('delimiter:', '<tab>' if self.sep == '\t' else self.sep)
+        log.debug('input fields:', self.reader.fieldnames)
+
+    def process_file(self, file):
         """
         Load data from given file
         """
-        file_object = File(orig_file_object)
+        log.debug('processing:', file, vars(file))
+        file_object = File(file)
         self.file_record = ImportFile(name=file_object.name, file=file_object)
         self.linenum = 1
         self.last_warning = None
+        row = None
         try:
             with transaction.atomic():
                 self.file_record.full_clean()
-                # save position after header line, As least if the input file
-                # come from the local filesystem, ImportFile.save() via the
-                # original file handle does it's own seek(0) somewhere but will
-                # leave the position at the end.  Do uploaded files in memory
-                # do something else?
-                fpos = file.tell()
+                # Saving input file to storage: if the input file come from the
+                # local filesystem, ImportFile.save() we need to seek(0) our
+                # file handle.  Do uploaded files in memory do something else?
                 self.file_record.save()
-                file.seek(fpos)
-                for i in file:
-                    self.process_line(i)
+                file.seek(0)
+                # Getting the DictReader set up must happen after saving to
+                # disk as csv.reader takes some sort of control over the file
+                # handle and disabling tell() and seek():
+                self.setup_reader(file)
+                self.process_header()
+
+                for row in self.reader:
+                    self.process_row(row)
 
                 if self.dry_run:
                     raise DryRunRollback
@@ -116,9 +190,11 @@ class AbstractLoader():
                 # FIXME: needs to be reported; and (when) does this happen?
                 raise
             else:
-                raise RuntimeError(
-                    'Failed processing line:\n{}'.format(i)
-                ) from e
+                if row is None:
+                    msg = 'error at file storage or opening stage'
+                else:
+                    msg = 'Failed processing line:\n{}'.format(row)
+                raise RuntimeError(msg) from e
 
         return dict(
             count=self.count,
@@ -215,24 +291,17 @@ class AbstractLoader():
             return True
         return False
 
-    def process_line(self, line):
+    def process_row(self, row):
         """
-        Process a single input line
+        Process a single input row
 
-        Calls process_row() which must be provided by implementors
+        This method does pre-processing and wraps the work into a transaction
+        and handles some of the fallout of processing failure.  The actual work
+        is delegated to process_fields().
         """
         self.linenum += 1
-        if isinstance(line, str):
-            row = [i.strip() for i in line.strip().split(self.sep)]
+        self.row = self.pre_process_row(row)
 
-        # row: the non-empty row content, whitespace-stripped, read-only
-        valid_cols = [i[1] for i in self.COLS]
-        self.row = {
-            k: None if self.is_blank(k, v) else v
-            for k, v
-            in zip(self.cols, row)
-            if k in valid_cols
-        }
         # rec: accumulates bits of processing before final assembly
         self.rec = {}
         # backup counters
@@ -242,7 +311,7 @@ class AbstractLoader():
         erased_ = self.erased
         try:
             with transaction.atomic():
-                self.process_row()
+                self.process_fields()
         except (ValidationError, IntegrityError, UserDataError) as e:
             # Catch errors to be presented to the user;
             # some user errors in the data come up as IntegrityErrors, e.g.
@@ -296,64 +365,10 @@ class AbstractLoader():
 
         self.count += 1
 
-
-class GeneralLoader(AbstractLoader):
-    """
-    Import data-set/model-specific file
-    """
-    dataset = None
-
-    def __init__(self, data_name, colnames, **kwargs):
-        try:
-            self.dataset = registry.datasets[data_name]
-        except KeyError:
-            self.model = registry.models[data_name]
-        else:
-            self.model = self.dataset.model
-
-        model_name = self.model._meta.model_name
-        if self.dataset:
-            self.COLS = []
-            for accr, col, *extra in self.dataset.fields:
-                accr = model_name + '__' + accr
-                self.COLS.append((col, accr))
-                for i in extra:
-                    if 'blanks' in i:
-                        if accr not in self.blanks:
-                            self.blanks[accr] = []
-                        self.blanks[accr] += i['blanks']
-        else:
-            # set COLS from model, start with id column
-            fields = self.model.get_fields()
-            self.COLS = [
-                (v.capitalize(), model_name + '__' + n)
-                for v, n in zip(fields.verbose, fields.names)
-            ]
-
-        super().__init__(colnames, **kwargs)
-
-        if self.dataset:
-            self.blanks[None] += self.dataset.blanks
-
     @classmethod
-    def load_file(cls, file, dataset=None, sep=None, **kwargs):
-        # keep original filehandle to feed into ImportFile.file later so it can
-        # save the file "as is" without linebreak conversion etc.
-        orig_file = file
-        if not isinstance(file, TextIOBase):
-            # http uploaded files are binary
-            file = TextIOWrapper(file)
-        first_line = file.readline()
-        if sep is None:
-            # auto-detect sep, defaults to normal split() on whitespace
-            SEPARATORS = ['\t', ',']
-            for i in SEPARATORS:
-                if i in first_line:
-                    sep = i
-                    break
-        colnames = first_line.strip().split(sep)
-        loader = cls(dataset, colnames, sep=sep, **kwargs)
-        return loader.process_file(file, orig_file_object=orig_file)
+    def load_file(cls, file, data_name=None, **kwargs):
+        loader = cls(data_name, **kwargs)
+        return loader.process_file(file)
 
     def parse_value(self, accessor, value):
         """
@@ -374,7 +389,7 @@ class GeneralLoader(AbstractLoader):
                 ret = parse_fun(*args)
             except Exception as e:
                 # assume parse_fun is error-free and blame user
-                for i, j in self.COLS:
+                for i, j in self.accr_map.items():
                     if j == accessor:
                         col = i
                         break
@@ -407,7 +422,7 @@ class GeneralLoader(AbstractLoader):
                 raise LookupError
         return m
 
-    def process_row(self):
+    def process_fields(self):
         """
         Process a row column by column
 
