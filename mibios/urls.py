@@ -27,6 +27,8 @@ urlpatterns = [
          views.ImportFileDownloadView.as_view(), name='import_file_download'),
     # fixed string paths go above this comment
     path('<str:dataset>/', views.TableView.as_view(), name='queryset_index'),
+    path('<str:dataset>/mean/<str:avg_by>/', views.AverageView.as_view(),
+         name='average'),
     path('<str:dataset>/import/', views.ImportView.as_view(), name='import'),
     path('<str:dataset>/export/<str:format>/', views.ExportView.as_view(),
          name='export'),

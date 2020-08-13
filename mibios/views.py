@@ -23,7 +23,8 @@ from .management.import_base import AbstractImportCommand
 from .models import Q, ChangeRecord, ImportFile, Snapshot
 from .tables import (CountColumn, DeletedHistoryTable, HistoryTable,
                      ManyToManyColumn, NONE_LOOKUP,
-                     SnapshotListTable, SnapshotTableColumn, Table)
+                     SnapshotListTable, SnapshotTableColumn, Table,
+                     table_factory)
 from .utils import getLogger
 
 
@@ -335,7 +336,11 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             q = ~q
 
         log.debug('QUERYSET FILTER:', q, 'ANNOTATION:', cts)
-        return super().get_queryset().filter(q).annotate(**cts)
+        qs = super().get_queryset().filter(q)
+        if getattr(self, 'avg_by', None):
+            qs = qs.average(*self.avg_by)
+        qs = qs.annotate(**cts)
+        return qs
 
     def get_table_class(self):
         """
@@ -487,6 +492,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             ctx['query'] = '?' + query
             ctx['invquery'] = self.to_query_string(negate=True)
 
+        ctx['avg_by_data'] = {'-'.join(i): i for i in self.model.average_by}
         return ctx
 
 
@@ -864,3 +870,75 @@ class ImportFileDownloadView(CuratorRequiredMixin, View):
         res = HttpResponse(content_type='')
         res['X-Sendfile'] = str(file)
         return res
+
+
+class AverageMixin():
+    """
+    Add to TableView to display tables with averages
+    """
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+        avg_by = kwargs['avg_by'].split('-')
+        if avg_by == ['']:
+            # for testing?
+            self.avg_by = []
+        else:
+            for i in self.model.average_by:
+                if set(avg_by) == set(i):
+                    self.avg_by = avg_by
+                    break
+            else:
+                raise Http404
+
+    def get_table_class(self):
+        """
+        Generate and supply table class
+
+        Experimental, copy-pasted from TableView, extracts column names from
+        queryset values
+        """
+        fields = self.avg_by + ['avg_group_count']
+        for i in self.model.get_average_fields():
+            fields.append(i.name + '_avg')
+        t = table_factory(model=self.model, field_names=fields, view=self)
+        return t
+
+    def get_table_data(self):
+        if not self.table_data:
+            self._set_table_data()
+
+        return self.table_data
+
+    def _set_table_data(self):
+        """
+        Get the queryset and substitute pks with natural keys
+
+        Assumes that get_queryset() returns a dict-based QuerySet since the
+        call to average() should include a values().  The selected "values" are
+        all primary keys, so here we have to fetch mode data to get the natural
+        keys.
+        """
+        # TODO: explore to do this all within QuerySet
+        natural_keys = {}
+        for i in self.avg_by:
+            natural_keys[i] = {
+                j.pk: j.natural
+                for j
+                in registry.models[i].published.all()
+            }
+
+        self.table_data = []
+        for row in self.get_queryset():
+            for i in self.avg_by:
+                if row[i] is None:
+                    continue
+                row[i] = natural_keys[i][row[i]]
+            self.table_data.append(row)
+
+
+class AverageView(AverageMixin, TableView):
+    pass
+
+
+class AverageExportView(ExportMixin, AverageMixin, TableView):
+    pass

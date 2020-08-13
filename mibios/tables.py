@@ -20,7 +20,13 @@ class CountColumn(tables.Column):
 
         if 'linkify' not in kwargs:
             def linkify(record):
-                f = {our_name: record.natural}
+                f = {}
+                if hasattr(record, 'natural'):
+                    # FIXME / TODO: only filter for normnal table, for averaged
+                    # tables we need to filter by the average_by fields (to be
+                    # implemented)
+                    f[our_name] = record.natural
+
                 query = view.build_query_string(filter=f)
                 return url + query
 
@@ -56,6 +62,43 @@ class CountColumn(tables.Column):
         for row in table.data:
             total += bound_column.accessor.resolve(row)
         return format_html('all: <a href={}>{}</a>', self.footer_url, total)
+
+
+class AverageGroupCountColumn(tables.Column):
+    def __init__(self, avg_by=[], view=None, **kwargs):
+        self.avg_by = avg_by
+        self.view = view
+        self.url = reverse(
+            'queryset_index',
+            kwargs=dict(dataset=view.dataset_name)
+        )
+
+        if 'linkify' not in kwargs:
+            kwargs.update(linkify=self.linkify)
+
+        super().__init__(self, **kwargs)
+        # verb name can be set after __init__, setting explicitly before
+        # interferes with the automatic column class selection
+        self.verbose_name = 'Avg Group N'
+
+    @property
+    def linkify(self):
+        """
+        Attribut containing the linkify function
+        """
+        if not hasattr(self, '_linkify_fn'):
+            def fn(record):
+                f = {}
+                for i in self.avg_by:
+                    if not i:
+                        continue
+                    # TODO: won't work if '__' in i, right?
+                    f[i] = getattr(record, i)
+
+                query = self.view.build_query_string(filter=f)
+                return self.url + query
+            self._linkify_fn = fn
+        return self._linkify_fn
 
 
 class ManyToManyColumn(tables.ManyToManyColumn):
@@ -115,6 +158,11 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
 
         elif i == 'natural':
             opts[i] = tables.Column(orderable=False)
+
+        # averages
+        elif i == 'avg_group_count':
+            # opts[i] = AverageGroupCountColumn(view=view)
+            pass
 
     if count_columns:
         # reverse relations -> count columns

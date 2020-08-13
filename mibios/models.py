@@ -175,6 +175,18 @@ class QuerySet(models.QuerySet):
 
         return ret
 
+    def average(self, *avg_by):
+        """
+        Average data of DecimalFields
+        """
+        # TODO: average over fields in reverse related models
+        # add group count
+        kwargs = {'avg_group_count': models.Count('id')}
+        for i in self.model.get_average_fields():
+            kwargs[i.name + '_avg'] = models.Avg(i.name)
+
+        return self.values(*avg_by).order_by(*avg_by).annotate(**kwargs)
+
 
 class Manager(models.Manager):
     def get_queryset(self):
@@ -584,6 +596,10 @@ class Model(models.Model):
     objects = Manager()
     published = PublishManager()
 
+    average_by = ()
+    """ average_by is a list of lists (or tuples) of field names over which
+    taking averages makes sense """
+
     @classmethod
     def pd_type(cls, field):
         """
@@ -653,6 +669,18 @@ class Model(models.Model):
         names = [i.name for i in fields]
         verbose = [getattr(i, 'verbose_name', i.name) for i in fields]
         return Fields(fields=fields, names=names, verbose=verbose)
+
+    @classmethod
+    def get_average_fields(cls):
+        """
+        Get fields for which we may want to calculate averages
+
+        Usually these are all the decimal fields
+        """
+        return [
+            i for i in cls.get_fields().fields
+            if isinstance(i, models.DecimalField)
+        ]
 
     def export(self):
         """
