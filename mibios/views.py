@@ -493,6 +493,10 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             ctx['invquery'] = self.to_query_string(negate=True)
 
         ctx['avg_by_data'] = {'-'.join(i): i for i in self.model.average_by}
+        if hasattr(self, 'avg_by'):
+            # FIXME: this should really be in AverageView
+            ctx['avg_url_slug'] = '-'.join(self.avg_by)
+
         return ctx
 
 
@@ -940,5 +944,5 @@ class AverageView(AverageMixin, TableView):
     pass
 
 
-class AverageExportView(ExportMixin, AverageMixin, TableView):
+class AverageExportView(AverageMixin, ExportView):
     pass

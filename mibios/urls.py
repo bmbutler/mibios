@@ -32,9 +32,10 @@ urlpatterns = [
     path('<str:dataset>/import/', views.ImportView.as_view(), name='import'),
     path('<str:dataset>/export/<str:format>/', views.ExportView.as_view(),
          name='export'),
+    path('<str:dataset>/mean/<str:avg_by>/export/<str:format>/',
+         views.AverageExportView.as_view(), name='average_export'),
     path('<str:dataset>/history/deleted/', views.DeletedHistoryView.as_view(),
          name='deleted_history'),
     path('<str:dataset>/<str:natural>/history/', views.HistoryView.as_view(),
          name='record_history'),
-
 ]
