@@ -66,6 +66,8 @@ class Q(models.Q):
 
 
 class QuerySet(models.QuerySet):
+    _avg_by = None
+
     def as_dataframe(self, *fields, natural=False):
         """
         Convert to pandas dataframe
@@ -182,10 +184,19 @@ class QuerySet(models.QuerySet):
         # TODO: average over fields in reverse related models
         # add group count
         kwargs = {'avg_group_count': models.Count('id')}
+        self._avg_by = avg_by
         for i in self.model.get_average_fields():
             kwargs[i.name + '_avg'] = models.Avg(i.name)
 
         return self.values(*avg_by).order_by(*avg_by).annotate(**kwargs)
+
+    def _clone(self):
+        """
+        Extent non-public _clone() to keep track if average() has been applied
+        """
+        c = super()._clone()
+        c._avg_by = self._avg_by
+        return c
 
 
 class Manager(models.Manager):
