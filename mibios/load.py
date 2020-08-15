@@ -534,6 +534,14 @@ class Loader():
                     raise UserDataError(msg) from e
                 except NaturalKeyLookupError as e:
                     raise UserDataError(e) from e
+                except ValueError as e:
+                    # happens for value of wrong type, e.g. non-number in an id
+                    # field so int() fails, and who knows, maybe other reasons,
+                    # anyways, let's blame the user for uploading bad data.
+                    raise UserDataError(
+                        'Possibly bad value / type not matching the field: {}:'
+                        '{}'.format(type(e).__name__, e)
+                    ) from e
                 else:
                     new = False
 
