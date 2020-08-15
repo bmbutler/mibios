@@ -13,12 +13,12 @@
 {% if avg_by_data %}
     {% if view.avg_by %}
         {# at average view, display link back to normal table view #}
-        [<a href="{% url 'queryset_index' dataset=dataset_name %}">normal table</a>]<br>
+        [<a href="{% url 'queryset_index' dataset=dataset_name %}{{ query }}">normal table</a>]<br>
     {% else %}
         {# display links to average views #}
         average by:
         {% for slug, list in avg_by_data.items %}
-            [<a href="{% url 'average' dataset=dataset_name avg_by=slug %}">{{ list|join:' and '}}</a>]<br>
+        [<a href="{% url 'average' dataset=dataset_name avg_by=slug %}{{ query }}">{{ list|join:' and '}}</a>]<br>
         {% endfor %}
     {% endif %}
 {% endif %}
