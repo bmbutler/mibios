@@ -137,8 +137,14 @@ class QuerySet(models.QuerySet):
 
         qs = self
         if natural and self.model._meta.get_field(fieldname).is_relation:
-            # speedup
-            qs = qs.select_related(fieldname)
+            if self._avg_by:
+                # average() was called, implying values(), so we have dict
+                # results and not model instances, so can't call select_related
+                # which would raise us a TypeError.
+                pass
+            else:
+                # speedup
+                qs = qs.select_related(fieldname)
 
         try:
             col = qs.as_dataframe(fieldname, natural=natural)[fieldname]
