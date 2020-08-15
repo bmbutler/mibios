@@ -183,6 +183,18 @@ class QuerySet(models.QuerySet):
 
         return ret
 
+    def annotate_rev_rel_counts(self):
+        """
+        Add reverse relation count annotations
+        """
+        count_args = {}
+        for i in self.model._meta.related_objects:
+            f = i.related_model.published.get_publish_filter()
+            kwargs = dict(filter=f) if f else {}
+            name = i.related_model._meta.model_name + '__count'
+            count_args[name] = models.Count(i.name, **kwargs)
+        return self.annotate(**count_args)
+
     def average(self, *avg_by):
         """
         Average data of DecimalFields

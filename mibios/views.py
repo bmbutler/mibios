@@ -315,16 +315,6 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         if self.model is None:
             return []
 
-        # add reverse relation count annotations
-        cts = {}
-        for i in self.model._meta.related_objects:
-            kwargs = {}
-            f = i.related_model.published.get_publish_filter()
-            if f:
-                kwargs = dict(filter=f)
-            cts[i.related_model._meta.model_name + '__count'] \
-                = Count(i.name, **kwargs)
-
         excludes = []
         for i in self.dataset_excludes + self.excludes:
             excludes.append(~Q(**i, model=self.model))
@@ -335,11 +325,11 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         if self.negate:
             q = ~q
 
-        log.debug('QUERYSET FILTER:', q, 'ANNOTATION:', cts)
+        log.debug('QUERYSET FILTER:', q)
         qs = super().get_queryset().filter(q)
         if getattr(self, 'avg_by', None):
             qs = qs.average(*self.avg_by)
-        qs = qs.annotate(**cts)
+        qs = qs.annotate_rev_rel_counts()
         return qs
 
     def get_table_class(self):
