@@ -10,6 +10,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.http import Http404, HttpResponse
 from django.urls import reverse
 from django.utils.http import urlencode
+from django.utils.text import slugify
 from django.views.generic.base import ContextMixin, TemplateView, View
 from django.views.generic.edit import FormView
 
@@ -195,40 +196,42 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         SQL's "IS NULL"
         """
         filter = {}
-        excludes = []
+        excludes = {}
         negate = False
-        for qkey, qvals in self.request.GET.lists():
-            if qkey == self.QUERY_FILTER:
-                for i in qvals:
-                    for j in i.split(self.QUERY_LIST_SEP):
-                        k, _, v = j.partition(self.QUERY_KEY_VAL_SEP)
-                        if v == NONE_LOOKUP:
-                            v = None
-                        else:
-                            try:
-                                v = int(v)
-                            except ValueError:
-                                pass
-                        filter[k] = v
+        for qkey, val in self.request.GET.items():
+            if qkey.startswith(self.QUERY_FILTER + '-'):
+                _, _, filter_key = qkey.partition('-')
+                if val == NONE_LOOKUP:
+                    val = None
+                else:
+                    try:
+                        val = int(val)
+                    except ValueError:
+                        pass
+                filter[filter_key] = val
 
-            elif qkey == self.QUERY_EXCLUDE:
-                for i in qvals:
-                    e = {}
-                    for j in i.split(self.QUERY_LIST_SEP):
-                        k, _, v = j.partition(self.QUERY_KEY_VAL_SEP)
-                        if v == NONE_LOOKUP:
-                            v = None
-                        else:
-                            try:
-                                v = int(v)
-                            except ValueError:
-                                pass
-                        e[k] = v
-                    excludes.append(e)
+            elif qkey.startswith(self.QUERY_EXCLUDE + '-'):
+                _, idx, exclude_key = qkey.split('-')
+                if val == NONE_LOOKUP:
+                    val = None
+                else:
+                    try:
+                        val = int(val)
+                    except ValueError:
+                        pass
+                if idx not in excludes:
+                    excludes[idx] = {}
+                excludes[idx][exclude_key] = val
+
             elif qkey == self.QUERY_NEGATE:
                 negate = True
+            else:
+                # unrelated item
+                pass
 
-        log.debug('from GET:', filter, excludes, negate)
+        # convert excludes into list, forget the index
+        excludes = [i for i in excludes.values()]
+        log.debug('DECODED FROM QUERYSTRING:', filter, excludes, negate)
         return filter, excludes, negate
 
     def to_query_string(self, filter={}, excludes=[], negate=False,
@@ -287,23 +290,23 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         This is the reverse of the get_filter_from_url method
         """
         query_dict = {}
-        f = cls.format_query_string(filter)
-        if f:
-            query_dict[cls.QUERY_FILTER] = f
+        for k, v in filter.items():
+            k = slugify((cls.QUERY_FILTER, k))
+            if v is None:
+                v = NONE_LOOKUP
+            query_dict[k] = v
 
-        elist = []
-        for i in excludes:
-            e = cls.format_query_string(i)
-            if e:
-                elist.append(e)
-
-        if elist:
-            query_dict[cls.QUERY_EXCLUDE] = elist
+        for i, excl in enumerate(excludes):
+            for k, v in excl.items():
+                k = slugify((cls.QUERY_EXCLUDE, i, k))
+                if v is None:
+                    v = NONE_LOOKUP
+                query_dict[k] = v
 
         if negate:
-            query_dict[cls.QUERY_NEGATE] = ''  # TODO: maybe True or Yes or so?
+            query_dict[cls.QUERY_NEGATE] = negate
 
-        query = urlencode(query_dict, doseq=True)
+        query = urlencode(query_dict, doseq=False)
         if query:
             query = '?' + query
         return query
@@ -477,6 +480,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                 ctx['filter_link_data'] = filter_link_data
             ctx['sort_by_stats'] = stats
 
+        # the original querystring:
         query = self.request.GET.urlencode()
         if query:
             ctx['query'] = '?' + query
@@ -909,7 +913,7 @@ class AverageMixin():
 
         Assumes that get_queryset() returns a dict-based QuerySet since the
         call to average() should include a values().  The selected "values" are
-        all primary keys, so here we have to fetch mode data to get the natural
+        all primary keys, so here we have to fetch more data to get the natural
         keys.
         """
         # TODO: explore to do this all within QuerySet
