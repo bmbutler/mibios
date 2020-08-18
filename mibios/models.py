@@ -115,6 +115,7 @@ class Q(models.Q):
 
 class QuerySet(models.QuerySet):
     _avg_by = None
+    _avg_fields = None
 
     def as_dataframe(self, *fields, natural=False):
         """
@@ -262,6 +263,7 @@ class QuerySet(models.QuerySet):
             kwargs[i.name + '_avg'] = models.Avg(i.name)
 
         self._avg_by = avg_by
+        self._avg_fields = list(avg_by) + list(kwargs)
         qs = self.values(*avg_by)
         if natural:
             qs._iterable_class = natural_values_iterable_factory(
@@ -277,6 +279,7 @@ class QuerySet(models.QuerySet):
         """
         c = super()._clone()
         c._avg_by = self._avg_by
+        c._avg_fields = self._avg_fields
         return c
 
 

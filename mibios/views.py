@@ -892,9 +892,7 @@ class AverageMixin():
         """
         Generate django_tables2 table class
         """
-        fields = self.avg_by + ['avg_group_count']
-        for i in self.model.get_average_fields():
-            fields.append(i.name + '_avg')
+        fields = self.get_queryset()._avg_fields
         t = table_factory(model=self.model, field_names=fields, view=self)
         return t
 
