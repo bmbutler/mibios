@@ -890,48 +890,13 @@ class AverageMixin():
 
     def get_table_class(self):
         """
-        Generate and supply table class
-
-        Experimental, copy-pasted from TableView, extracts column names from
-        queryset values
+        Generate django_tables2 table class
         """
         fields = self.avg_by + ['avg_group_count']
         for i in self.model.get_average_fields():
             fields.append(i.name + '_avg')
         t = table_factory(model=self.model, field_names=fields, view=self)
         return t
-
-    def get_table_data(self):
-        if not self.table_data:
-            self._set_table_data()
-
-        return self.table_data
-
-    def _set_table_data(self):
-        """
-        Get the queryset and substitute pks with natural keys
-
-        Assumes that get_queryset() returns a dict-based QuerySet since the
-        call to average() should include a values().  The selected "values" are
-        all primary keys, so here we have to fetch more data to get the natural
-        keys.
-        """
-        # TODO: explore to do this all within QuerySet
-        natural_keys = {}
-        for i in self.avg_by:
-            natural_keys[i] = {
-                j.pk: j.natural
-                for j
-                in registry.models[i].published.all()
-            }
-
-        self.table_data = []
-        for row in self.get_queryset():
-            for i in self.avg_by:
-                if row[i] is None:
-                    continue
-                row[i] = natural_keys[i][row[i]]
-            self.table_data.append(row)
 
 
 class AverageView(AverageMixin, TableView):

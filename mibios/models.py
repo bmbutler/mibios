@@ -47,6 +47,54 @@ class NaturalKeyLookupError(Exception):
     pass
 
 
+class NaturalValuesIterable(models.query.ValuesIterable):
+    """
+    Iterable like that returned by QuerySet.values() yielding natural values
+
+    Replaces primary keys with their natural values
+    """
+    pk_fields = []
+    model_class = None
+
+    def __iter__(self):
+        value_maps = {}
+
+        # for each "field/model" generate a mapping from the "real" values to
+        # the natural key for each object/row:
+        for field in self.pk_fields:
+            m = {}
+            # TODO: this only gets direct relations, we need a routine to
+            # resolve multiple-hop relations
+            model = self.model_class._meta.get_field(field).related_model
+            for i in model.published.iterator():
+                m[i.pk] = i.natural
+            value_maps[field] = m
+
+        # Apply the mapping to each row:
+        for row in super().__iter__():
+            for field, m in value_maps.items():
+                val = row[field]
+                if val is None:
+                    continue
+                row[field] = m[row[field]]
+            yield row
+
+
+def natural_values_iterable_factory(model_class, *pk_fields):
+    """
+    Get custom iterable class to be used for QuerySet.values() results
+
+    Instantiation of the iterable is a django internal so this function
+    customizes the iterable class to our QuerySet.  The class should be
+    assigned to QuerySet._iterator_class during values() calls.
+    """
+    return type(
+        'CustomNaturalValuesIterable',
+        (NaturalValuesIterable, ),
+        dict(model_class=model_class, pk_fields=pk_fields),
+    )
+
+
 class Q(models.Q):
     """
     A thin wrapper around Q to handle natural lookups
@@ -195,22 +243,37 @@ class QuerySet(models.QuerySet):
             count_args[name] = models.Count(i.name, **kwargs)
         return self.annotate(**count_args)
 
-    def average(self, *avg_by):
+    def average(self, *avg_by, natural=True):
         """
         Average data of DecimalFields
+
+        :param str avg_by: One or more field names, by which to sort and group
+                           the data before taking averages for decimal values.
+        :param bool natural: If True, then the averaged-by fields will be
+                             populated with their natural key, otherwise with
+                             the primary key.
         """
         # TODO: average over fields in reverse related models
         # add group count
+
+        # annotation kwargs:
         kwargs = {'avg_group_count': models.Count('id')}
-        self._avg_by = avg_by
         for i in self.model.get_average_fields():
             kwargs[i.name + '_avg'] = models.Avg(i.name)
 
-        return self.values(*avg_by).order_by(*avg_by).annotate(**kwargs)
+        self._avg_by = avg_by
+        qs = self.values(*avg_by)
+        if natural:
+            qs._iterable_class = natural_values_iterable_factory(
+                self.model,
+                *avg_by,
+            )
+        qs = qs.order_by(*avg_by).annotate(**kwargs)
+        return qs
 
     def _clone(self):
         """
-        Extent non-public _clone() to keep track if average() has been applied
+        Extent non-public _clone() to keep track of extra state
         """
         c = super()._clone()
         c._avg_by = self._avg_by
