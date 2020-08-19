@@ -29,23 +29,24 @@
     {% if applied_filter %}
 	with:
 	{% for lookup, value, remove_query in applied_filter %}
-	<a href="{% url 'queryset_index' dataset=dataset_name %}{{ remove_query }}">{{ lookup }}={{ value }}</a>
+            {# we need a '?' here if removing the current filter results in an otherwise empty querystring, else the browser will see href="" and put in the current URL with current querystring, with '?' the browser links to the current URL with empty querystring (ezcpet for the '?') #}
+            <a href="{{ remove_query|default:'?' }}">{{ lookup }}={{ value }}</a>
 	{% endfor %}
     {% endif %}
     {% for applied_exclude, remove_query in applied_excludes_list %}
 	without:
-	<a href="{% url 'queryset_index' dataset=dataset_name %}{{ remove_query }}">
+	<a href="{{ remove_query }}">
 	{% for lookup, value in applied_exclude.items %}
 	    {{ lookup }}={{ value }}
 	{% endfor %}
 	</a>
     {% endfor %}
-    <a href="{% url 'queryset_index' dataset=dataset_name %}{{ invquery }}">inverse filter</a>
+    <a href="{{ invquery }}">inverse filter</a>
     <br>
 {% endif %}
 
 {% for stats_type, stats_obj in sort_by_stats.items %}
-    {# going through this pool only once usually #}
+    {# going through this loop only once usually #}
     {% if stats_type == 'choice_counts' %}
 	{% if filter_link_data %}
 	    {% if view.negate %}
@@ -58,7 +59,7 @@
 		{% if view.negate %}
 		    {{ value|default:table.default }}({{ count }})
 		{% else %}
-		    <a href="{% url 'queryset_index' dataset=dataset_name %}{{ query }}">{{ value|default:table.default }}</a>({{ count }})
+		    <a href="{{ query }}">{{ value|default:table.default }}</a>({{ count }})
 		{% endif %}
 	    {% endfor %}
 	    <br>
