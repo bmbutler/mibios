@@ -902,8 +902,9 @@ class AverageMixin():
         """
         Generate django_tables2 table class
         """
-        fields = self.get_queryset()._avg_fields
-        t = table_factory(model=self.model, field_names=fields, view=self)
+        self.fields = self.get_queryset()._avg_fields
+        t = table_factory(model=self.model, field_names=self.fields, view=self,
+                          count_columns=False)
         return t
 
 

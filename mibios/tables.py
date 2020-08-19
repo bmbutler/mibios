@@ -10,21 +10,55 @@ NONE_LOOKUP = 'NULL'
 
 
 class CountColumn(tables.Column):
-    def __init__(self, related_object, view=None, **kwargs):
+    """
+    Count column
+
+    A column showing the number of related rows from a different table with
+    link to exactly those related records.  Those related records can be from a
+    reverse foreign key relation or the elements of a grouped-by record.
+    """
+    def __init__(self, related_object=None, view=None, group_by=[],
+                 force_verbose_name=True, **kwargs):
+        """
+        Count column constructor
+
+        :param related_object: The reverse relation field, i.e. an element of
+                               Model._meta.related_objects
+        :param list group_by: Names (str) by which the data was grouped,
+                              e.g. when taking averaged
+        :param force_verbose_name: Overrides the verbose column name that the
+                                   django_table2 internals come up with. If
+                                   this is True a verbose name will be
+                                   generated and if a string is given that will
+                                   be used instead.
+        """
+        if related_object is None:
+            dataset_name = view.dataset_name
+            our_name = view.dataset_name
+        else:
+            # name of the relation's model
+            dataset_name = related_object.name
+            # our_name: the name of the foreign key field of the related model
+            # to the current table
+            our_name = related_object.remote_field.name
+
         url = reverse(
             'queryset_index',
-            kwargs=dict(dataset=related_object.name)
+            kwargs=dict(dataset=dataset_name)
         )
-        # our (this column's) name
-        our_name = related_object.remote_field.name
 
         if 'linkify' not in kwargs:
             def linkify(record):
                 f = {}
+                for i in group_by:
+                    try:
+                        # ValuesIterable is used in QuerySet
+                        f[i] = record[i]
+                    except TypeError:
+                        # records are regular instances
+                        f[i] = getattr(record, i)
+
                 if hasattr(record, 'natural'):
-                    # FIXME / TODO: only filter for normnal table, for averaged
-                    # tables we need to filter by the average_by fields (to be
-                    # implemented)
                     f[our_name] = record.natural
 
                 query = view.build_query_string(filter=f)
@@ -33,72 +67,48 @@ class CountColumn(tables.Column):
             kwargs.update(linkify=linkify)
 
         # prepare URL for footer
-        f = {our_name + '__' + k: v for k, v in view.filter.items()}
-
-        elist = []
-        for i in view.excludes:
-            e = {our_name + '__' + k: v for k, v in i.items()}
-            if e:
-                elist.append(e)
-        # if there is a filter selecting for us, then skip exclusion of missing
-        # data:
-        for i in f:
-            if i.startswith(our_name):
-                break
+        if related_object is None:
+            f = view.filter.copy()
+            elist = view.excludes.copy()
         else:
-            elist.append({our_name: NONE_LOOKUP})
+            f = {our_name + '__' + k: v for k, v in view.filter.items()}
+
+            elist = []
+            for i in view.excludes:
+                e = {our_name + '__' + k: v for k, v in i.items()}
+                if e:
+                    elist.append(e)
+
+            # if there is a filter selecting for us, then skip exclusion of
+            # missing data:
+            for i in f:
+                if i.startswith(our_name):
+                    break
+            else:
+                elist.append({our_name: NONE_LOOKUP})
 
         q = view.build_query_string(filter=f, excludes=elist,
                                     negate=view.negate)
         self.footer_url = url + q
 
         super().__init__(self, **kwargs)
+
+        # django_tables2 internals somehow mess up the verbose name, but
         # verb name can be set after __init__, setting explicitly before
         # interferes with the automatic column class selection
-        self.verbose_name = related_object.name + ' count'
+        if force_verbose_name:
+            if isinstance(force_verbose_name, str):
+                self.verbose_name = force_verbose_name
+            elif related_object is None:
+                self.verbose_name = 'group count'
+            else:
+                self.verbose_name = related_object.name + ' count'
 
     def render_footer(self, bound_column, table):
         total = 0
         for row in table.data:
             total += bound_column.accessor.resolve(row)
         return format_html('all: <a href={}>{}</a>', self.footer_url, total)
-
-
-class AverageGroupCountColumn(tables.Column):
-    def __init__(self, avg_by=[], view=None, **kwargs):
-        self.avg_by = avg_by
-        self.view = view
-        self.url = reverse(
-            'queryset_index',
-            kwargs=dict(dataset=view.dataset_name)
-        )
-
-        if 'linkify' not in kwargs:
-            kwargs.update(linkify=self.linkify)
-
-        super().__init__(self, **kwargs)
-        # verb name can be set after __init__, setting explicitly before
-        # interferes with the automatic column class selection
-        self.verbose_name = 'Avg Group N'
-
-    @property
-    def linkify(self):
-        """
-        Attribut containing the linkify function
-        """
-        if not hasattr(self, '_linkify_fn'):
-            def fn(record):
-                f = {}
-                for i in self.avg_by:
-                    if not i:
-                        continue
-                    # TODO: won't work if '__' in i, right?
-                    f[i] = getattr(record, i)
-
-                query = self.view.build_query_string(filter=f)
-                return self.url + query
-            self._linkify_fn = fn
-        return self._linkify_fn
 
 
 class ManyToManyColumn(tables.ManyToManyColumn):
@@ -114,7 +124,7 @@ class Table(tables.Table):
 
 
 def table_factory(model=None, field_names=[], view=None, count_columns=True,
-                  extra={}):
+                  extra={}, group_by_count=None):
     """
     Generate table class from list of field/annotation/column names etc.
 
@@ -122,6 +132,10 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
     :param TableView view: The TableView object, will be passed to e.g.
                            CountColumn which needs various view attributes to
                            generate href urls.
+    :param str group_by_count: Name of the group-by-count column in average
+                                tables.  This column will get a special link to
+                                the table of group members, similar to the
+                                reverse relation count columns.
     """
 
     meta_opts = dict(
@@ -161,8 +175,8 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
 
         # averages
         elif i == 'avg_group_count':
-            # opts[i] = AverageGroupCountColumn(view=view)
-            pass
+            opts[i] = CountColumn(view=view, group_by=view.avg_by,
+                                  force_verbose_name='avg group count')
 
     if count_columns:
         # reverse relations -> count columns
