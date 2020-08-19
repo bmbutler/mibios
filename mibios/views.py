@@ -404,15 +404,21 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         return c
 
     def get_sort_by_field(self):
+        """
+        Returns name of valid sort-by fields from the querystring
+
+        If the sort-by field is not a field in the current table view None is
+        returned.
+        """
         field = self.request.GET.get(self.get_table()._meta.order_by_field)
         if not field:
             return None
 
         field = field.lstrip('-')
-        if field not in self.model.get_fields().names:
-            return None
+        if field in self.fields:
+            return field
 
-        return field
+        return None
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)

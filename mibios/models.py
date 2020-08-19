@@ -222,7 +222,8 @@ class QuerySet(models.QuerySet):
             return {}
 
         qs = self
-        if natural and self.model._meta.get_field(fieldname).is_relation:
+        if natural and fieldname in self.model.get_fields().names \
+                and self.model._meta.get_field(fieldname).is_relation:
             if self._avg_by:
                 # average() was called, implying values(), so we have dict
                 # results and not model instances, so can't call select_related
