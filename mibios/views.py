@@ -334,9 +334,13 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
 
         log.debug('QUERYSET FILTER:', q)
         qs = super().get_queryset().filter(q)
+        # Do not annotate with rev rel counts on the average table.  Doing so
+        # will mess up the group count in some circumstances (group members
+        # each counted multiply times (for each rev rel count))
         if getattr(self, 'avg_by', None):
             qs = qs.average(*self.avg_by)
-        qs = qs.annotate_rev_rel_counts()
+        else:
+            qs = qs.annotate_rev_rel_counts()
         return qs
 
     def get_table_class(self):
