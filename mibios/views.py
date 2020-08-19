@@ -261,10 +261,14 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                 raise TypeError('{} in without is neither a dict nor a list'
                                 .format(i))
 
-        if negate:
-            query_negate = not self.negate
+        if f or elist:
+            if negate:
+                query_negate = not self.negate
+            else:
+                query_negate = self.negate
         else:
-            query_negate = self.negate
+            # no filtering is in effect, thus result inversion makes no sense
+            query_negate = False
 
         return self.build_query_string(f, elist, query_negate)
 
