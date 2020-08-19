@@ -1,4 +1,5 @@
 from collections import namedtuple, OrderedDict
+from decimal import Decimal
 from pathlib import Path
 from shutil import copy2
 
@@ -121,11 +122,19 @@ class QuerySet(models.QuerySet):
         """
         Convert to pandas dataframe
 
-        :param: fields str: Only return columns with given field names.
+        :param: fields str: Only return columns with given field names.  If
+                            this empty then all fields are returned.
         :param: natural bool: If true, then replace id/pk of foreign
                               relation with natural representation.
         """
+        if self._avg_by:
+            return self._as_dataframe_avg(*fields)
+
+        if not fields:
+            fields = self.model.get_fields().names
+
         index = self.values_list('id', flat=True)
+
         df = pandas.DataFrame([], index=index)
         for i in self.model._meta.get_fields():
             if fields and i.name not in fields:
@@ -144,6 +153,7 @@ class QuerySet(models.QuerySet):
                 )
             else:
                 col_dat = self.values_list(i.name, flat=True)
+
             kwargs = dict(index=index)
             if i.choices:
                 col_dat = pandas.Categorical(col_dat)
@@ -154,7 +164,34 @@ class QuerySet(models.QuerySet):
                     # (but not for foreign key columns)
                     col_dat = ('' if i is None else i for i in col_dat)
                 kwargs['dtype'] = dtype
+
             df[i.name] = pandas.Series(col_dat, **kwargs)
+        return df
+
+    def _as_dataframe_avg(self, *fields):
+        """
+        Convert a QuerySet with ValuesIterable to a data frame
+
+        The implementation depends on having average() called on the QuerySet.
+        """
+        if not fields:
+            fields = self._avg_fields
+
+        # getting pks here for index
+        index = pandas.MultiIndex.from_tuples(
+            self.values_list(*self._avg_by),
+            names=self._avg_by
+        )
+        df = pandas.DataFrame([], index=index)
+
+        for i in fields:
+            col_dat = []
+            for row in self:
+                val = row[i]
+                if isinstance(val, Decimal):
+                    val = float(val)
+                col_dat.append(val)
+            df[i] = pandas.Series(col_dat, index=index)
         return df
 
     def _filter_or_exclude(self, negate, *args, **kwargs):
