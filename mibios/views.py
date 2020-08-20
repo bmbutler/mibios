@@ -462,7 +462,14 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                     # only give these for numeric columns
                     try:
                         if stats['description'].dtype.kind == 'f':
-                            del stats['choice_counts']
+                            # keep description and only give NaNs as filter
+                            # choice
+                            try:
+                                nan_ct = stats['choice_counts'][[float('nan')]]
+                            except KeyError:
+                                del stats['choice_counts']
+                            else:
+                                stats['choice_counts'] = nan_ct
                         else:
                             del stats['description']
                     except KeyError:
@@ -470,10 +477,6 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
 
                 filter_link_data = []
                 if 'choice_counts' in stats:
-                    # TODO / FIXME: s/nan/None/ for foreign key columns
-                    # here, bit this might not what we want for actual
-                    # numeric columns, the nan in put in by
-                    # pandas.Series.value_counts(dropna=False)
                     counts = {
                         None if isinstance(k, float) and isnan(k) else k: v
                         for k, v in
