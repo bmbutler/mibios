@@ -2,7 +2,6 @@ import csv
 from math import isnan
 
 from django.apps import apps
-from django.db.models import Count
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
