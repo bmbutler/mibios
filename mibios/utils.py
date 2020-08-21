@@ -1,7 +1,9 @@
 """
 Utilities module
 """
+from datetime import datetime
 import logging
+import time
 
 
 logging.addLevelName(25, 'SUCCESS')
@@ -213,3 +215,21 @@ class DeepRecord():
 
     def __str__(self):
         return str(self._)
+
+
+class StatsMiddleWare:
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self.count = 0
+        self.log = getLogger(__name__)
+
+    def __call__(self, request):
+        self.count += 1
+        t0 = datetime.now()
+        pt0 = time.process_time()
+        response = self.get_response(request)
+        t1 = datetime.now()
+        pt1 = time.process_time()
+        self.log.debug('stats:', self.count, 'clock delta:', t1 - t0,
+                       'proc delta:', pt1 - pt0)
+        return response
