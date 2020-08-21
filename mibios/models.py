@@ -136,36 +136,47 @@ class QuerySet(models.QuerySet):
         index = self.values_list('id', flat=True)
 
         df = pandas.DataFrame([], index=index)
-        for i in self.model._meta.get_fields():
-            if fields and i.name not in fields:
-                continue
-            if not Model.is_simple_field(i):
-                continue
-            if i.name == 'id':
-                continue
+        for i in fields:
 
-            dtype = Model.pd_type(i)
-            if i.is_relation and natural:
-                col_dat = map(
-                    lambda obj:
-                        getattr(getattr(obj, i.name), 'natural', None),
-                    self.prefetch_related()
-                )
+            try:
+                f = self.model._meta.get_field(i)
+            except FieldDoesNotExist:
+                if not hasattr(self.model, i):
+                    raise ValueError(
+                        'not the name of a field or model attribute: {}'
+                        ''.format(i)
+                    )
+
+                f = None
+                dtype = None
+                col_dat = (getattr(obj, i) for obj in self)
             else:
-                col_dat = self.values_list(i.name, flat=True)
+                if not Model.is_simple_field(f):
+                    continue
+                dtype = Model.pd_type(f)
+
+                if f.is_relation and natural:
+                    col_dat = map(
+                        lambda obj:
+                            getattr(getattr(obj, i), 'natural', None),
+                        self.prefetch_related()
+                    )
+                else:
+                    col_dat = self.values_list(i, flat=True)
 
             kwargs = dict(index=index)
-            if i.choices:
+            if f is not None and f.choices:
                 col_dat = pandas.Categorical(col_dat)
             else:
-                if dtype is str and not i.is_relation:
+                if dtype is str and not f.is_relation:
                     # None become empty str
                     # prevents 'None' string to enter df str columns
                     # (but not for foreign key columns)
-                    col_dat = ('' if i is None else i for i in col_dat)
+                    col_dat = ('' if j is None else j for j in col_dat)
                 kwargs['dtype'] = dtype
 
-            df[i.name] = pandas.Series(col_dat, **kwargs)
+            df[i] = pandas.Series(col_dat, **kwargs)
+
         return df
 
     def _as_dataframe_avg(self, *fields):
