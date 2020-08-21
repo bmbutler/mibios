@@ -1,5 +1,7 @@
 from django import forms
 
+from . import QUERY_FILTER
+
 
 class UploadFileForm(forms.Form):
     file = forms.FileField()
@@ -32,3 +34,15 @@ class UploadFileForm(forms.Form):
                   ' value in the database.  This option allows to instead '
                   'erase the current value.',
     )
+
+
+def get_field_search_form(field):
+    """
+    Factory to build field search forms
+    """
+    name = QUERY_FILTER + '-' + field + '__regex'
+    field = forms.CharField(
+        label=field.capitalize(),
+        strip=True,
+    )
+    return type('FieldSearchForm', (forms.Form, ), {name: field})

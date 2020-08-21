@@ -17,7 +17,7 @@ from django_tables2 import SingleTableView, A, Column
 
 from . import __version__, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE
 from .dataset import registry
-from .forms import UploadFileForm
+from .forms import get_field_search_form, UploadFileForm
 from .load import Loader
 from .management.import_base import AbstractImportCommand
 from .models import Q, ChangeRecord, ImportFile, Snapshot
@@ -440,6 +440,10 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                     del stats['description']
                 except KeyError:
                     pass
+
+                if 'unique' in stats:
+                    ctx['field_search_form'] = \
+                        get_field_search_form(sort_by_field)()
             else:
                 # a non-boring column
                 if 'description' in stats:
