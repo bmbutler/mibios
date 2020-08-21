@@ -15,7 +15,7 @@ from django.views.generic.edit import FormView
 
 from django_tables2 import SingleTableView, A, Column
 
-from . import __version__
+from . import __version__, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE
 from .dataset import registry
 from .forms import UploadFileForm
 from .load import Loader
@@ -162,9 +162,6 @@ class DatasetMixin():
 
 class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
     template_name = 'mibios/model_index.html'
-    QUERY_FILTER = 'filter'
-    QUERY_EXCLUDE = 'exclude'
-    QUERY_NEGATE = 'inverse'
 
     # set by setup()
     model = None
@@ -196,7 +193,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         excludes = {}
         negate = False
         for qkey, val in self.request.GET.items():
-            if qkey.startswith(self.QUERY_FILTER + '-'):
+            if qkey.startswith(QUERY_FILTER + '-'):
                 _, _, filter_key = qkey.partition('-')
                 if val == NONE_LOOKUP:
                     val = None
@@ -207,7 +204,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                         pass
                 filter[filter_key] = val
 
-            elif qkey.startswith(self.QUERY_EXCLUDE + '-'):
+            elif qkey.startswith(QUERY_EXCLUDE + '-'):
                 _, idx, exclude_key = qkey.split('-')
                 if val == NONE_LOOKUP:
                     val = None
@@ -220,7 +217,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                     excludes[idx] = {}
                 excludes[idx][exclude_key] = val
 
-            elif qkey == self.QUERY_NEGATE:
+            elif qkey == QUERY_NEGATE:
                 negate = True
             else:
                 # unrelated item
@@ -278,20 +275,20 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         """
         query_dict = {}
         for k, v in filter.items():
-            k = slugify((cls.QUERY_FILTER, k))
+            k = slugify((QUERY_FILTER, k))
             if v is None:
                 v = NONE_LOOKUP
             query_dict[k] = v
 
         for i, excl in enumerate(excludes):
             for k, v in excl.items():
-                k = slugify((cls.QUERY_EXCLUDE, i, k))
+                k = slugify((QUERY_EXCLUDE, i, k))
                 if v is None:
                     v = NONE_LOOKUP
                 query_dict[k] = v
 
         if negate:
-            query_dict[cls.QUERY_NEGATE] = negate
+            query_dict[QUERY_NEGATE] = negate
 
         query = urlencode(query_dict, doseq=False)
         if query:
