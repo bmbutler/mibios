@@ -13,12 +13,12 @@
 {% if avg_by_data %}
     {% if view.avg_by %}
         {# at average view, display link back to normal table view #}
-        [<a href="{% url 'queryset_index' dataset=dataset_name %}{{ query }}">normal table</a>]<br>
+        [<a href="{% url 'queryset_index' dataset=dataset_name %}{{ querystr }}">normal table</a>]<br>
     {% else %}
         {# display links to average views #}
         average by:
         {% for slug, list in avg_by_data.items %}
-        [<a href="{% url 'average' dataset=dataset_name avg_by=slug %}{{ query }}">{{ list|join:' and '}}</a>]<br>
+        [<a href="{% url 'average' dataset=dataset_name avg_by=slug %}{{ querystr }}">{{ list|join:' and '}}</a>]<br>
         {% endfor %}
     {% endif %}
 {% endif %}
@@ -77,14 +77,20 @@
 	{% for val, count in stats_obj.items %}"{{ val|default:table.default }}"({{ count }}){% endfor %}
 	<br>
     {% elif stats_type == 'unique' %}
-	Sorted column "{{ sort_by_field }}": all values unique<br>
+	Sorted column "{{ sort_by_field }}": all values unique
+        {#<form action="{% url 'queryset_index' dataset=dataset_name %}{{ querystr }}" method="get">#}
+        <form action="{% url 'queryset_index' dataset=dataset_name %}{{ querystr }}" method="get">
+            {{ field_search_form }}
+            <input type="submit" value="Search">
+        </form>
+        <br>
     {% endif %}
 {% endfor %}
 <a href="{% url 'import' dataset=dataset_name %}">import</a>
-{% if avg_url_slug %}
-    <a href="{% url 'average_export' dataset=dataset_name avg_by=avg_url_slug format='csv' %}{{ query }}">export as csv</a>
+{% if view.avg_by %}
+    <a href="{% url 'average_export' dataset=dataset_name avg_by=avg_url_slug format='csv' %}{{ querystr }}">export as csv</a>
 {% else %}
-    <a href="{% url 'export' dataset=dataset_name format='csv' %}{{ query }}">export as csv</a>
+    <a href="{% url 'export' dataset=dataset_name format='csv' %}{{ querystr }}">export as csv</a>
 {% endif %}
 
 {% render_table table %}

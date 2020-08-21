@@ -165,6 +165,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
 
     # set by setup()
     model = None
+    avg_by = None
     fields = None
     col_names = None
     filter = None
@@ -427,7 +428,9 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         ]
 
         sort_by_field = self.get_sort_by_field()
-        if sort_by_field is not None:
+        if sort_by_field is None:
+            ctx['sort_by_stats'] = {}
+        else:
             ctx['sort_by_field'] = sort_by_field
             qs = self.get_queryset()
             stats = qs.get_field_stats(sort_by_field, natural=True)
@@ -480,13 +483,12 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         # the original querystring:
         query = self.request.GET.urlencode()
         if query:
-            ctx['query'] = '?' + query
+            ctx['querystr'] = '?' + query
             ctx['invquery'] = self.to_query_string(negate=True)
+        else:
+            ctx['querystr'] = ''
 
         ctx['avg_by_data'] = {'-'.join(i): i for i in self.model.average_by}
-        if hasattr(self, 'avg_by'):
-            # FIXME: this should really be in AverageView
-            ctx['avg_url_slug'] = '-'.join(self.avg_by)
 
         return ctx
 
@@ -893,6 +895,11 @@ class AverageMixin():
         t = table_factory(model=self.model, field_names=self.fields, view=self,
                           count_columns=False)
         return t
+
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['avg_url_slug'] = '-'.join(self.avg_by)
+        return ctx
 
 
 class AverageView(AverageMixin, TableView):
