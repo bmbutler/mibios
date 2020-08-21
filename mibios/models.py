@@ -18,6 +18,7 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 
 
 import pandas
+from pandas.api.types import is_numeric_dtype
 
 from .utils import getLogger
 
@@ -256,28 +257,30 @@ class QuerySet(models.QuerySet):
 
         ret = {
             'choice_counts': count_stats,
-            'description': col.describe(),
         }
 
-        if count_stats.count() == 1:
-            # all values the same
-            ret['uniform'] = count_stats.to_dict()
-
-        if count_stats.max() < 2:
-            # column values are unique
-            ret['unique'] = count_stats.max()
-
-        try:
-            not_blank = count_stats.drop(index='')
-        except KeyError:
-            pass
+        if is_numeric_dtype(col):
+            ret['description'] = col.describe()
         else:
-            if not_blank.max() < 2:
-                # column unique except for empties
-                ret['unique_blank'] = {
-                    'BLANK': count_stats[''],
-                    'NOT_BLANK': not_blank.sum(),
-                }
+            if count_stats.count() == 1:
+                # all values the same
+                ret['uniform'] = count_stats.to_dict()
+
+            if count_stats.max() < 2:
+                # column values are unique
+                ret['unique'] = count_stats.max()
+
+            try:
+                not_blank = count_stats.drop(index='')
+            except KeyError:
+                pass
+            else:
+                if not_blank.max() < 2:
+                    # column unique except for empties
+                    ret['unique_blank'] = {
+                        'BLANK': count_stats[''],
+                        'NOT_BLANK': not_blank.sum(),
+                    }
 
         return ret
 
