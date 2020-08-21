@@ -165,8 +165,6 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
     QUERY_FILTER = 'filter'
     QUERY_EXCLUDE = 'exclude'
     QUERY_NEGATE = 'inverse'
-    QUERY_LIST_SEP = ','
-    QUERY_KEY_VAL_SEP = ':'
 
     # set by setup()
     model = None
@@ -270,20 +268,6 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             query_negate = False
 
         return self.build_query_string(f, elist, query_negate)
-
-    @classmethod
-    def format_query_string(cls, lookups):
-        """
-        Helper to format a set of lookups into query string format
-
-        E.g. {'a': 'b', 'c': None} ==> 'a:b,c:NULL'
-        """
-        ret = []
-        for k, v in lookups.items():
-            if v is None:
-                v = NONE_LOOKUP
-            ret.append('{}{}{}'.format(k, cls.QUERY_KEY_VAL_SEP, v))
-        return cls.QUERY_LIST_SEP.join(ret)
 
     @classmethod
     def build_query_string(cls, filter={}, excludes=[], negate=False):
