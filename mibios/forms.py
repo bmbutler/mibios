@@ -1,6 +1,6 @@
 from django import forms
 
-from . import QUERY_FILTER
+from . import QUERY_FILTER, QUERY_FIELD, QUERY_FORMAT
 
 
 class UploadFileForm(forms.Form):
@@ -46,3 +46,45 @@ def get_field_search_form(field):
         strip=True,
     )
     return type('FieldSearchForm', (forms.Form, ), {name: field})
+
+
+def get_export_form(query_dict, formats, initial_fields=None):
+    """
+    Factory building export format forms
+
+    :params list initial_fields: List of field names that have their checkbox
+                                 in check state intially. If None, the default,
+                                 then all fields are checked initially.
+    """
+    fields = query_dict.getlist(QUERY_FIELD)
+    if initial_fields is None:
+        initial_fields = fields
+    choices = ((i, i) for i in fields)
+    opts = {}
+
+    opts[QUERY_FIELD] = forms.MultipleChoiceField(
+        widget=forms.CheckboxSelectMultiple,
+        choices=choices,
+        initial=initial_fields,
+        label='fields to be exported',
+    )
+
+    # TODO: get default from ExportBaseMixin
+    opts[QUERY_FORMAT] = forms.ChoiceField(
+        widget=forms.RadioSelect,
+        choices=[(i[0], i[2]) for i in formats],
+        initial=formats[0][0],
+        label='file format',
+    )
+
+    # Hidden fields to keep track of complete state, needed since the GET
+    # request through the form will have the whole query string replaced
+    for k, v in query_dict.items():
+        if k == QUERY_FIELD:
+            continue
+        opts[k] = forms.CharField(
+            widget=forms.HiddenInput(),
+            initial=v
+        )
+
+    return type('ExportForm', (forms.Form, ), opts)

@@ -11,14 +11,14 @@ from django.http.request import QueryDict
 from django.urls import reverse
 from django.utils.text import slugify
 from django.views.generic.base import ContextMixin, TemplateView, View
-from django.views.generic.edit import FormView
+from django.views.generic.edit import FormMixin, FormView
 
 from django_tables2 import SingleTableView, A, Column
 
 from . import (__version__, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE,
                QUERY_FIELD, QUERY_FORMAT)
 from .dataset import registry
-from .forms import get_field_search_form, UploadFileForm
+from .forms import get_export_form, get_field_search_form, UploadFileForm
 from .load import Loader
 from .management.import_base import AbstractImportCommand
 from .models import Q, ChangeRecord, ImportFile, Snapshot
@@ -543,7 +543,16 @@ class CSVRenderer():
         self.writer.writerow(row)
 
 
-class ExportMixin():
+class ExportBaseMixin:
+    # Supported export format registry
+    # (name, file suffix, http content type, renderer class)
+    FORMATS = (
+        ('csv', '.csv', 'text/csv', CSVRenderer),
+    )
+    DEFAULT_FORMAT = FORMATS[0]
+
+
+class ExportMixin(ExportBaseMixin):
     """
     Export table data as file download
 
@@ -553,22 +562,22 @@ class ExportMixin():
     data to be exported as an iterable over rows (which are lists of values).
     The first row should contain the column headers.
     """
-    # Supported export format registry
-    # (name, file suffix, http content type, renderer class)
-    FORMATS = (
-        ('csv', '.csv', 'text/csv', CSVRenderer),
-    )
-
     filename_from = ''
     """ set this to the name of the view attribute that hold the filename """
 
     def render_to_response(self, context):
-        for name, suffix, content_type, renderer_class in self.FORMATS:
-            if name == self.kwargs.get('format'):
-                break
+        name = self.request.GET.get(QUERY_FORMAT)
+        if name:
+            for i in self.FORMATS:
+                if name == i[0]:
+                    fmt = i
+                    break
+            else:
+                raise Http404('unknown export format')
         else:
-            raise ValueError('Export file type not supported: {}'
-                             ''.format(format))
+            fmt = self.DEFAULT_FORMAT
+
+        name, suffix, content_type, renderer_class = fmt
 
         response = HttpResponse(content_type=content_type)
         f = getattr(self, self.filename_from, 'data') + suffix
@@ -591,6 +600,35 @@ class ExportView(ExportMixin, TableView):
             for i in self.model._meta.related_objects
         ]
         return self.get_table().as_values(exclude_columns=count_cols)
+
+
+class ExportFormView(ExportBaseMixin, FormMixin, TableView):
+    """
+    Provide the export format selection form
+
+    The form will be submitted via GET and the query string language used, is
+    what TableView expects.  So this will not use Django's usual form
+    processing.
+    """
+    template_name = 'mibios/export.html'
+    export_url_name = 'export'
+
+    def get_form_class(self):
+        initial = []
+        for i in self.model.get_fields(skip_auto=True).names:
+            # FIXME: this gets the wrong fields with AverageMixin since the
+            # fields change during the call to AverageMixin.get_table_class()
+            if i in self.fields:
+                initial.append(i)
+        if 'id' in self.fields and 'name' not in initial:
+            # prefer name over id
+            initial.append('id')
+
+        return get_export_form(
+            self.to_query_dict(fields=self.fields),
+            self.FORMATS,
+            initial,
+        )
 
 
 class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
@@ -950,3 +988,12 @@ class AverageView(AverageMixin, TableView):
 
 class AverageExportView(AverageMixin, ExportView):
     pass
+
+
+class AverageExportFormView(AverageMixin, ExportFormView):
+    export_url_name = 'average_export'
+
+    def get_form_class(self):
+        # Have to get correct fields for this
+        self.fields = self.get_queryset()._avg_fields
+        return super().get_form_class()

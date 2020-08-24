@@ -1,0 +1,22 @@
+{% extends "mibios/base.html" %}
+{% load render_table from django_tables2 %}
+{% load static %}
+
+{% block link %}
+<link rel="stylesheet" href="{% static 'mibios/css/bootstrap.min.css' %}" />
+{% endblock %}
+
+{% block content %}
+<h2>Choose export format for {{ view.dataset_name }} table</h2>
+<form action=
+{# FIXME: ugly? hack to get url reversal for average views #}
+    {% if avg_url_slug %}
+        "{% url view.export_url_name dataset=dataset_name avg_by=avg_url_slug %}{{ querystr }}"
+    {% else %}
+        "{% url view.export_url_name dataset=dataset_name %}{{ querystr }}"
+    {% endif %}
+    method="get" enctype="multipart/form-data">
+    {{ form.as_p }}
+    <input type="submit" value="Download">
+</form>
+{% endblock %}
