@@ -15,7 +15,8 @@ from django.views.generic.edit import FormView
 
 from django_tables2 import SingleTableView, A, Column
 
-from . import __version__, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE
+from . import (__version__, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE,
+               QUERY_FIELD, QUERY_FORMAT)
 from .dataset import registry
 from .forms import get_field_search_form, UploadFileForm
 from .load import Loader
@@ -175,15 +176,26 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
     dataset_excludes = None
 
     def get(self, request, *args, **kwargs):
-        f, e, n = self.get_filter_from_url()
+        f, e, n, c = self.get_query_string_params()
         self.filter.update(**f)
         self.excludes += e
         self.negate = n
+        if c:
+            # column/field selection was supplied, have to update
+            # but keep order, keep sync with verbose column names
+            fields, col_names = [], []
+            for i, j in zip(self.fields, self.col_names):
+                if i in c:
+                    fields.append(i)
+                    col_names.append(j)
+            self.fields = fields
+            self.col_names = col_names
+
         return super().get(request, *args, **kwargs)
 
-    def get_filter_from_url(self):
+    def get_query_string_params(self):
         """
-        Compile filter and exclude dicts from GET
+        Compile filter and exclude dicts, etc from GET
 
         Called from get()
 
@@ -193,9 +205,11 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         filter = {}
         excludes = {}
         negate = False
-        for qkey, val in self.request.GET.items():
+        fields = []
+        for qkey, val_list in self.request.GET.lists():
             if qkey.startswith(QUERY_FILTER + '-'):
                 _, _, filter_key = qkey.partition('-')
+                val = val_list[-1]
                 if val == NONE_LOOKUP:
                     val = None
                 else:
@@ -207,6 +221,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
 
             elif qkey.startswith(QUERY_EXCLUDE + '-'):
                 _, idx, exclude_key = qkey.split('-')
+                val = val_list[-1]
                 if val == NONE_LOOKUP:
                     val = None
                 else:
@@ -219,17 +234,23 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                 excludes[idx][exclude_key] = val
 
             elif qkey == QUERY_NEGATE:
-                negate = True
+                val = val_list[-1]
+                if val:
+                    negate = True
+            elif qkey == QUERY_FIELD:
+                fields += val_list
             else:
                 # unrelated item
                 pass
 
         # convert excludes into list, forget the index
         excludes = [i for i in excludes.values()]
-        log.debug('DECODED FROM QUERYSTRING:', filter, excludes, negate)
-        return filter, excludes, negate
+        log.debug('DECODED FROM QUERYSTRING:', filter, excludes, negate,
+                  fields)
+        return filter, excludes, negate, fields
 
-    def to_query_dict(self, filter={}, excludes=[], negate=False, without=[]):
+    def to_query_dict(self, filter={}, excludes=[], negate=False, without=[],
+                      fields=[]):
         """
         Compile a query dict from current state
 
@@ -240,6 +261,10 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                              self.filter) and/or lists (elements of
                              self.excludes) which will be omitted from
                              the query string.
+        :param list fields: List of fields to request. If an empty list, the
+                            default, is passed, then nothing will be added to
+                            the query string, with the intended meaning to then
+                            show all the fields.
         """
         f = {**self.filter, **filter}
         elist = self.excludes + excludes
@@ -264,7 +289,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             # no filtering is in effect, thus result inversion makes no sense
             query_negate = False
 
-        return self.build_query_dict(f, elist, query_negate)
+        return self.build_query_dict(f, elist, query_negate, fields)
 
     def to_query_string(self, *args, **kwargs):
         """
@@ -278,7 +303,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         return query
 
     @classmethod
-    def build_query_dict(cls, filter={}, excludes=[], negate=False):
+    def build_query_dict(cls, filter={}, excludes=[], negate=False, fields=[]):
         """
         Build a query dict
 
@@ -303,6 +328,9 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
 
         if negate:
             query_dict[QUERY_NEGATE] = negate
+
+        if fields:
+            query_dict.setlist(QUERY_FIELD, fields)
 
         return query_dict
 
