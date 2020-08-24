@@ -8,7 +8,14 @@
 
 {% block content %}
 {% if model %}
-<h2>{{ dataset_verbose_name }} data ({{ count }} records)</h2>
+<h2>
+    {{ dataset_verbose_name }} data
+    {% if view.avg_by %}
+    (averaged over {{ view.avg_by|join:" and " }}, {{ count }} record groups)
+    {% else %}
+    ({{ count }} records)
+    {% endif %}
+</h2>
 
 {% if avg_by_data %}
     {% if view.avg_by %}
