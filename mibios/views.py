@@ -7,8 +7,8 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.contenttypes.models import ContentType
 from django.http import Http404, HttpResponse
+from django.http.request import QueryDict
 from django.urls import reverse
-from django.utils.http import urlencode
 from django.utils.text import slugify
 from django.views.generic.base import ContextMixin, TemplateView, View
 from django.views.generic.edit import FormView
@@ -229,10 +229,9 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         log.debug('DECODED FROM QUERYSTRING:', filter, excludes, negate)
         return filter, excludes, negate
 
-    def to_query_string(self, filter={}, excludes=[], negate=False,
-                        without=[]):
+    def to_query_dict(self, filter={}, excludes=[], negate=False, without=[]):
         """
-        Get query string from current state
+        Compile a query dict from current state
 
         If negate is True, then negate the current negation state.
         Extra filters or excludes can be amended.
@@ -265,16 +264,30 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             # no filtering is in effect, thus result inversion makes no sense
             query_negate = False
 
-        return self.build_query_string(f, elist, query_negate)
+        return self.build_query_dict(f, elist, query_negate)
+
+    def to_query_string(self, *args, **kwargs):
+        """
+        Build the GET querystring from current state
+
+        Accepts the same arguments as to_query_dict()
+        """
+        query = self.to_query_dict(*args, **kwargs).urlencode()
+        if query:
+            query = '?' + query
+        return query
 
     @classmethod
-    def build_query_string(cls, filter={}, excludes=[], negate=False):
+    def build_query_dict(cls, filter={}, excludes=[], negate=False):
         """
-        Build the GET querystring from lookup dicts
+        Build a query dict
 
-        This is the reverse of the get_filter_from_url method
+        This is the reverse of the get_filter_from_url method.  This is a class
+        method so we can build arbitrary query strings.  Use
+        TableView.to_query_dict() to build a query string corresponding to
+        the current view.
         """
-        query_dict = {}
+        query_dict = QueryDict(mutable=True)
         for k, v in filter.items():
             k = slugify((QUERY_FILTER, k))
             if v is None:
@@ -291,10 +304,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         if negate:
             query_dict[QUERY_NEGATE] = negate
 
-        query = urlencode(query_dict, doseq=False)
-        if query:
-            query = '?' + query
-        return query
+        return query_dict
 
     def get_queryset(self):
         if hasattr(self, 'object_list'):

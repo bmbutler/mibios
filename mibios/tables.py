@@ -61,7 +61,9 @@ class CountColumn(tables.Column):
                 if hasattr(record, 'natural'):
                     f[our_name] = record.natural
 
-                query = view.build_query_string(filter=f)
+                query = view.build_query_dict(filter=f).urlencode()
+                if query:
+                    query = '?' + query
                 return url + query
 
             kwargs.update(linkify=linkify)
@@ -87,9 +89,8 @@ class CountColumn(tables.Column):
             else:
                 elist.append({our_name: NONE_LOOKUP})
 
-        q = view.build_query_string(filter=f, excludes=elist,
-                                    negate=view.negate)
-        self.footer_url = url + q
+        q = view.build_query_dict(filter=f, excludes=elist, negate=view.negate)
+        self.footer_url = url + ('?' + q.urlencode()) if q else ''
 
         super().__init__(self, **kwargs)
 
