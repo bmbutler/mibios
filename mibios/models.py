@@ -228,9 +228,10 @@ class QuerySet(models.QuerySet):
         Returns a dict: stats_type -> obj
         Returning an empty dict indicates some error
         """
-        if fieldname == 'id':
-            # as_dataframe('id') does not return anything meaningful
-            # FIXME?
+        if fieldname in ['id', 'pk']:
+            # as_dataframe('id') does not return anything too meaningful.  If
+            # we wanted to return something here we need to treat id something
+            # different that ordinary int fields.
             return {}
 
         qs = self
