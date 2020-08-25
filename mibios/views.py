@@ -51,11 +51,12 @@ class BasicBaseMixin(ContextMixin):
     """
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['page_title'] = getattr(
+        # page_title: a list, inheriting views should consider adding to this
+        ctx['page_title'] = [getattr(
                 registry,
                 'verbose_name',
                 apps.get_app_config('mibios').verbose_name
-        )
+        )]
         ctx['user_is_curator'] = \
             self.request.user.groups.filter(name='curators').exists()
         ctx['version_info'] = {'mibios': __version__}
@@ -461,7 +462,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
 
         ctx['model'] = self.model._meta.model_name
         ctx['dataset_name'] = self.dataset_name
-        ctx['page_title'] += ' ' + self.dataset_name
+        ctx['page_title'].append(self.dataset_name)
         ctx['dataset_verbose_name'] = self.dataset_verbose_name
         ctx['count'] = self.get_queryset().count()
 
@@ -641,6 +642,11 @@ class ExportFormView(ExportBaseMixin, FormMixin, TableView):
             initial,
         )
 
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['page_title'].append('export')
+        return ctx
+
 
 class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
     template_name = 'mibios/import.html'
@@ -701,7 +707,7 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['page_title'] += ' data import: ' + self.dataset_name
+        ctx['page_title'].append('file upload')
         # col_names are for django_tables2's benefit, so we need to use the
         # field names if the col name is None:
         ctx['col_names'] = [
@@ -798,7 +804,7 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
                 # if no history saved, first() returns None
                 natural_key = '???'
         ctx['natural_key'] = natural_key
-        ctx['page_title'] += ' - history of ' + natural_key
+        ctx['page_title'].append('history of ' + natural_key)
         return ctx
 
 
@@ -837,7 +843,7 @@ class DeletedHistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['record_model'] = self.record_type.name
-        ctx['page_title'] += ' - deleted records'
+        ctx['page_title'].append('deleted records')
         return ctx
 
 
@@ -990,6 +996,7 @@ class AverageMixin():
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['avg_url_slug'] = '-'.join(self.avg_by)
+        ctx['page_title'].append('average')
         return ctx
 
 
