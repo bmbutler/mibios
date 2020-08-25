@@ -28,6 +28,10 @@
 no change history
 {% endif %}
 </p>
-
+<p>For comments, questions, help, requests for user accounts please contact the site maintainer:
+{% for i in admins %}
+{{ i|last }} ({{ i|first }})
+{% empty %}
+(no admins configured)
+{% endfor %}
 {% endblock %}
-

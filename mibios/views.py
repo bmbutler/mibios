@@ -897,6 +897,8 @@ class FrontPageView(BaseMixin, UserRequiredMixin, TemplateView):
             ctx['latest'] = ChangeRecord.objects.latest()
         except ChangeRecord.DoesNotExist:
             ctx['latest'] = None
+
+        ctx['admins'] = settings.ADMINS
         return ctx
 
 
