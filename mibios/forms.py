@@ -78,12 +78,13 @@ def get_export_form(query_dict, formats, initial_fields=None):
     )
 
     # Hidden fields to keep track of complete state, needed since the GET
-    # request through the form will have the whole query string replaced
-    for k, v in query_dict.items():
+    # action get a new query string attached, made entirely up from the form's
+    # input elements
+    for k, v in query_dict.lists():
         if k == QUERY_FIELD:
             continue
         opts[k] = forms.CharField(
-            widget=forms.HiddenInput(),
+            widget=forms.MultipleHiddenInput(),
             initial=v
         )
 

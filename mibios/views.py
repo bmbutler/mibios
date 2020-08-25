@@ -436,6 +436,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         for i, j in zip(self.fields, self.col_names):
             if i != j and j and i != 'id':
                 c.base_columns[i.replace('__', '.')].verbose_name = j
+
         return c
 
     def get_sort_by_field(self):

@@ -11,9 +11,9 @@
 <form action=
 {# FIXME: ugly? hack to get url reversal for average views #}
     {% if avg_url_slug %}
-        "{% url view.export_url_name dataset=dataset_name avg_by=avg_url_slug %}{{ querystr }}"
+        "{% url view.export_url_name dataset=dataset_name avg_by=avg_url_slug %}"
     {% else %}
-        "{% url view.export_url_name dataset=dataset_name %}{{ querystr }}"
+        "{% url view.export_url_name dataset=dataset_name %}"
     {% endif %}
     method="get" enctype="multipart/form-data">
     {{ form.as_p }}
