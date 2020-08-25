@@ -246,16 +246,8 @@ class QuerySet(models.QuerySet):
                 # speedup
                 qs = qs.select_related(fieldname)
 
-        try:
-            col = qs.as_dataframe(fieldname, natural=natural)[fieldname]
-        except Exception as e:
-            # as_dataframe may not support some data types
-            log.debug('get_field_stats() failed:', type(e), e)
-            raise
-            return {}
-
+        col = qs.as_dataframe(fieldname, natural=natural)[fieldname]
         count_stats = col.value_counts(dropna=False).sort_index()
-
         ret = {
             'choice_counts': count_stats,
         }
