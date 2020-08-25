@@ -250,7 +250,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         return filter, excludes, negate, fields
 
     def to_query_dict(self, filter={}, excludes=[], negate=False, without=[],
-                      fields=[]):
+                      fields=[], keep_other=False):
         """
         Compile a query dict from current state
 
@@ -265,6 +265,10 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                             default, is passed, then nothing will be added to
                             the query string, with the intended meaning to then
                             show all the fields.
+        :param bool keep_other: Return additional items, present in the
+                                original request query dict but unrelated to
+                                TableView, e.g. those items handled by
+                                django_tables2 (sort, pagination.)
         """
         f = {**self.filter, **filter}
         elist = self.excludes + excludes
@@ -289,7 +293,14 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             # no filtering is in effect, thus result inversion makes no sense
             query_negate = False
 
-        return self.build_query_dict(f, elist, query_negate, fields)
+        qdict = self.build_query_dict(f, elist, query_negate, fields)
+
+        if keep_other:
+            for k, vs in self.request.GET.lists():
+                if k not in qdict:
+                    qdict.setlist(k, vs)
+
+        return qdict
 
     def to_query_string(self, *args, **kwargs):
         """
@@ -625,7 +636,7 @@ class ExportFormView(ExportBaseMixin, FormMixin, TableView):
             initial.append('id')
 
         return get_export_form(
-            self.to_query_dict(fields=self.fields),
+            self.to_query_dict(fields=self.fields, keep_other=True),
             self.FORMATS,
             initial,
         )
