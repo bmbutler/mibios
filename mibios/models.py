@@ -144,7 +144,7 @@ class QuerySet(models.QuerySet):
 
             try:
                 f = self.model.get_field(i)
-            except (LookupError, FieldDoesNotExist):
+            except LookupError:
                 if not hasattr(self.model, i):
                     raise ValueError(
                         'not the name of a field or model attribute: {}'
@@ -822,10 +822,15 @@ class Model(models.Model):
         """
         Retrieve a field object following relations
 
-        Raises LookupError or FieldDoesNotExist if field can not be accessed.
+        Raises LookupError if field can not be accessed.
         """
         first, _, rest = accessor.partition('__')
-        field = cls._meta.get_field(first)
+
+        try:
+            field = cls._meta.get_field(first)
+        except FieldDoesNotExist as e:
+            raise LookupError from e
+
         if rest:
             if field.related_model is None:
                 raise LookupError('is not a relation field: {}'.format(field))
