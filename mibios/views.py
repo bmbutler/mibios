@@ -188,6 +188,34 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         self.filter.update(**filter)
         self.excludes += excludes
         self.negate = negate
+
+        for accessor in sorted(expand, key=lambda x: len(x)):
+            # order: process short field names first,i.e. deeper relations last
+            try:
+                rel_model = self.model.get_field(accessor).related_model
+            except Exception as e:
+                # accessor does not point to a field
+                raise Http404(e) from e
+
+            if rel_model is None:
+                raise Http404('is not a relation: {}'.format(accessor))
+
+            rel_fields = rel_model.get_fields(skip_auto=True).names
+            rel_fields = [
+                accessor + '__' + i
+                for i in rel_fields
+            ]
+
+            try:
+                # place expansion right of relation
+                idx = self.fields.index(accessor) + 1
+            except ValueError:
+                # not in field selection, append to end
+                idx = len(self.fields)
+
+            self.fields[idx:idx] = rel_fields
+            self.col_names[idx:idx] = rel_fields
+
         if fields_selected:
             # column/field selection was supplied, have to update
             # but keep order, keep sync with verbose column names
@@ -198,31 +226,6 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                     col_names.append(j)
             self.fields = fields
             self.col_names = col_names
-
-        for i in sorted(expand, key=lambda x: len(x)):
-            # order: process short field names first,i.e. deeper relations last
-            if i not in self.fields:
-                # only expand fields that we actually want to display
-                continue
-            if '__' in i:
-                # TODO: only works for immediate relations, have to recurse for
-                # deep relations, there are two other places where uch a
-                # recursion is done, think about generic relation traversal
-                # machinery
-                raise Http404('not implemented')
-
-            rel_model = self.model._meta.get_field(i).related_model
-            if rel_model is None:
-                # trying to expand regular field? Ignore!
-                continue
-            rel_fields = rel_model.get_fields(skip_auto=True).names
-            rel_fields = [
-                rel_model._meta.model_name + '__' + i
-                for i in rel_fields
-            ]
-            idx = self.fields.index(i) + 1  # place expansion right of relation
-            self.fields[idx:idx] = rel_fields
-            self.col_names[idx:idx] = [None] * len(rel_fields)
 
     def compile_state_params(self):
         """
