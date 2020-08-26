@@ -138,32 +138,39 @@ class QuerySet(models.QuerySet):
 
         df = pandas.DataFrame([], index=index)
         for i in fields:
+            # TODO / FIXME: going through the fields is inefficient (on DB
+            # query per field) for multiple deep-relational fields, the data
+            # should be fetched in one go
 
             try:
-                f = self.model._meta.get_field(i)
-            except FieldDoesNotExist:
+                f = self.model.get_field(i)
+            except (LookupError, FieldDoesNotExist):
                 if not hasattr(self.model, i):
                     raise ValueError(
                         'not the name of a field or model attribute: {}'
                         ''.format(i)
                     )
 
+                # some other model attribute that hopefully works, but we can't
+                # use values_list()
                 f = None
                 dtype = None
-                col_dat = (getattr(obj, i) for obj in self)
+                col_dat = map(lambda obj: obj.get_attr_related(i), self)
             else:
                 if not Model.is_simple_field(f):
                     continue
                 dtype = Model.pd_type(f)
 
+                col_dat = self.values_list(i, flat=True)
+
                 if f.is_relation and natural:
+                    # replace pks with natural key, 1 extra DB query
+                    qs = f.related_model.published.iterator()
+                    nat_dict = {i.pk: i.natural for i in qs}
                     col_dat = map(
-                        lambda obj:
-                            getattr(getattr(obj, i), 'natural', None),
-                        self.prefetch_related()
+                        lambda pk: None if pk is None else nat_dict[pk],
+                        col_dat
                     )
-                else:
-                    col_dat = self.values_list(i, flat=True)
 
             kwargs = dict(index=index)
             if f is not None and f.choices:
@@ -811,6 +818,23 @@ class Model(models.Model):
         return Fields(fields=fields, names=names, verbose=verbose)
 
     @classmethod
+    def get_field(cls, accessor):
+        """
+        Retrieve a field object following relations
+
+        Raises LookupError or FieldDoesNotExist if field can not be accessed.
+        """
+        first, _, rest = accessor.partition('__')
+        field = cls._meta.get_field(first)
+        if rest:
+            if field.related_model is None:
+                raise LookupError('is not a relation field: {}'.format(field))
+            else:
+                return field.related_model.get_field(rest)
+        else:
+            return field
+
+    @classmethod
     def get_average_fields(cls):
         """
         Get fields for which we may want to calculate averages
@@ -1152,3 +1176,16 @@ class Model(models.Model):
         )
         name = self._meta.model_name.capitalize() + 'RESTViewSet'
         return type(name, (ReadOnlyModelViewSet,), opts)
+
+    def get_value_related(self, lookup):
+        """
+        Retrieve value, possibly folling relations
+
+        Like QuerySet.values() but for single instance.
+        """
+        name, _, rest = lookup.partition('__')
+        val = getattr(self, name)
+        if rest:
+            return val.get_value_related(rest)
+        else:
+            return val

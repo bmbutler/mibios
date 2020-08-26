@@ -484,6 +484,8 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             return None
 
         field = field.lstrip('-')
+        # reverse from django_tables2 accessor sep
+        field = field.replace('.', '__')
         if field in self.fields:
             return field
 
