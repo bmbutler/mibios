@@ -146,12 +146,19 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
     )
     opts = {}
 
-    for i in field_names:
-        i = tables.A(i.replace('__', '.'))
-        meta_opts['fields'].append(i)
+    for accessor in field_names:
+        try:
+            field = model.get_field(accessor)
+        except LookupError:
+            field = None
+
+        relations, _, name = accessor.rpartition('__')
+        # django_tables2 wants dotted accessors
+        col = tables.A(accessor.replace('__', '.'))
+        meta_opts['fields'].append(col)
 
         # make one of id or name columns have an edit link
-        if i == 'name':
+        if accessor == 'name':
             sort_kw = {}
             if 'name' not in model.get_fields().names:
                 # name is actually the natural property, so have to set
@@ -161,23 +168,28 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
                     sort_kw['order_by'] = model._meta.ordering
                 else:
                     sort_kw['order_by'] = None
-            opts[i] = tables.Column(linkify=True, **sort_kw)
-        elif i == 'id':
+            opts[col] = tables.Column(linkify=True, **sort_kw)
+        elif accessor == 'id':
             # hide id if name is present
-            opts[i] = tables.Column(linkify='name' not in field_names,
-                                    visible='name' not in field_names)
+            opts[col] = tables.Column(linkify='name' not in field_names,
+                                      visible='name' not in field_names)
 
         # m2m fields
-        elif i in [j.name for j in model._meta.many_to_many]:
-            opts[i] = tables.ManyToManyColumn()
+        elif field is not None and field.many_to_many:
+            opts[col] = tables.ManyToManyColumn()
 
-        elif i == 'natural':
-            opts[i] = tables.Column(orderable=False)
+        elif name == 'natural':
+            # TODO: add order by proxy
+            opts[col] = tables.Column(orderable=False)
 
         # averages
-        elif i == 'avg_group_count':
-            opts[i] = CountColumn(view=view, group_by=view.avg_by,
-                                  force_verbose_name='avg group count')
+        elif accessor == 'avg_group_count':
+            opts[col] = CountColumn(view=view, group_by=view.avg_by,
+                                    force_verbose_name='avg group count')
+
+        else:
+            # added through Meta.fields
+            pass
 
     if count_columns:
         # reverse relations -> count columns
