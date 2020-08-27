@@ -13,7 +13,7 @@ from django.utils.text import slugify
 from django.views.generic.base import ContextMixin, TemplateView, View
 from django.views.generic.edit import FormMixin, FormView
 
-from django_tables2 import SingleTableView, A, Column
+from django_tables2 import SingleTableView, Column
 
 from . import (__version__, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE,
                QUERY_FIELD, QUERY_FORMAT, QUERY_EXPAND)
@@ -22,8 +22,7 @@ from .forms import get_export_form, get_field_search_form, UploadFileForm
 from .load import Loader
 from .management.import_base import AbstractImportCommand
 from .models import Q, ChangeRecord, ImportFile, Snapshot
-from .tables import (CountColumn, DeletedHistoryTable, HistoryTable,
-                     ManyToManyColumn, NONE_LOOKUP,
+from .tables import (DeletedHistoryTable, HistoryTable, NONE_LOOKUP,
                      SnapshotListTable, SnapshotTableColumn, Table,
                      table_factory)
 from .utils import getLogger
@@ -411,69 +410,9 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         return qs
 
     def get_table_class(self):
-        """
-        Generate and supply table class
-
-        overrides super
-        cf. https://stackoverflow.com/questions/60311552
-        """
-        if self.model is None:
-            return Table
-
-        fields = [A(i.replace('__', '.')) for i in self.fields]
-        table_opts = {}
-
-        # make one of id or name columns have an edit link
-        # hide id if name is present
-        if 'name' in fields:
-            sort_kw = {}
-            if 'name' not in self.model.get_fields().names:
-                # name is actually the natural property, so have to set
-                # some proxy sorting, else the machinery tries to fetch the
-                # 'name' column (and fails)
-                if self.model._meta.ordering:
-                    sort_kw['order_by'] = self.model._meta.ordering
-                else:
-                    sort_kw['order_by'] = None
-            table_opts['name'] = Column(linkify=True, **sort_kw)
-        if 'id' in fields:
-            table_opts['id'] = Column(linkify='name' not in fields,
-                                      visible='name' not in fields)
-
-        # m2m fields
-        for i in self.model._meta.many_to_many:
-            if i.name in self.fields:
-                table_opts.update({i.name: ManyToManyColumn()})
-
-        # reverse relations
-        table_opts.update({
-            i.name + '__count': CountColumn(i, view=self)
-            for i in self.model._meta.related_objects
-        })
-        fields += [
-            i.name + '__count'
-            for i in self.model._meta.related_objects
-        ]
-
-        if 'natural' in fields:
-            table_opts['natural'] = Column(orderable=False)
-
-        meta_opts = dict(
-            model=self.model,
-            template_name='django_tables2/bootstrap.html',
-            fields=fields,
-        )
-        Meta = type('Meta', (object,), meta_opts)
-        name = self.dataset_name.capitalize() + 'IndexTable'
-        table_opts.update(Meta=Meta)
-        # FIXME: call django_tables2.table_factory??
-        c = type(name, (Table,), table_opts)
-        # Monkey-patch column headers
-        for i, j in zip(self.fields, self.col_names):
-            if i != j and j and i != 'id':
-                c.base_columns[i.replace('__', '.')].verbose_name = j
-
-        return c
+        t = table_factory(model=self.model, field_names=self.fields, view=self,
+                          count_columns=True)
+        return t
 
     def get_sort_by_field(self):
         """
