@@ -1,3 +1,4 @@
+from django.db.models import DecimalField
 from django.urls import reverse
 from django.utils.html import format_html
 
@@ -124,6 +125,40 @@ class Table(tables.Table):
     pass
 
 
+class DecimalColumn(tables.Column):
+    """
+    A column to display decimal numbers
+
+    Numbers displayed in HTML will be rounded, but not numbers in exported
+    data.  In HTML, cell content will be right justified.
+    """
+    DEFAULT_PLACES = 2
+    MAX_PLACES = 2
+
+    def __init__(self, *args, places=DEFAULT_PLACES, **kwargs):
+        places = min(places, self.MAX_PLACES)  # apply cap
+        self.format_string = '{:4.' + str(places) + 'f}'
+        attrs = {
+            # align/justify these columns to the right
+            # align in <th> does not do it in Chromium, so style is used
+            # not tested in other browsers
+            'th': {'style': 'text-align: right;'},
+            'td': {'align': 'right'},
+        }
+        super().__init__(*args, attrs=attrs, **kwargs)
+
+    def render(self, value):
+        return self.format_string.format(value)
+
+    def value(self, value):
+        """
+        Return not rounded values for export
+
+        Without this method, render() would be used for export
+        """
+        return value
+
+
 def table_factory(model=None, field_names=[], view=None, count_columns=True,
                   extra={}, group_by_count=None):
     """
@@ -186,6 +221,11 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
         elif accessor == 'avg_group_count':
             opts[col] = CountColumn(view=view, group_by=view.avg_by,
                                     force_verbose_name='avg group count')
+
+        elif isinstance(field, DecimalField) or name.endswith('_avg'):
+            places = getattr(field, 'decimal_places',
+                             DecimalColumn.DEFAULT_PLACES)
+            opts[col] = DecimalColumn(places=places)
 
         else:
             # added through Meta.fields
