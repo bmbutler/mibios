@@ -1007,6 +1007,10 @@ class Model(models.Model):
         inheriting classes
         """
         for k, v in self.natural_lookup(value).items():
+            if '__' in k:
+                raise RuntimeError(
+                    'can not set a natural key that is derived from a relation'
+                )
             setattr(self, k, v)
 
     def __str__(self):
