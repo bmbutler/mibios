@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('mibios', '0007_auto_20200828_1635'),
+        ('mibios', '0006_snapshot_jsondump'),
         ('hhcd', '0008_auto_20200828_1635'),
     ]
 
