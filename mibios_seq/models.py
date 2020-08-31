@@ -6,7 +6,7 @@ from mibios.dataset import registry
 from mibios.models import Model
 from mibios.utils import getLogger
 
-from hhcd.models import FecalSample, Note
+from hhcd.models import FecalSample
 
 
 log = getLogger(__name__)
@@ -40,7 +40,6 @@ class Sequencing(Model):
     r2_file = models.CharField(max_length=300, unique=True, blank=True,
                                null=True)
     note = models.ManyToManyField(SeqNote, blank=True)
-    oldnote = models.ManyToManyField(Note, blank=True)
     run = models.ForeignKey('SequencingRun', on_delete=models.CASCADE,
                             blank=True, null=True)
     plate = models.PositiveSmallIntegerField(blank=True, null=True)
