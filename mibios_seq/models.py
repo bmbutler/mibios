@@ -12,6 +12,11 @@ from hhcd.models import FecalSample, Note
 log = getLogger(__name__)
 
 
+class SeqNote(Model):
+    name = models.CharField(max_length=100, unique=True)
+    text = models.TextField(max_length=5000, blank=True)
+
+
 class Sequencing(Model):
     MOCK = 'mock'
     WATER = 'water'
@@ -34,7 +39,8 @@ class Sequencing(Model):
                                null=True)
     r2_file = models.CharField(max_length=300, unique=True, blank=True,
                                null=True)
-    note = models.ManyToManyField(Note, blank=True)
+    note = models.ManyToManyField(SeqNote, blank=True)
+    oldnote = models.ManyToManyField(Note, blank=True)
     run = models.ForeignKey('SequencingRun', on_delete=models.CASCADE,
                             blank=True, null=True)
     plate = models.PositiveSmallIntegerField(blank=True, null=True)
