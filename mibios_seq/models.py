@@ -6,10 +6,19 @@ from mibios.dataset import registry
 from mibios.models import Model
 from mibios.utils import getLogger
 
-from hhcd.models import FecalSample
-
 
 log = getLogger(__name__)
+
+
+class Sample(Model):
+    """
+    Parent model for samples
+
+    This is the multi-table-inheritance parent that other apps should use to
+    interface with sequencing data.  There are no fields declared here besides
+    the usual auto-primary-key and history.
+    """
+    pass
 
 
 class SeqNote(Model):
@@ -31,7 +40,7 @@ class Sequencing(Model):
         (OTHER, OTHER),
     )
     name = models.CharField(max_length=100, unique=True)
-    sample = models.ForeignKey(FecalSample, on_delete=models.CASCADE,
+    sample = models.ForeignKey(Sample, on_delete=models.CASCADE,
                                blank=True, null=True)
     control = models.CharField(max_length=50, choices=CONTROL_CHOICES,
                                blank=True)
