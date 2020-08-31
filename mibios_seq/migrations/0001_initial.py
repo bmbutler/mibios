@@ -6,15 +6,22 @@ import mibios.models
 
 
 class Migration(migrations.Migration):
+    """
+    Sequencing models transition
+
+    The models were copy-pasted from the hhcd app and the tables named
+    appropiately in migration 0008_sequencing_transition, so here nothing needs
+    to be done to the database.
+    """
 
     initial = True
 
     dependencies = [
         ('mibios', '0006_snapshot_jsondump'),
-        ('hhcd', '0008_auto_20200828_1635'),
+        ('hhcd', '0008_sequencing_transition'),
     ]
 
-    operations = [
+    state_ops = [
         migrations.CreateModel(
             name='ASV',
             fields=[
@@ -43,6 +50,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', mibios.models.AutoField(primary_key=True, serialize=False)),
                 ('asv', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='mibios_seq.ASV')),
+
                 ('history', models.ManyToManyField(to='mibios.ChangeRecord')),
             ],
             options={
@@ -101,4 +109,11 @@ class Migration(migrations.Migration):
             name='taxon',
             field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='mibios_seq.Taxon'),
         ),
+    ]
+
+    operations = [
+        migrations.SeparateDatabaseAndState(
+            state_operations=state_ops,
+            database_operations=[],  # tables exist already
+        )
     ]
