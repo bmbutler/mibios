@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.db.transaction import atomic
 from django.urls import reverse_lazy
 
-from .dataset import registry
+from . import get_registry
 from .models import ImportFile, Snapshot
 from .views import HistoryView
 
@@ -27,7 +27,7 @@ class AdminSite(admin.AdminSite):
         we lose all registrations, possibly because site gets re-instantiated
         later, maybe has to do with module auto-discovery.
         """
-        for i in registry.get_models():
+        for i in get_registry().get_models():
             self.register(i, ModelAdmin)
 
         self.register(ImportFile, ImportFileAdmin)

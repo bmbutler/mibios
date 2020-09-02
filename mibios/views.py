@@ -16,8 +16,7 @@ from django.views.generic.edit import FormMixin, FormView
 from django_tables2 import SingleTableView, Column
 
 from . import (__version__, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE,
-               QUERY_FIELD, QUERY_FORMAT, QUERY_EXPAND)
-from .dataset import registry
+               QUERY_FIELD, QUERY_FORMAT, QUERY_EXPAND, get_registry)
 from .forms import get_export_form, get_field_search_form, UploadFileForm
 from .load import Loader
 from .management.import_base import AbstractImportCommand
@@ -52,14 +51,14 @@ class BasicBaseMixin(ContextMixin):
         ctx = super().get_context_data(**ctx)
         # page_title: a list, inheriting views should consider adding to this
         ctx['page_title'] = [getattr(
-                registry,
+                get_registry(),
                 'verbose_name',
                 apps.get_app_config('mibios').verbose_name
         )]
         ctx['user_is_curator'] = \
             self.request.user.groups.filter(name='curators').exists()
         ctx['version_info'] = {'mibios': __version__}
-        for app_name, meta in registry.apps.items():
+        for app_name, meta in get_registry().apps.items():
             ctx['version_info'][app_name] = meta.get('version', None)
         return ctx
 
@@ -70,8 +69,8 @@ class BaseMixin(BasicBaseMixin):
     """
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['model_names'] = sorted(registry.get_model_names())
-        ctx['data_sets'] = sorted(registry.get_dataset_names())
+        ctx['model_names'] = sorted(get_registry().get_model_names())
+        ctx['data_sets'] = sorted(get_registry().get_dataset_names())
         ctx['snapshots_exist'] = Snapshot.objects.exists()
         return ctx
 
@@ -104,10 +103,10 @@ class DatasetMixin():
 
         # load special dataset
         try:
-            dataset = registry.datasets[data_name]
+            dataset = get_registry().datasets[data_name]
         except KeyError:
             try:
-                self.model = registry.models[data_name]
+                self.model = get_registry().models[data_name]
             except KeyError:
                 raise Http404
             else:
@@ -720,7 +719,7 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
 
             data_name = kwargs['dataset']
             try:
-                model_class = registry.models[data_name]
+                model_class = get_registry().models[data_name]
             except KeyError:
                 raise Http404
             else:
@@ -794,7 +793,7 @@ class DeletedHistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
         super().setup(request, *args, **kwargs)
 
         try:
-            model = registry.models[kwargs['dataset']]
+            model = get_registry().models[kwargs['dataset']]
         except KeyError:
             raise Http404
 
@@ -831,7 +830,7 @@ class FrontPageView(BaseMixin, UserRequiredMixin, TemplateView):
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['counts'] = {}
-        models = registry.get_models()
+        models = get_registry().get_models()
         for i in sorted(models, key=lambda x: x._meta.verbose_name):
             count = i.objects.count()
             if count:

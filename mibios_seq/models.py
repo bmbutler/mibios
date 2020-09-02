@@ -1,8 +1,6 @@
 from django.apps import apps
 from django.db import models
 
-from . import __version__
-from mibios.dataset import registry
 from mibios.models import Model
 from mibios.utils import getLogger
 
@@ -115,9 +113,3 @@ class ASV(Model):
 class Taxon(Model):
     taxid = models.PositiveIntegerField()
     organism = models.CharField(max_length=100)
-
-
-registry.add_models()
-registry.apps[apps.get_app_config('mibios_seq').name] = dict(
-    version=__version__,
-)

@@ -3,12 +3,11 @@ from django.contrib import admin
 from django.urls import include, path
 from rest_framework import routers
 
-from . import views
-from .dataset import registry
+from . import views, get_registry
 
 
 rest_router = routers.DefaultRouter()
-for i in registry.get_models():
+for i in get_registry().get_models():
     rest_router.register(i._meta.model_name, i.get_rest_api_viewset_class())
 
 urlpatterns = [

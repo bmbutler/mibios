@@ -20,22 +20,11 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 import pandas
 from pandas.api.types import is_numeric_dtype
 
+from . import get_registry
 from .utils import getLogger
 
 
 log = getLogger(__name__)
-_registry = None
-
-
-def get_registry():
-    """
-    Make Dataset.registry accessible without circular imports
-    """
-    global _registry
-    if _registry is None:
-        from .dataset import registry as registry
-        _registry = registry
-    return _registry
 
 
 class NaturalKeyLookupError(Exception):

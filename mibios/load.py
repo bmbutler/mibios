@@ -9,7 +9,8 @@ from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.core.files import File
 from django.db import transaction, IntegrityError
 
-from .dataset import UserDataError, registry
+from . import get_registry
+from .dataset import UserDataError
 from .models import ImportFile, Model, NaturalKeyLookupError
 from .utils import DeepRecord, getLogger
 
@@ -34,9 +35,9 @@ class Loader():
                  warn_on_error=False, strict_sample_id=False, dry_run=False,
                  user=None, erase_on_blank=False):
         try:
-            self.dataset = registry.datasets[data_name]
+            self.dataset = get_registry().datasets[data_name]
         except KeyError:
-            self.model = registry.models[data_name]
+            self.model = get_registry().models[data_name]
         else:
             self.model = self.dataset.model
 
@@ -411,7 +412,7 @@ class Loader():
         helper to get model class from accessor
         """
         name = accessor[0]
-        m = registry.models[name]  # may raise KeyError
+        m = get_registry().models[name]  # may raise KeyError
 
         for i in accessor[1:]:
             try:

@@ -10,3 +10,10 @@ QUERY_NEGATE = 'inverse'
 QUERY_FIELD = 'col'
 QUERY_FORMAT = 'format'
 QUERY_EXPAND = 'expand'
+
+
+_registry = None
+
+
+def get_registry():
+    return _registry
