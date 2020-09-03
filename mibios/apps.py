@@ -1,4 +1,5 @@
 from importlib import import_module
+import inspect
 
 from django import apps
 from django.contrib.admin.apps import AdminConfig as UpstreamAdminConfig
@@ -64,12 +65,19 @@ class Registry():
         else:
             raise ValueError('can only register datasets or models')
 
-    def add_datasets(self):
+    def add_dataset_module(self, module_path):
         """
-        Autoregister representatives for all defined Dataset subclasses
+        Populate the registry with dataset from given module dotted path
+
+        This should be called by implementing apps from their AppConfig.ready()
         """
-        for i in self.dataset_class.__subclasses__():
-            self[i.name] = i()
+        dataset_module = import_module(module_path)
+        for _, klass in inspect.getmembers(dataset_module, inspect.isclass):
+            if issubclass(klass, self.dataset_class):
+                if klass is self.dataset_class:
+                    continue
+                # add singleton instance
+                self[klass.name] = klass()
 
     def add_models(self):
         """
@@ -85,11 +93,14 @@ class MibiosConfig(apps.AppConfig):
 
     def ready(self):
         super().ready()
+
+        # set up registry
         Model = import_string(self.name + '.models.Model')
         mibios = import_module('mibios')
         setattr(mibios, '_registry', Registry())
         registry = mibios.get_registry()
-        registry.add_datasets
+
+        # register models here, since django has found them already
         for i in apps.apps.get_models():
             if issubclass(i, Model):
                 if hasattr(i, 'get_child_info') and i.get_child_info():
@@ -97,6 +108,7 @@ class MibiosConfig(apps.AppConfig):
                     continue
                 registry.add(i)
 
+        # admin setup below:
         admin = import_string('django.contrib.admin')
         admin.site.register_all()
 
