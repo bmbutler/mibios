@@ -65,7 +65,7 @@ class Registry():
         else:
             raise ValueError('can only register datasets or models')
 
-    def add_dataset_module(self, module_path):
+    def add_dataset_module(self, module_path, app_label):
         """
         Populate the registry with dataset from given module dotted path
 
@@ -77,7 +77,9 @@ class Registry():
                 if klass is self.dataset_class:
                     continue
                 # add singleton instance
-                self[klass.name] = klass()
+                obj = klass()
+                obj.app_label=app_label
+                self[klass.name] = obj
 
     def add_models(self):
         """

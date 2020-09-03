@@ -10,6 +10,7 @@ class UserDataError(Exception):
 class Dataset():
     name = None
     model = None
+    app_label = None
     fields = []
     filter = {}
     excludes = []
