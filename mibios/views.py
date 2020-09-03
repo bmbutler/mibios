@@ -69,8 +69,16 @@ class BaseMixin(BasicBaseMixin):
     """
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['model_names'] = sorted(get_registry().get_model_names())
-        ctx['data_sets'] = sorted(get_registry().get_dataset_names())
+        ctx['model_names'] = []
+        for conf in get_registry().apps.values():
+            names = sorted(get_registry().get_model_names(app=conf.name))
+            if names:
+                ctx['model_names'].append((conf.verbose_name, names))
+        ctx['dataset_names'] = []
+        for conf in get_registry().apps.values():
+            names = sorted(get_registry().get_dataset_names(app=conf.name))
+            if names:
+                ctx['dataset_names'].append((conf.verbose_name, names))
         ctx['snapshots_exist'] = Snapshot.objects.exists()
         return ctx
 

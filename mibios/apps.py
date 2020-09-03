@@ -25,7 +25,7 @@ class Registry():
         self.datasets = {}
         # models are maps from name to Model subclass
         self.models = {}
-        # apps: a map from package name to dict of meta data
+        # apps: a map from app label to the app's AppConfig instance
         self.apps = {}
 
     def get_models(self, app=None):
@@ -90,7 +90,7 @@ class Registry():
                     continue
                 # add singleton instance
                 obj = klass()
-                obj.app_label=app_label
+                obj.app_label = app_label
                 self[klass.name] = obj
 
     def add_models(self):

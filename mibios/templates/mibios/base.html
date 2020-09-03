@@ -11,16 +11,21 @@
 {% endfor %}-->
 
 {% if model_names %}
-    Tables:
-    {% for i in model_names %}
-        [<a href="{% url 'queryset_index' i %}">{{ i }}</a>]
+    {% for app, names in model_names %}
+        {% if not forloop.first %}<br>{% endif %}
+        {{ app }} tables:
+        {% for i in names %}
+            [<a href="{% url 'queryset_index' i %}">{{ i }}</a>]
+        {% endfor %}
     {% endfor %}
 {% endif %}
-{% if data_sets %}
-    <br>
-    Specials:
-    {% for i in data_sets %}
-        [<a href="{% url 'queryset_index' i %}">{{ i }}</a>]
+{% if dataset_names %}
+    {% for app, names in dataset_names %}
+            <br>
+            {{ app }} specials:
+            {% for i in names %}
+                [<a href="{% url 'queryset_index' i %}">{{ i }}</a>]
+            {% endfor %}
     {% endfor %}
 {% endif %}
 {% if snapshots_exist %}
