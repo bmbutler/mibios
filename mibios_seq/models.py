@@ -1,14 +1,14 @@
 from django.apps import apps
 from django.db import models
 
-from mibios.models import Model
+from mibios.models import Model, ParentModel
 from mibios.utils import getLogger
 
 
 log = getLogger(__name__)
 
 
-class Sample(Model):
+class Sample(ParentModel):
     """
     Parent model for samples
 

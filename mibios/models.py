@@ -1198,3 +1198,65 @@ class Model(models.Model):
             return val.get_value_related(rest)
         else:
             return val
+
+
+class ParentModel(Model):
+    """
+    Class from which parent models can be derived
+    """
+    class Meta:
+        abstract = True
+
+    @classmethod
+    def get_child_info(cls):
+        """
+        Get a mapping from inheriting moels to their relation field
+        """
+        info = {}
+        for field in cls._meta.get_fields():
+            if field.one_to_one:
+                for child in cls.__subclasses__():
+                    if child == field.related_model:
+                        info[child] = field
+        return info
+
+    def get_child_relation(self):
+        """
+        Get the relation to the child
+        """
+        for i in self.get_child_info().values():
+            try:
+                getattr(self, i.name)
+            except i.related_model.DoesNotExist:
+                pass
+            else:
+                return i
+        return LookupError('no child relation')
+
+    @property
+    def child(self):
+        """
+        Polymorphic field pointing to the child instance
+        """
+        return getattr(self, self.get_child_relation().name)
+
+    @property
+    def natural(self):
+        """
+        Get natural property from child instance
+        """
+        return self.child.natural
+
+    @classmethod
+    def natural_lookup(cls, value):
+        errors = []
+        for model_class, field in cls.get_child_info().items():
+            try:
+                kwargs = model_class.natural_lookup(value)
+            except Exception as e:
+                errors.append((model_class, e.__class__.__name__, e))
+            else:
+                # add with correct relation name added
+                return {field.name + '__' + k: v for k, v in kwargs.items()}
+        else:
+            raise NaturalKeyLookupError(errors)
