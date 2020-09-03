@@ -100,7 +100,7 @@ class Q(models.Q):
         # handling natural lookups is only done if the model is provided,
         # since we need to know to which model the Q is relative to
         if model is not None:
-            kwargs = model.handle_natural_lookups(**kwargs)
+            kwargs = model.resolve_natural_lookups(**kwargs)
         super().__init__(*args, **kwargs)
 
 
@@ -206,7 +206,7 @@ class QuerySet(models.QuerySet):
         """
         Handle natural lookups for filtering operations
         """
-        kwargs = self.model.handle_natural_lookups(**kwargs)
+        kwargs = self.model.resolve_natural_lookups(**kwargs)
         return super()._filter_or_exclude(negate, *args, **kwargs)
 
     def _values(self, *fields, **expressions):
@@ -1011,7 +1011,7 @@ class Model(models.Model):
             return super().__str__()
 
     @classmethod
-    def handle_natural_lookups(cls, **lookups):
+    def resolve_natural_lookups(cls, **lookups):
         """
         Detect and convert natural object lookups
 
