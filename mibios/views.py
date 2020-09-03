@@ -58,8 +58,8 @@ class BasicBaseMixin(ContextMixin):
         ctx['user_is_curator'] = \
             self.request.user.groups.filter(name='curators').exists()
         ctx['version_info'] = {'mibios': __version__}
-        for app_name, meta in get_registry().apps.items():
-            ctx['version_info'][app_name] = meta.get('version', None)
+        for conf in get_registry().apps.values():
+            ctx['version_info'][conf.name] = getattr(conf, 'version', None)
         return ctx
 
 
