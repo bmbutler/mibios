@@ -796,12 +796,18 @@ class Model(models.Model):
             exclude.append(models.ManyToManyField)
 
         exclude = tuple(exclude)
+        parent_pointers = cls._meta.parents.values()
 
-        fields = [
-            i for i
-            in cls._meta.get_fields()
-            if not isinstance(i, exclude) and i.name != 'history'
-        ]
+        fields = []
+        for i in cls._meta.get_fields():
+            if isinstance(i, exclude):
+                continue
+            if i.name == 'history':
+                continue
+            if i in parent_pointers:
+                continue
+            fields.append(i)
+
         names = [i.name for i in fields]
         verbose = [getattr(i, 'verbose_name', i.name) for i in fields]
         return Fields(fields=fields, names=names, verbose=verbose)
