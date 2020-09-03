@@ -92,6 +92,9 @@ class MibiosConfig(apps.AppConfig):
         registry.add_datasets
         for i in apps.apps.get_models():
             if issubclass(i, Model):
+                if hasattr(i, 'get_child_info') and i.get_child_info():
+                    # model has children, skip
+                    continue
                 registry.add(i)
 
         admin = import_string('django.contrib.admin')
