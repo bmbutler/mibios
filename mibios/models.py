@@ -1003,7 +1003,12 @@ class Model(models.Model):
             setattr(self, k, v)
 
     def __str__(self):
-        return self.natural
+        ret = self.natural
+        if isinstance(ret, str):
+            return ret
+        else:
+            # is just pk
+            return super().__str__()
 
     @classmethod
     def handle_natural_lookups(cls, **lookups):
