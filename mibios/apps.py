@@ -28,20 +28,32 @@ class Registry():
         # apps: a map from package name to dict of meta data
         self.apps = {}
 
-    def get_models(self):
-        return list(self.models.values())
+    def get_models(self, app=None):
+        return [
+            i for i in self.models.values()
+            if app is None or app == i._meta.app_label
+        ]
 
-    def get_model_names(self):
-        return list(self.models.keys())
+    def get_model_names(self, app=None):
+        return [
+            k for k, v in self.models.items()
+            if app is None or app == v._meta.app_label
+        ]
 
-    def get_datasets(self):
-        return list(self.datasets.values())
+    def get_datasets(self, app=None):
+        return [
+            i for i in self.datasets.values()
+            if app is None or app == i.app_label
+        ]
 
-    def get_dataset_names(self):
-        return list(self.datasets.keys())
+    def get_dataset_names(self, app=None):
+        return [
+            k for k, v in self.datasets.items()
+            if app is None or app == v.app_label
+        ]
 
-    def get_names(self):
-        return self.get_model_names() + self.get_dataset_names()
+    def get_names(self, app=None):
+        return self.get_model_names(app=app) + self.get_dataset_names(app=app)
 
     def __setitem__(self, key, value):
         if isinstance(value, self.dataset_class):
