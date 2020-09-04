@@ -556,12 +556,27 @@ class Snapshot(models.Model):
     Snapshot of database
 
     An instance will make a copy the first time it is saved.  After that, the
-    name and the note can be edited.  Deleting the object from the database
-    will also delete the snapsopt file
+    name and the note can be edited.  The snapshot consists of a copy of the
+    sqlite3 database file and a json dump of the models in the apps in the
+    mibios registry.  Deleting the object from the database will also delete
+    the snapshot files.
     """
+    def get_app_list():
+        """
+        Helper to generate the content of the app_list field
+        """
+        return ','.join(get_registry().apps.keys())
+
     timestamp = models.DateTimeField(auto_now_add=True)
     name = models.CharField(
         max_length=100, default=_default_snapshot_name, unique=True,
+    )
+    app_list = models.CharField(
+        max_length=1000,
+        editable=False,
+        default=get_app_list,
+        help_text='Comma-separated list of names of the apps that have data '
+                  'tables stored in the snapshot.'
     )
     dbfile = models.FilePathField(
         path=str(settings.SNAPSHOT_DIR),
@@ -627,7 +642,7 @@ class Snapshot(models.Model):
         self.jsondump = str(dst.with_suffix('.json'))
         call_command(
             'dumpdata',
-            get_registry().name,
+            *get_registry().apps,
             format='json',
             indent=4,
             database='default',
@@ -666,41 +681,62 @@ class Snapshot(models.Model):
         finally:
             conn.close()
 
-    def get_table_names(self):
+    def get_table_names(self, app_label, app_check=True):
         """
-        Get list of the snapshot's table names
+        Get list of the snapshot's full table names for given app
+
+        :param str app_labels: App label
+        :param bool app_check: Ensure to only return names of data app tables
         """
+        if app_check:
+            if app_label not in self.app_list.split(','):
+                raise ValueError(f'is not a data app in snapshot: {app_label}')
+
         sql = ('select name from sqlite_master where '
                'type = "table" and name like %s '
                'and name not like "%%_history"')
-        name = get_registry().name
-        pat = name + '_%'
 
+        pat = app_label + '_%'
         rows = self.do_sql(sql, [pat])
+        return [i[0] for i in rows]
 
-        return list([i[0] for i in rows])
-
-    def get_table_name_data(self):
+    def get_table_name_data(self, *app_labels):
         """
         Get list of the snapshot's table names as dict
 
-        This is suitable return value for a ListView.get_queryset()
+        If not app labels are providen, then all data tables are returned.  Two
+        columns are returned, the app label and the short table name.  The
+        short table name has the app label removed and should be the same as
+        the case-folded model name.  This is suitable return value for a
+        ListView.get_queryset()
         """
-        return [
-            dict(table=i[len(get_registry().name) + 1:])
-            for i in self.get_table_names()
-        ]
+        if not app_labels:
+            app_labels = self.app_list.split(',')
 
-    def get_table_data(self, untrusted_table_name):
+        data = []
+        for i in app_labels:
+            data += [
+                dict(app=i, table=j[len(i) + 1:])
+                for j in self.get_table_names(i)
+            ]
+        return data
+
+    def get_table_data(self, user_app, user_table_name):
         """
-        Return table content
+        Return table content for given app and short table name
+
+        The parameters are untrusted, assumed to be passed from a URL and will
+        be checked here.
         """
-        # verify table name
-        untrusted_table_name = get_registry().name + '_' + untrusted_table_name
-        if untrusted_table_name in self.get_table_names():
-            table_name = untrusted_table_name
+        # verify app and table name
+        for i in self.get_table_names(user_app):
+            if i == user_app + '_' + user_table_name:
+                table_name = i
+                break
         else:
-            raise ValueError('not a valid table name')
+            raise LookupError(
+                f'no such table in snapshot: {user_app} / {user_table_name}'
+            )
 
         rows, descr = self.do_sql('select * from ' + table_name, descr=True)
 

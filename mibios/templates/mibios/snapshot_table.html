@@ -8,7 +8,7 @@
 
 {% block content %}
 <h2>{{ view.snapshot }} -- table: {{ view.table_name }}</h2>
-<a href="{% url 'export_snapshot_table' name=view.snapshot.name table=view.table_name format='csv' %}">export as csv</a>
+<a href="{% url 'export_snapshot_table' name=view.snapshot.name app=view.app_label table=view.table_name format='csv' %}">export as csv</a>
 
 {% render_table table %}
 

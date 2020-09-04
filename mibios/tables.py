@@ -300,11 +300,18 @@ class SnapshotListTable(tables.Table):
 
 
 class SnapshotTableColumn(tables.Column):
+    """
+    Column that lists a snapshot's tables
+    """
     def __init__(self, snapshot_name, **kwargs):
         def linkify(record):
             return reverse(
                 'snapshot_table',
-                kwargs=dict(name=snapshot_name, table=record['table'])
+                kwargs=dict(
+                    name=snapshot_name,
+                    app=record['app'],
+                    table=record['table'],
+                )
             )
         super().__init__(self, linkify=linkify, **kwargs)
         self.verbose_name = 'available tables'

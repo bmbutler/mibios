@@ -901,6 +901,7 @@ class SnapshotTableView(BasicBaseMixin, UserRequiredMixin, SingleTableView):
 
     def get(self, request, *args, **kwargs):
         snapshot = kwargs['name']
+        self.app_label = kwargs['app']
         self.table_name = kwargs['table']
         try:
             self.snapshot = Snapshot.objects.get(name=snapshot)
@@ -908,7 +909,8 @@ class SnapshotTableView(BasicBaseMixin, UserRequiredMixin, SingleTableView):
             raise Http404
 
         try:
-            self.columns, rows = self.snapshot.get_table_data(self.table_name)
+            self.columns, rows = \
+                self.snapshot.get_table_data(self.app_label, self.table_name)
         except ValueError:
             # invalid table name
             raise Http404
