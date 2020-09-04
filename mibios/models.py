@@ -578,13 +578,13 @@ class Snapshot(models.Model):
         help_text='Comma-separated list of names of the apps that have data '
                   'tables stored in the snapshot.'
     )
-    dbfile = models.FilePathField(
-        path=str(settings.SNAPSHOT_DIR),
+    dbfile = models.CharField(
+        max_length=500,
         editable=False,
         verbose_name='archived database file',
     )
-    jsondump = models.FilePathField(
-        path=str(settings.SNAPSHOT_DIR),
+    jsondump = models.CharField(
+        max_length=500,
         editable=False,
         verbose_name='JSON formatted archive',
     )
@@ -598,9 +598,13 @@ class Snapshot(models.Model):
     def __str__(self):
         return self.name
 
-    @property
-    def path(self):
-        return Path(self._meta.get_field('dbfile').path) / self.dbfile
+    def dbpath(self):
+        return settings.SNAPSHOT_DIR / self.dbfile
+    dbpath.short_description = 'path to sqlite3 db file'
+
+    def jsonpath(self):
+        return settings.SNAPSHOT_DIR / self.jsondump
+    jsonpath.short_description = 'path to json dump file'
 
     @property
     def dbalias(self):
@@ -632,14 +636,12 @@ class Snapshot(models.Model):
         if not settings.SNAPSHOT_DIR.is_dir():
             settings.SNAPSHOT_DIR.mkdir(mode=0o770, parents=True)
         src = settings.DATABASES['default']['NAME']
-        fname = '{}.sqlite3'.format('_'.join(self.name.split()))
-        dst = settings.SNAPSHOT_DIR / fname
-        self.dbfile = str(dst)
+        stem = '_'.join(self.name.split())
+        self.dbfile = stem + '.sqlite3'
+        self.jsondump = stem + '.json'
 
-        copy2(src, str(dst))
-        dst.chmod(0o440)  # set read-only
+        copy2(src, str(self.dbpath()))
 
-        self.jsondump = str(dst.with_suffix('.json'))
         call_command(
             'dumpdata',
             *get_registry().apps,
@@ -648,11 +650,16 @@ class Snapshot(models.Model):
             database='default',
             natural_foreign=True,
             natural_primary=True,
-            output=self.jsondump,
+            output=self.jsonpath(),
         )
 
+        # set read-only
+        self.dbpath().chmod(0o440)
+        self.jsonpath().chmod(0o440)
+
     def delete(self, *args, **kwargs):
-        self.path.unlink(missing_ok=True)
+        self.dbpath().unlink(missing_ok=True)
+        self.jsonpath().unlink(missing_ok=True)
         super().delete(*args, **kwargs)
 
     def do_sql(self, sql, params=[], descr=False):
@@ -661,7 +668,7 @@ class Snapshot(models.Model):
         """
         db = {
             'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': 'file:{}?mode=ro'.format(self.dbfile),
+            'NAME': 'file:{}?mode=ro'.format(self.dbpath()),
             'OPTIONS': {'uri': True, },
         }
         conf = {DEFAULT_DB_ALIAS: db}

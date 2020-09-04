@@ -82,6 +82,7 @@ WSGI_APPLICATION = 'mibios.ops.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/2.2/ref/settings/#databases
 
+# Name of snapshot directory
 SNAPSHOT_DIR = BASE_DIR / 'snapshots'
 
 DATABASES = {
