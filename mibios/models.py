@@ -606,26 +606,6 @@ class Snapshot(models.Model):
         return settings.SNAPSHOT_DIR / self.jsondump
     jsonpath.short_description = 'path to json dump file'
 
-    @property
-    def dbalias(self):
-        """
-        Get the db alias from settings
-
-        Returns None if no corresponding database is configured
-        """
-        start = 'file:'
-        end = '?mode=ro'
-        for alias, opts in settings.DATABASES.items():
-            name = opts['NAME']
-            if name.startswith(start):
-                name = name[len(start):]
-            if name.endswith(end):
-                name = name[:-len(end)]
-
-            if Path(name) == self.path:
-                return alias
-        return None
-
     def save(self, *args, **kwargs):
         if not self.pk:
             # only take snapshot when saving instance for first time
