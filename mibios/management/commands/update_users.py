@@ -2,7 +2,7 @@ from django.db import transaction
 from django.contrib.auth.models import Group, Permission, User
 from django.core.management.base import BaseCommand
 
-from mibios.dataset import registry
+from mibios import get_registry
 
 
 EDITOR = 'editor'
@@ -31,7 +31,7 @@ class Command(BaseCommand):
 
         # update groups (all permissions reset)
         apps = ['mibios']
-        apps += registry.apps.keys()
+        apps += get_registry().apps.keys()
         view_perms = Permission.objects.filter(
             codename__startswith='view_',
             content_type__app_label__in=apps,
