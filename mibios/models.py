@@ -12,6 +12,7 @@ from django.core.management import call_command
 from django.urls import reverse
 from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import models, transaction
+from django.db.migrations.recorder import MigrationRecorder
 from django.db.utils import DEFAULT_DB_ALIAS, ConnectionHandler
 from rest_framework.serializers import HyperlinkedModelSerializer
 from rest_framework.viewsets import ReadOnlyModelViewSet
@@ -578,6 +579,17 @@ class Snapshot(models.Model):
         help_text='Comma-separated list of names of the apps that have data '
                   'tables stored in the snapshot.'
     )
+    # migrations: keeps the last applied migration for each registered app, we
+    # could put a foreign key to MigrationRecorder.Migration here but the check
+    # framework will complain, as the migration model is not fully integrated
+    # into everything. This may help in the future to maybe use the ORM to
+    # access the snapshots.
+    migrations = models.CharField(
+        max_length=3000,
+        default='',
+        editable=False,
+        help_text='json serializaton of the last migrations of each app',
+    )
     dbfile = models.CharField(
         max_length=500,
         editable=False,
@@ -617,6 +629,7 @@ class Snapshot(models.Model):
             settings.SNAPSHOT_DIR.mkdir(mode=0o770, parents=True)
         src = settings.DATABASES['default']['NAME']
         stem = '_'.join(self.name.split())
+
         self.dbfile = stem + '.sqlite3'
         self.jsondump = stem + '.json'
 
@@ -636,6 +649,18 @@ class Snapshot(models.Model):
         # set read-only
         self.dbpath().chmod(0o440)
         self.jsonpath().chmod(0o440)
+
+        # migration state
+        migrations = []
+        for i in ['mibios'] + list(get_registry().apps.keys()):
+            migrations.append(
+                MigrationRecorder.Migration.objects
+                .filter(app=i)
+                .order_by('applied')
+                .last()
+            )
+
+        self.migrations = serializers.serialize('json', migrations)
 
     def delete(self, *args, **kwargs):
         self.dbpath().unlink(missing_ok=True)
