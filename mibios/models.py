@@ -138,7 +138,7 @@ class QuerySet(models.QuerySet):
 
         df = pandas.DataFrame([], index=index)
         for i in fields:
-            # TODO / FIXME: going through the fields is inefficient (on DB
+            # TODO / FIXME: going through the fields is inefficient (one DB
             # query per field) for multiple deep-relational fields, the data
             # should be fetched in one go
 
@@ -155,7 +155,7 @@ class QuerySet(models.QuerySet):
                 # use values_list()
                 f = None
                 dtype = None
-                col_dat = map(lambda obj: obj.get_attr_related(i), self)
+                col_dat = map(lambda obj: obj.get_value_related(i), self)
             else:
                 if not Model.is_simple_field(f):
                     continue
@@ -1184,7 +1184,7 @@ class Model(models.Model):
 
     def get_value_related(self, lookup):
         """
-        Retrieve value, possibly folling relations
+        Retrieve value, possibly following relations
 
         Like QuerySet.values() but for single instance.
         """
