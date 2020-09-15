@@ -1,6 +1,9 @@
-from django.apps import apps
+from Bio import SeqIO
 from django.db import models
+from django.db.transaction import atomic
 
+from omics.shared import MothurShared
+from mibios.dataset import UserDataError
 from mibios.models import Model, ParentModel
 from mibios.utils import getLogger
 
@@ -94,22 +97,225 @@ class SequencingRun(Model):
         return dict(serial=s, number=int(n))
 
 
-class Community(Model):
-    asv = models.ManyToManyField('ASV')
-    seqs = models.ForeignKey('Sequencing', on_delete=models.CASCADE)
-
-
 class Strain(Model):
     asv = models.ForeignKey('ASV', on_delete=models.SET_NULL, blank=True,
                             null=True)
 
 
+class Abundance(Model):
+    history = None
+    name = models.CharField(
+        max_length=50, verbose_name='project internal id',
+        default='',
+        blank=True,
+        help_text='project specific ASV/OTU identifier',
+    )
+    count = models.PositiveIntegerField(
+        help_text='absolute abundance',
+        editable=False,
+    )
+    project = models.ForeignKey(
+        'AnalysisProject',
+        on_delete=models.CASCADE,
+        editable=False,
+    )
+    sequencing = models.ForeignKey(
+        Sequencing,
+        on_delete=models.CASCADE,
+        editable=False,
+    )
+    asv = models.ForeignKey(
+        'ASV',
+        on_delete=models.CASCADE,
+        editable=False,
+    )
+
+    class Meta:
+        unique_together = (
+            # one count per project / ASV / sample
+            ('name', 'sequencing', 'project'),
+            ('asv', 'sequencing', 'project'),
+        )
+
+    def __str__(self):
+        return super().__str__() + f' |{self.count}|'
+
+    @classmethod
+    def from_file(cls, file, project):
+        """
+        Load abundance data from shared file
+        """
+        sh = MothurShared(file, verbose=False, threads=1)
+        with atomic():
+            sequencings = {i.name: i for i in Sequencing.published.all()}
+            asvs = {i.number: i for i in ASV.published.all()}
+            skipped, zeros = 0, 0
+            objs = []
+            for (sample, asv), count in sh.counts.stack().items():
+                if count == 0:
+                    # don't store zeros
+                    zeros += 1
+                    continue
+
+                if sample not in sequencings:
+                    # ok to skip, e.g. non-public
+                    skipped += 1
+                    continue
+
+                asv_num = ASV.natural_lookup(asv)['number']
+                if asv_num not in asvs:
+                    raise UserDataError(f'Unknown ASV: {asv}')
+
+                objs.append(cls(
+                    name=asv,
+                    count=count,
+                    project=project,
+                    sequencing=sequencings[sample],
+                    asv=asvs[asv_num],
+                ))
+
+            cls.published.bulk_create(objs)
+        return dict(count=len(objs), zeros=zeros, skipped=skipped)
+
+
+class AnalysisProject(Model):
+    name = models.CharField(max_length=100, unique=True)
+    asv = models.ManyToManyField('ASV', through=Abundance, editable=False)
+    description = models.TextField(blank=True)
+
+    @classmethod
+    def get_fields(cls, with_m2m=False, **kwargs):
+        # Prevent abundance from being displayed, too much data
+        return super().get_fields(with_m2m=False, **kwargs)
+
+
 class ASV(Model):
-    number = models.PositiveIntegerField()
-    taxon = models.ForeignKey('Taxon', on_delete=models.SET_NULL, blank=True,
-                              null=True)
+    PREFIX = 'ASV'
+    NUM_WIDTH = 5
+
+    number = models.PositiveIntegerField(null=True, blank=True, unique=True)
+    taxon = models.ForeignKey('Taxonomy', on_delete=models.SET_NULL,
+                              blank=True, null=True)
+    sequence = models.CharField(
+        max_length=300,  # > length of 16S V4
+        unique=True,
+        editable=False,
+    )
+
+    class Meta:
+        ordering = ('number',)
+
+    def __str__(self):
+        return str(self.natural)
+        s = str(self.natural)
+        if self.taxon:
+            genus, _, species = self.taxon.name.partition(' ')
+            if species:
+                genus = genus.lstrip('[')[0].upper() + '.'
+                s += ' ' + genus + ' ' + species
+            else:
+                s += ' ' + str(self.taxon)
+
+        return s
+
+    @property
+    def name(self):
+        return str(self.natural)
+
+    @Model.natural.getter
+    def natural(self):
+        if self.number:
+            return self.PREFIX + '{}'.format(self.number).zfill(self.NUM_WIDTH)
+        else:
+            return self.pk
+
+    @classmethod
+    def natural_lookup(cls, value):
+        """
+        Given e.g. ASV00023, return dict(number=23)
+        """
+        return dict(number=int(value[len(cls.PREFIX):]))
+
+    @classmethod
+    @atomic
+    def from_fasta(cls, file):
+        """
+        Import from given fasta file
+
+        Fasta header must have ASV00000 stype id, adds new ASVs, existing ASVs
+        will not be updated
+        """
+        count, rows = 0, 0
+        for i in SeqIO.parse(file, 'fasta'):
+            obj, new = cls.objects.get_or_create(
+                **cls.natural_lookup(i.id),
+                sequence=i.seq,
+            )
+            rows += 1
+            if new:
+                count += 1
+
+        return dict(total=rows, new=count)
 
 
-class Taxon(Model):
-    taxid = models.PositiveIntegerField()
-    organism = models.CharField(max_length=100)
+class Taxonomy(Model):
+    taxid = models.PositiveIntegerField(
+        unique=True,
+        verbose_name='NCBI taxonomy id',
+    )
+    name = models.CharField(
+        max_length=300,
+        unique=True,
+        verbose_name='taxonomic name',
+    )
+
+    def __str__(self):
+        return '{} ({})'.format(self.name, self.taxid)
+
+    @classmethod
+    @atomic
+    def from_blast_top1(cls, file):
+        """
+        Import from blast-result-top-1 format file
+
+        The supported file format is a tab-delimited text file with header row,
+        column 1 are ASV accessions, columns 5 and 6 are NCBI taxids and names,
+        and if there are ties then column 7 are the least-common NCBI taxids
+        and column 8 are the corresponding taxon names
+
+        The taxonomy for existing ASV records is imported, everything else is
+        ignored.
+        """
+        asvs = {i.number: i for i in ASV.objects.select_related()}
+        file.readline()
+        updated, total = 0, 0
+        for line in file:
+            try:
+                total += 1
+                row = line.rstrip('\n').split('\t')
+                asv, taxid, name, lctaxid, lcname = row[0], *row[4:]
+
+                if lcname and lcname:
+                    name = lcname
+                    taxid = lctaxid
+
+                taxid = int(taxid)
+                num = ASV.natural_lookup(asv)['number']
+
+                if num not in asvs:
+                    # ASV not in database
+                    continue
+
+                taxon, _ = cls.objects.get_or_create(taxid=taxid, name=name)
+                if asvs[num].taxon == taxon:
+                    del asvs[num]
+                else:
+                    asvs[num].taxon = taxon
+                    updated += 1
+            except Exception as e:
+                raise RuntimeError(
+                    f'error loading file: {file} at line {total}: {row}'
+                ) from e
+
+        ASV.objects.bulk_update(asvs.values(), ['taxon'])
+        return dict(total=total, update=updated)
