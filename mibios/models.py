@@ -1178,6 +1178,10 @@ class Model(models.Model):
     def save(self, *args, **kwargs):
         is_created = self.id is None
         super().save(*args, **kwargs)
+
+        if self.history is None:
+            return
+
         if not hasattr(self, 'change'):
             self.add_change_record(is_created=is_created)
         # set record (again) as super().save() resets this to None for unknown
@@ -1187,11 +1191,14 @@ class Model(models.Model):
             self.change.save()
 
     def delete(self, *args, **kwargs):
-        if not hasattr(self, 'change'):
-            self.add_change_record(is_deleted=True)
-        with transaction.atomic():
-            self.change.save()
-            super().delete(*args, **kwargs)
+        if self.history is None:
+            return super().delete(*args, **kwargs)
+        else:
+            if not hasattr(self, 'change'):
+                self.add_change_record(is_deleted=True)
+            with transaction.atomic():
+                self.change.save()
+                return super().delete(*args, **kwargs)
 
     def full_clean(self, *args, **kwargs):
         """
