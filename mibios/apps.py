@@ -122,6 +122,21 @@ class MibiosConfig(apps.AppConfig):
                     continue
                 registry.add(i)
 
+                # register all apps with mibios.Models
+                app = i._meta.app_label
+                if app not in registry.apps:
+                    registry.apps[app] = apps.apps.get_app_config(app)
+
+        # register datasets
+        for app_conf in registry.apps.values():
+            try:
+                registry.add_dataset_module(
+                    app_conf.name + '.dataset',
+                    app_conf.label,
+                )
+            except ImportError:
+                pass
+
         # admin setup below:
         admin = import_string('django.contrib.admin')
         admin.site.register_all()
