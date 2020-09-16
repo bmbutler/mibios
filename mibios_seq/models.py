@@ -141,14 +141,28 @@ class Abundance(Model):
         return super().__str__() + f' |{self.count}|'
 
     @classmethod
-    def from_file(cls, file, project):
+    def from_file(cls, file, project, fasta=None):
         """
         Load abundance data from shared file
+
+        :param file fasta: Fasta file object
+
+        If a fasta file is given, then the input does not need to use proper
+        ASV numbers.  Instead ASVs are identified by sequence and ASV objects
+        are created as needed.  Obviously, the OTU/ASV/sequence names in shared
+        and fasta files must correspond.
         """
         sh = MothurShared(file, verbose=False, threads=1)
         with atomic():
-            sequencings = {i.name: i for i in Sequencing.published.all()}
-            asvs = {i.number: i for i in ASV.published.all()}
+            if fasta:
+                fasta_result = ASV.from_fasta(fasta)
+
+            sequencings = Sequencing.published.in_bulk(field_name='name')
+            asvs = ASV.published.in_bulk(field_name='number')  # get numbered
+
+            if fasta:
+                asvs.update(fasta_result['irregular'])
+
             skipped, zeros = 0, 0
             objs = []
             for (sample, asv), count in sh.counts.stack().items():
@@ -162,8 +176,14 @@ class Abundance(Model):
                     skipped += 1
                     continue
 
-                asv_num = ASV.natural_lookup(asv)['number']
-                if asv_num not in asvs:
+                try:
+                    asv_key = ASV.natural_lookup(asv)['number']
+                except ValueError:
+                    asv_key = asv
+
+                try:
+                    asv_obj = asvs[asv_key]
+                except KeyError:
                     raise UserDataError(f'Unknown ASV: {asv}')
 
                 objs.append(cls(
@@ -171,7 +191,7 @@ class Abundance(Model):
                     count=count,
                     project=project,
                     sequencing=sequencings[sample],
-                    asv=asvs[asv_num],
+                    asv=asv_obj,
                 ))
 
             cls.published.bulk_create(objs)
@@ -233,7 +253,10 @@ class ASV(Model):
     def natural_lookup(cls, value):
         """
         Given e.g. ASV00023, return dict(number=23)
+
+        Raises ValueError if value does not parse
         """
+        # FIXME: require casefolded ASV prefix?
         return dict(number=int(value[len(cls.PREFIX):]))
 
     @classmethod
@@ -242,20 +265,42 @@ class ASV(Model):
         """
         Import from given fasta file
 
-        Fasta header must have ASV00000 stype id, adds new ASVs, existing ASVs
-        will not be updated
+        For fasta headers that do not have ASV00000 type id the returned
+        'irregular' dict will map the irregular names to the corresponding ASV
+        instance.  Re-loading un-numbered sequences with a proper ASV number
+        will get the number updated.  If a sequence already has a number and it
+        doesn't match the number in the file an IntegrityError is raised.
         """
-        count, rows = 0, 0
+        added, updated, total = 0, 0, 0
+        irregular = {}
         for i in SeqIO.parse(file, 'fasta'):
-            obj, new = cls.objects.get_or_create(
-                **cls.natural_lookup(i.id),
-                sequence=i.seq,
-            )
-            rows += 1
-            if new:
-                count += 1
+            try:
+                numkw = cls.natural_lookup(i.id)
+            except ValueError:
+                numkw = dict()
+                number = None
+            else:
+                number = numkw['number']
 
-        return dict(total=rows, new=count)
+            obj, new = cls.objects.get_or_create(sequence=i.seq, **numkw)
+
+            if new:
+                added += 1
+            else:
+                if obj.number is None and number:
+                    # update number
+                    obj.number = number
+                    obj.save()
+                    updated += 1
+
+            if number is None:
+                # save map from irregular sequence id to ASV
+                irregular[i.id] = obj
+
+            total += 1
+
+        return dict(total=total, new=added, updated=updated,
+                    irregular=irregular)
 
 
 class Taxonomy(Model):
