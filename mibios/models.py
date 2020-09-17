@@ -358,25 +358,21 @@ class PublishManager(Manager):
         if self.filter is not None and self.excludes is not None:
             return
 
-        filter = self.base_filter.copy()
-        excludes = [i.copy() for i in self.base_excludes]
+        self.filter = self.base_filter.copy()
+        self.excludes = [i.copy() for i in self.base_excludes]
 
         for i in self.model.get_fields().fields:
-            if i.is_relation and i.many_to_one:
+            if i.is_relation and (i.many_to_one or i.one_to_one):
                 # is a foreign key
                 other = i.related_model.published
                 prefix = i.name + '__'
                 other.ensure_filter_setup()
-                # FIXME: infinite recursion is waiting to happen
                 for k, v in other.filter.items():
-                    filter[prefix + k] = v
+                    self.filter[prefix + k] = v
                 for i in other.excludes:
                     e = {prefix + k: v for k, v in i.items()}
                     if e:
-                        excludes.append(e)
-
-        self.filter = filter
-        self.excludes = excludes
+                        self.excludes.append(e)
 
     def get_queryset(self):
         self.ensure_filter_setup()
