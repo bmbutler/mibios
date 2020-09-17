@@ -9,7 +9,7 @@
 {% block content %}
 {% if model %}
 <h2>
-    {{ dataset_verbose_name }} data
+    {{ data_name_verbose }} data
     {% if view.avg_by %}
     (averaged over {{ view.avg_by|join:" and " }}, {{ count }} record groups)
     {% else %}
@@ -20,12 +20,12 @@
 {% if avg_by_data %}
     {% if view.avg_by %}
         {# at average view, display link back to normal table view #}
-        [<a href="{% url 'queryset_index' dataset=dataset_name %}{{ querystr }}">normal table</a>]<br>
+        [<a href="{% url 'queryset_index' data_name=data_name %}{{ querystr }}">normal table</a>]<br>
     {% else %}
         {# display links to average views #}
         average by:
         {% for slug, list in avg_by_data.items %}
-        [<a href="{% url 'average' dataset=dataset_name avg_by=slug %}{{ querystr }}">{{ list|join:' and '}}</a>]<br>
+        [<a href="{% url 'average' data_name=data_name avg_by=slug %}{{ querystr }}">{{ list|join:' and '}}</a>]<br>
         {% endfor %}
     {% endif %}
 {% endif %}
@@ -85,19 +85,18 @@
 	<br>
     {% elif stats_type == 'unique' %}
 	Sorted column "{{ sort_by_field }}": all values unique
-        {#<form action="{% url 'queryset_index' dataset=dataset_name %}{{ querystr }}" method="get">#}
-        <form action="{% url 'queryset_index' dataset=dataset_name %}{{ querystr }}" method="get">
+        <form action="{% url 'queryset_index' data_name=data_name %}{{ querystr }}" method="get">
             {{ field_search_form }}
             <input type="submit" value="Search">
         </form>
         <br>
     {% endif %}
 {% endfor %}
-<a href="{% url 'import' dataset=dataset_name %}">import</a>
+<a href="{% url 'import' data_name=data_name %}">import</a>
 {% if view.avg_by %}
-    <a href="{% url 'average_export_form' dataset=dataset_name avg_by=avg_url_slug %}{{ querystr }}">export</a>
+    <a href="{% url 'average_export_form' data_name=data_name avg_by=avg_url_slug %}{{ querystr }}">export</a>
 {% else %}
-    <a href="{% url 'export_form' dataset=dataset_name %}{{ querystr }}">export</a>
+    <a href="{% url 'export_form' data_name=data_name %}{{ querystr }}">export</a>
 {% endif %}
 
 {% render_table table %}

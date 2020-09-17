@@ -34,18 +34,18 @@ class CountColumn(tables.Column):
                                    be used instead.
         """
         if related_object is None:
-            dataset_name = view.dataset_name
-            our_name = view.dataset_name
+            data_name = view.data_name
+            our_name = view.data_name
         else:
             # name of the relation's model
-            dataset_name = related_object.name
+            data_name = related_object.name
             # our_name: the name of the foreign key field of the related model
             # to the current table
             our_name = related_object.remote_field.name
 
         url = reverse(
             'queryset_index',
-            kwargs=dict(dataset=dataset_name)
+            kwargs=dict(data_name=data_name)
         )
 
         if 'linkify' not in kwargs:

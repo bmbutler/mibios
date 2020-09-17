@@ -74,11 +74,11 @@ class BaseMixin(BasicBaseMixin):
             names = sorted(get_registry().get_model_names(app=conf.name))
             if names:
                 ctx['model_names'].append((conf.verbose_name, names))
-        ctx['dataset_names'] = []
+        ctx['data_names'] = []
         for conf in get_registry().apps.values():
             names = sorted(get_registry().get_dataset_names(app=conf.name))
             if names:
-                ctx['dataset_names'].append((conf.verbose_name, names))
+                ctx['data_names'].append((conf.verbose_name, names))
         ctx['snapshots_exist'] = Snapshot.objects.exists()
         return ctx
 
@@ -97,7 +97,7 @@ class DatasetMixin():
         This overrides (but calls first) View.setup()
         """
         super().setup(request, *args, **kwargs)
-        data_name = kwargs.get('dataset', None)
+        data_name = kwargs.get('data_name', None)
 
         self.filter = {}
         self.excludes = []
@@ -105,23 +105,24 @@ class DatasetMixin():
         self.dataset_excludes = []
         self.fields = []
         self.col_names = []
-        if data_name is None:
+
+        if self.data_name is None:
+            # no models/datasets defined
             self.model = None
             return
 
         # load special dataset
         try:
-            dataset = get_registry().datasets[data_name]
+            dataset = get_registry().datasets[self.data_name]
         except KeyError:
             try:
-                self.model = get_registry().models[data_name]
+                self.model = get_registry().models[self.data_name]
             except KeyError:
                 raise Http404
             else:
                 # setup for normal model
                 self.queryset = self.model.published.all()
-                self.dataset_name = self.model._meta.model_name
-                self.dataset_verbose_name = self.model._meta.verbose_name
+                self.data_name_verbose = self.model._meta.verbose_name
                 # set default fields - just the "simple" ones
                 no_name_field = True
                 fields = self.model.get_fields(with_m2m=True)
@@ -143,8 +144,7 @@ class DatasetMixin():
                     self.col_names = [None] + self.col_names
         else:
             # setup for special dataset
-            self.dataset_name = data_name
-            self.dataset_verbose_name = data_name
+            self.data_name_verbose = self.data_name
             self.model = dataset.model
             self.dataset_filter = dataset.filter
             self.dataset_excludes = dataset.excludes
@@ -446,9 +446,9 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             return ctx
 
         ctx['model'] = self.model._meta.model_name
-        ctx['dataset_name'] = self.dataset_name
-        ctx['page_title'].append(self.dataset_name)
-        ctx['dataset_verbose_name'] = self.dataset_verbose_name
+        ctx['data_name'] = self.data_name
+        ctx['page_title'].append(self.data_name)
+        ctx['data_name_verbose'] = self.data_name_verbose
         ctx['count'] = self.get_queryset().count()
 
         ctx['applied_filter'] = [
@@ -588,7 +588,7 @@ class ExportMixin(ExportBaseMixin):
 
 
 class ExportView(ExportMixin, TableView):
-    filename_from = 'dataset_name'
+    filename_from = 'data_name'
 
     def get_values(self):
         # do not export count columns
@@ -644,17 +644,17 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
         dry_run = form.cleaned_data['dry_run']
         if dry_run:
             log.debug(
-                '[dry run] Importing into {}: {}'.format(self.dataset_name, f)
+                '[dry run] Importing into {}: {}'.format(self.data_name, f)
             )
         else:
             self.log.info(
-                'Importing into {}: {}'.format(self.dataset_name, f)
+                'Importing into {}: {}'.format(self.data_name, f)
             )
 
         try:
             stats = Loader.load_file(
                 f,
-                self.dataset_name,
+                self.data_name,
                 dry_run=dry_run,
                 can_overwrite=form.cleaned_data['overwrite'],
                 erase_on_blank=form.cleaned_data['erase_on_blank'],
@@ -688,7 +688,7 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
 
     def get_success_url(self):
         return reverse('queryset_index',
-                       kwargs=dict(dataset=self.dataset_name))
+                       kwargs=dict(data_name=self.data_name))
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
