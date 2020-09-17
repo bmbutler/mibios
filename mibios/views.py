@@ -169,7 +169,7 @@ class DatasetMixin():
 
 
 class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
-    template_name = 'mibios/model_index.html'
+    template_name = 'mibios/table.html'
 
     # set by setup()
     model = None
