@@ -90,14 +90,17 @@ class DatasetMixin():
     The url to which the inheriting view responds must supply a 'dataset' kwarg
     that identifies the dataset or model.
     """
-    def setup(self, request, *args, **kwargs):
+    data_name = None
+
+    def setup(self, request, *args, data_name=None, **kwargs):
         """
         Set up dataset/model attributes of instance
 
         This overrides (but calls first) View.setup()
         """
         super().setup(request, *args, **kwargs)
-        data_name = kwargs.get('data_name', None)
+        if data_name:
+            self.data_name = data_name
 
         self.filter = {}
         self.excludes = []
