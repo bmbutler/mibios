@@ -23,7 +23,7 @@ archive_urls = [
 
 data_name_urls = [
     # URLs starting with the data name
-    path('', views.TableView.as_view(), name='queryset_index'),
+    path('', views.TableView.as_view(), name='table'),
     path('mean/<str:avg_by>/', views.AverageView.as_view(),
          name='average'),
     path('import/', views.ImportView.as_view(), name='import'),

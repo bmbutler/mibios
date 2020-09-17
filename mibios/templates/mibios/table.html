@@ -20,7 +20,7 @@
 {% if avg_by_data %}
     {% if view.avg_by %}
         {# at average view, display link back to normal table view #}
-        [<a href="{% url 'queryset_index' data_name=data_name %}{{ querystr }}">normal table</a>]<br>
+        [<a href="{% url 'table' data_name=data_name %}{{ querystr }}">normal table</a>]<br>
     {% else %}
         {# display links to average views #}
         average by:
@@ -85,7 +85,7 @@
 	<br>
     {% elif stats_type == 'unique' %}
 	Sorted column "{{ sort_by_field }}": all values unique
-        <form action="{% url 'queryset_index' data_name=data_name %}{{ querystr }}" method="get">
+        <form action="{% url 'table' data_name=data_name %}{{ querystr }}" method="get">
             {{ field_search_form }}
             <input type="submit" value="Search">
         </form>

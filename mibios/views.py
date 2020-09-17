@@ -719,8 +719,7 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
         return super().form_valid(form)
 
     def get_success_url(self):
-        return reverse('queryset_index',
-                       kwargs=dict(data_name=self.data_name))
+        return reverse('table', kwargs=dict(data_name=self.data_name))
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)

@@ -43,10 +43,7 @@ class CountColumn(tables.Column):
             # to the current table
             our_name = related_object.remote_field.name
 
-        url = reverse(
-            'queryset_index',
-            kwargs=dict(data_name=data_name)
-        )
+        url = reverse('table', kwargs=dict(data_name=data_name))
 
         if 'linkify' not in kwargs:
             def linkify(record):
