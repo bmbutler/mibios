@@ -52,3 +52,22 @@ urlpatterns = [
     # fixed string paths go above this comment
     path('<str:data_name>/', include(data_name_urls)),
 ]
+
+
+def get_app_urls():
+    """
+    Get url patterns from registered apps
+
+    Includes each registered app's urls module if there is one.
+    """
+    ret = []
+    for i in get_registry().apps.values():
+        try:
+            ret.append(path('', include(i.name + '.urls')))
+        except ModuleNotFoundError:
+            # app has no urls module, skip
+            pass
+    return ret
+
+
+urlpatterns += get_app_urls()
