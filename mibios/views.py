@@ -171,6 +171,25 @@ class DatasetMixin():
                 self.queryset = getattr(self.model, dataset.manager).all()
 
 
+class TableViewPlugin():
+    """
+    Parent class for per-model view plugins
+
+    The table view plugin mechanism allows to add per-model content to the
+    regular table display.  An implementation should declare a class in a
+    registered app's view module that inherits from TableViewPlugin and that
+    should set the model_class and template_name variables and override
+    get_context_data() as needed.  The template with the to-be-added content
+    needs to be provided at the app's usual template location.  The plugin's
+    content will be rendered just above the table.
+    """
+    model_class = None
+    template_name = None
+
+    def get_context_data(self, **ctx):
+        return ctx
+
+
 class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
     template_name = 'mibios/table.html'
 
@@ -447,6 +466,16 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         ctx = super().get_context_data(**ctx)
         if self.model is None:
             return ctx
+
+        try:
+            plugin_class = \
+                get_registry().table_view_plugins[self.model._meta.model_name]
+        except KeyError:
+            ctx['table_view_plugin_template'] = None
+        else:
+            plugin = plugin_class()
+            ctx['table_view_plugin_template'] = plugin.template_name
+            ctx = plugin.get_context_data(**ctx)
 
         ctx['model'] = self.model._meta.model_name
         ctx['data_name'] = self.data_name

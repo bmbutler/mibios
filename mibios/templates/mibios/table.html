@@ -99,6 +99,7 @@
     <a href="{% url 'export_form' data_name=data_name %}{{ querystr }}">export</a>
 {% endif %}
 
+{% if table_view_plugin_template %}{% include table_view_plugin_template %}{% endif %}
 {% render_table table %}
 
 {% endif %}

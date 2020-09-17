@@ -27,6 +27,8 @@ class Registry():
         self.models = {}
         # apps: a map from app label to the app's AppConfig instance
         self.apps = {}
+        # plugins: maps model name to plugin class
+        self.table_view_plugins = {}
 
     def get_models(self, app=None):
         return [
@@ -80,8 +82,6 @@ class Registry():
     def add_dataset_module(self, module_path, app_label):
         """
         Populate the registry with dataset from given module dotted path
-
-        This should be called by implementing apps from their AppConfig.ready()
         """
         dataset_module = import_module(module_path)
         for _, klass in inspect.getmembers(dataset_module, inspect.isclass):
@@ -99,6 +99,18 @@ class Registry():
         """
         for i in self.model_class.__subclasses__():
             self.add(i)
+
+    def add_table_view_plugins(self, module_path):
+        views = import_module(module_path)
+        parent = import_string('mibios.views.TableViewPlugin')
+        for _, klass in inspect.getmembers(views, inspect.isclass):
+            if not issubclass(klass, parent):
+                continue
+
+            if klass is parent:
+                continue
+
+            self.table_view_plugins[klass.model_class._meta.model_name] = klass
 
 
 class MibiosConfig(apps.AppConfig):
@@ -134,6 +146,13 @@ class MibiosConfig(apps.AppConfig):
                     app_conf.name + '.dataset',
                     app_conf.label,
                 )
+            except ImportError:
+                pass
+
+        # register table view plugins
+        for app_conf in registry.apps.values():
+            try:
+                registry.add_table_view_plugins(app_conf.name + '.views')
             except ImportError:
                 pass
 
