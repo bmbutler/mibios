@@ -829,28 +829,25 @@ class Model(models.Model):
         Many-to-many fields are by default excluded because of the difficulties
         of meaningfully displaying them
         """
-        exclude = [
-            models.ManyToOneRel,
+        # exclude a field if test comes back True
+        tests = [
+            lambda x: x.one_to_many,
+            lambda x: x.name == 'history',
         ]
+
         if skip_auto:
-            exclude.append(models.AutoField)
+            tests.append(lambda x: isinstance(x, models.AutoField))
 
         if not with_m2m:
-            exclude.append(models.ManyToManyRel)
-            exclude.append(models.ManyToManyField)
-
-        exclude = tuple(exclude)
-        parent_pointers = cls._meta.parents.values()
+            tests.append(lambda x: x.many_to_many)
 
         fields = []
         for i in cls._meta.get_fields():
-            if isinstance(i, exclude):
-                continue
-            if i.name == 'history':
-                continue
-            if i in parent_pointers:
-                continue
-            fields.append(i)
+            for t in tests:
+                if t(i):
+                    break
+            else:
+                fields.append(i)
 
         names = [i.name for i in fields]
         verbose = [getattr(i, 'verbose_name', i.name) for i in fields]
@@ -1261,7 +1258,7 @@ class ParentModel(Model):
     @classmethod
     def get_child_info(cls):
         """
-        Get a mapping from inheriting moels to their relation field
+        Get a mapping from inheriting models to their relation field
         """
         info = {}
         for field in cls._meta.get_fields():
