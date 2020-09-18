@@ -8,6 +8,8 @@ from django.utils.module_loading import import_string
 
 class Registry():
 
+    name = None
+    verbose_name = None
     model_class = None
     dataset_class = None
     __instance = None
@@ -121,12 +123,13 @@ class MibiosConfig(apps.AppConfig):
         super().ready()
 
         # set up registry
-        Model = import_string(self.name + '.models.Model')
-        mibios = import_module('mibios')
-        setattr(mibios, '_registry', Registry())
-        registry = mibios.get_registry()
+        registry = Registry()
+        registry.name = self.name
+        registry.verbose_name = self.verbose_name
+        import_module('mibios')._registry = registry
 
         # register models here, since django has found them already
+        Model = import_string(self.name + '.models.Model')
         for i in apps.apps.get_models():
             if issubclass(i, Model):
                 if hasattr(i, 'get_child_info') and i.get_child_info():
