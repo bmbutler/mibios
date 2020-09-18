@@ -16,4 +16,10 @@ _registry = None
 
 
 def get_registry():
+    if _registry is None:
+        raise RuntimeError(
+            "Registry is not yet set up.  It's only available after Django's "
+            "apps are set up, i.e. after mibios' app config's ready() has "
+            "returned."
+        )
     return _registry
