@@ -591,8 +591,16 @@ class ExportMixin(ExportBaseMixin):
     data to be exported as an iterable over rows (which are lists of values).
     The first row should contain the column headers.
     """
-    filename_from = ''
-    """ set this to the name of the view attribute that hold the filename """
+
+    def get_filename(self):
+        """
+        Get the user-visible name (stem) for the file downloaded.
+
+        The default implementation generates a default value from the registry
+        name.  The returnd value is without suffix.  The suffix is determined
+        by the file format.
+        """
+        return get_registry().name + '_data'
 
     def render_to_response(self, context):
         name = self.request.GET.get(QUERY_FORMAT)
@@ -609,8 +617,8 @@ class ExportMixin(ExportBaseMixin):
         name, suffix, content_type, renderer_class = fmt
 
         response = HttpResponse(content_type=content_type)
-        f = getattr(self, self.filename_from, 'data') + suffix
-        response['Content-Disposition'] = 'attachment; filename="{}"'.format(f)
+        filename = self.get_filename() + suffix
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
 
         r = renderer_class(response)
         for i in self.get_values():
@@ -620,7 +628,11 @@ class ExportMixin(ExportBaseMixin):
 
 
 class ExportView(ExportMixin, TableView):
-    filename_from = 'data_name'
+    """
+    File download of table data
+    """
+    def get_filename(self):
+        return self.data_name
 
     def get_values(self):
         # do not export count columns
@@ -946,7 +958,6 @@ class SnapshotTableView(BasicBaseMixin, UserRequiredMixin, SingleTableView):
             # invalid table name
             raise Http404
 
-        self.filename = self.snapshot.name + '_' + self.table_name
         self.queryset = [dict(zip(self.columns, i)) for i in rows]
 
         return super().get(request, *args, **kwargs)
@@ -965,7 +976,8 @@ class SnapshotTableView(BasicBaseMixin, UserRequiredMixin, SingleTableView):
 
 
 class ExportSnapshotTableView(ExportMixin, SnapshotTableView):
-    filename_from = 'filename'
+    def get_filename(self):
+        return self.snapshot.name + '_' + self.table_name
 
     def get_values(self):
         return self.get_table().as_values()
