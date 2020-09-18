@@ -325,15 +325,12 @@ class QuerySet(models.QuerySet):
         return c
 
 
-class Manager(models.Manager):
-    def get_queryset(self):
-        return QuerySet(self.model, using=self._db)
-
+class BaseManager(models.manager.BaseManager):
     def get_by_natural_key(self, key):
         return self.get(**self.model.natural_lookup(key))
 
 
-class PublishManager(Manager):
+class PublishBaseManager(BaseManager):
     """
     Manager to implement publishable vs. hidden data
     """
@@ -407,6 +404,14 @@ class PublishManager(Manager):
             return q
         else:
             return None
+
+
+class Manager(BaseManager.from_queryset(QuerySet)):
+    pass
+
+
+class PublishManager(PublishBaseManager.from_queryset(QuerySet)):
+    pass
 
 
 Fields = namedtuple('Fields', ['fields', 'names', 'verbose'])
