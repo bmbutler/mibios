@@ -1,10 +1,12 @@
+from itertools import chain
+
 from Bio import SeqIO
 from django.db import models
 from django.db.transaction import atomic
 
 from omics.shared import MothurShared
 from mibios.dataset import UserDataError
-from mibios.models import Model, ParentModel
+from mibios.models import Manager, PublishManager, Model, ParentModel, QuerySet
 from mibios.utils import getLogger
 
 
@@ -102,6 +104,43 @@ class Strain(Model):
                             null=True)
 
 
+class AbundanceQuerySet(QuerySet):
+    def as_shared(self):
+        """
+        Make mothur-shared table
+
+        Note: without label/numOtus columns
+
+        Returns a pandas DataFrame.  Assumes, that the QuerySet is filtered to
+        counts from a single analysis project but this is not checked.  If the
+        assumption is violated, then the pivot operation will probably raise a:
+
+            "ValueError: Index contains duplicate entries, cannot reshape"
+
+        Missing counts are inserted as zero, mirroring the skipping of zeros at
+        import.
+        """
+        df = (
+            self
+            .as_dataframe('asv', 'sequencing', 'count', natural=True)
+            .pivot(index='sequencing', columns='asv', values='count')
+        )
+        df.fillna(value=0, inplace=True)  # pivot introduced NaNs
+        return df
+
+    def as_shared_values_list(self):
+        """
+        Make mothur-shared table
+
+        Returns an iterator over tuple rows, first row is the header.  This is
+        intended to support data export.
+        """
+        sh = self.as_shared()
+        header = ['Group'] + list(sh.columns)
+        recs = sh.itertuples(index=True, name=False)
+        return chain([header], recs)
+
+
 class Abundance(Model):
     history = None
     name = models.CharField(
@@ -136,6 +175,9 @@ class Abundance(Model):
             ('name', 'sequencing', 'project'),
             ('asv', 'sequencing', 'project'),
         )
+
+    objects = Manager.from_queryset(AbundanceQuerySet)()
+    published = PublishManager.from_queryset(AbundanceQuerySet)()
 
     def __str__(self):
         return super().__str__() + f' |{self.count}|'

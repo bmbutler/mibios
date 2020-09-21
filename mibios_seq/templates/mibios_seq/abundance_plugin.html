@@ -1,0 +1,3 @@
+{% if uniform_project %}
+<p>Export for analysis project {{ uniform_project }}:<a href="{% url 'mibios_seq:export_shared' project=uniform_project %}{{ querystr }}">shared file</a></p>
+{% endif %}
