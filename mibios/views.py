@@ -1,5 +1,7 @@
 import csv
+from io import StringIO
 from math import isnan
+from zipfile import ZipFile, ZIP_DEFLATED
 
 from django.apps import apps
 from django.conf import settings
@@ -579,11 +581,33 @@ class CSVRenderer():
             writer.writerow(i)
 
 
+class CSVRendererZipped():
+    content_type = 'application/zip'
+
+    def __init__(self, response, filename):
+        self.response = response
+        self.filename = filename[:-len('.zip')]
+
+    def render(self, values):
+        """
+        Render all rows to the response
+        """
+        buf = StringIO()
+        writer = csv.writer(buf, delimiter='\t')
+        for row in values:
+            writer.writerow(row)
+
+        buf.seek(0)
+        with ZipFile(self.response, 'w', ZIP_DEFLATED) as f:
+            f.writestr(self.filename, buf.read())
+
+
 class ExportBaseMixin:
     # Supported export format registry
     # (name, file suffix, renderer class)
     FORMATS = (
         ('csv', '.csv', CSVRenderer),
+        ('csv/zipped', '.csv.zip', CSVRendererZipped),
     )
     DEFAULT_FORMAT = 'csv'
 
@@ -634,7 +658,7 @@ class ExportMixin(ExportBaseMixin):
         filename = self.get_filename() + suffix
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
 
-        renderer_class(response).render(self.get_values())
+        renderer_class(response, filename=filename).render(self.get_values())
 
         return response
 
