@@ -71,6 +71,16 @@ class CountColumn(tables.Column):
             f = view.filter.copy()
             elist = view.excludes.copy()
         else:
+            via_parent = (
+                issubclass(view.model, related_object.model)
+                and not view.model == related_object.model
+            )
+            if via_parent:
+                # have to add the parent between us and the relation
+                # child name: how we're known to the parent
+                child = related_object.model.get_child_info()[view.model].name
+                our_name = our_name + '__' + child
+
             f = {our_name + '__' + k: v for k, v in view.filter.items()}
 
             elist = []
