@@ -565,6 +565,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
 
 
 class CSVRenderer():
+    content_type = 'text/csv'
     def __init__(self, response):
         self.writer = csv.writer(response, delimiter='\t')
 
@@ -574,11 +575,29 @@ class CSVRenderer():
 
 class ExportBaseMixin:
     # Supported export format registry
-    # (name, file suffix, http content type, renderer class)
+    # (name, file suffix, renderer class)
     FORMATS = (
-        ('csv', '.csv', 'text/csv', CSVRenderer),
+        ('csv', '.csv', CSVRenderer),
     )
-    DEFAULT_FORMAT = FORMATS[0]
+    DEFAULT_FORMAT = 'csv'
+
+    def get_format(self):
+        """
+        Get export file format
+        """
+        fmt_name = self.request.GET.get(QUERY_FORMAT)
+        for i in self.FORMATS:
+            if fmt_name == i[0]:
+                return i
+
+        if fmt_name:
+            raise Http404('unknown export format')
+
+        for i in self.FORMATS:
+            if self.DEFAULT_FORMAT == i[0]:
+                return i
+        else:
+            raise RuntimeError('no valid default export format defined')
 
 
 class ExportMixin(ExportBaseMixin):
@@ -603,20 +622,9 @@ class ExportMixin(ExportBaseMixin):
         return get_registry().name + '_data'
 
     def render_to_response(self, context):
-        name = self.request.GET.get(QUERY_FORMAT)
-        if name:
-            for i in self.FORMATS:
-                if name == i[0]:
-                    fmt = i
-                    break
-            else:
-                raise Http404('unknown export format')
-        else:
-            fmt = self.DEFAULT_FORMAT
+        name, suffix, renderer_class = self.get_format()
 
-        name, suffix, content_type, renderer_class = fmt
-
-        response = HttpResponse(content_type=content_type)
+        response = HttpResponse(content_type=renderer_class.content_type)
         filename = self.get_filename() + suffix
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
 
