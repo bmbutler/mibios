@@ -566,11 +566,17 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
 
 class CSVRenderer():
     content_type = 'text/csv'
-    def __init__(self, response):
-        self.writer = csv.writer(response, delimiter='\t')
 
-    def render_row(self, row):
-        self.writer.writerow(row)
+    def __init__(self, response, **kwargs):
+        self.response = response
+
+    def render(self, values):
+        """
+        Render all rows to the response
+        """
+        writer = csv.writer(self.response, delimiter='\t')
+        for i in values:
+            writer.writerow(i)
 
 
 class ExportBaseMixin:
@@ -628,9 +634,7 @@ class ExportMixin(ExportBaseMixin):
         filename = self.get_filename() + suffix
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
 
-        r = renderer_class(response)
-        for i in self.get_values():
-            r.render_row(i)
+        renderer_class(response).render(self.get_values())
 
         return response
 
