@@ -71,6 +71,7 @@ setuptools.setup(
     package_data={
         'mibios': ['templates/' + NAME + '/*.html',
                    'static/' + NAME + '/css/*.css'],
+        'mibios_seq': ['templates/' + NAME + '/*.html'],
     },
     classifiers=[
         'Development Status :: 3 - Alpha',
