@@ -65,6 +65,7 @@ setuptools.setup(
         'djangorestframework~=3.11.0',
         'django-tables2~=2.1.0',
         'pandas~=0.25.0',
+        'biopython~=1.77',
     ],
     packages=setuptools.find_packages(),
     package_data={
