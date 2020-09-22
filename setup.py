@@ -69,9 +69,9 @@ setuptools.setup(
     ],
     packages=setuptools.find_packages(),
     package_data={
-        'mibios': ['templates/' + NAME + '/*.html',
+        NAME: ['templates/' + NAME + '/*.html',
                    'static/' + NAME + '/css/*.css'],
-        'mibios_seq': ['templates/' + NAME + '/*.html'],
+        'mibios_seq': ['templates/mibios_seq/*.html'],
     },
     classifiers=[
         'Development Status :: 3 - Alpha',
