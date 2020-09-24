@@ -72,7 +72,7 @@ def get_export_form(query_dict, formats, initial_fields=None):
     # TODO: get default from ExportBaseMixin
     opts[QUERY_FORMAT] = forms.ChoiceField(
         widget=forms.RadioSelect,
-        choices=[(i[0], i[2].content_type) for i in formats],
+        choices=[(i[0], i[0]) for i in formats],
         initial=formats[0][0],
         label='file format',
     )
