@@ -567,6 +567,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
 
 
 class CSVRenderer():
+    description = 'comma-separated text file'
     content_type = 'text/csv'
     delimiter = ','
 
@@ -583,10 +584,12 @@ class CSVRenderer():
 
 
 class CSVTabRenderer(CSVRenderer):
+    description = '<tab>-separated text file'
     delimiter = '\t'
 
 
 class CSVRendererZipped():
+    description = 'comma-separated text file, zipped'
     content_type = 'application/zip'
 
     def __init__(self, response, filename):
