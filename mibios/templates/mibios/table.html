@@ -92,10 +92,10 @@
         <br>
     {% endif %}
 {% endfor %}
-<a href="{% url 'import' data_name=data_name %}">import</a>
 {% if view.avg_by %}
     <a href="{% url 'average_export_form' data_name=data_name avg_by=avg_url_slug %}{{ querystr }}">export</a>
 {% else %}
+    <a href="{% url 'import' data_name=data_name %}">import</a>
     <a href="{% url 'export_form' data_name=data_name %}{{ querystr }}">export</a>
 {% endif %}
 
