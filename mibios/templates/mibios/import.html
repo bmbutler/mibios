@@ -13,7 +13,7 @@ Recognized table columns: {{ col_names|join:", " }}
 <br>
 A name or id column is required.  Other columns may be omitted.  Additional columns will be ignored.
 </p>
-<form action="{% url 'import' dataset=view.data_name %}" method="post" enctype="multipart/form-data">
+<form action="{% url 'import' data_name=view.data_name %}" method="post" enctype="multipart/form-data">
     {% csrf_token %}
     {{ form.as_p }}
     <input type="submit" value="Submit">
