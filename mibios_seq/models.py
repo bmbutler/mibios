@@ -6,7 +6,8 @@ from django.db.transaction import atomic
 
 from omics.shared import MothurShared
 from mibios.dataset import UserDataError
-from mibios.models import Manager, PublishManager, Model, ParentModel, QuerySet
+from mibios.models import (ImportFile, Manager, PublishManager, Model,
+                           ParentModel, QuerySet)
 from mibios.utils import getLogger
 
 
@@ -199,6 +200,7 @@ class Abundance(Model):
             if fasta:
                 fasta_result = ASV.from_fasta(fasta)
 
+            AbundanceImportFile.create_from_file(file=file, project=project)
             sequencings = Sequencing.published.in_bulk(field_name='name')
             asvs = ASV.published.in_bulk(field_name='number')  # get numbered
 
@@ -313,29 +315,68 @@ class ASV(Model):
         will get the number updated.  If a sequence already has a number and it
         doesn't match the number in the file an IntegrityError is raised.
         """
+        file_rec = ImportFile.create_from_file(file=file)
+
+        try:
+            file_rec.file.open('r')
+            return cls._from_fasta(file_rec)
+        except Exception:
+            try:
+                file_rec.file.close()
+                file_rec.file.delete()
+            except Exception:
+                pass
+            raise
+        else:
+            file_rec.file.close()
+
+    @classmethod
+    def _from_fasta(cls, file_rec):
         added, updated, total = 0, 0, 0
         irregular = {}
-        for i in SeqIO.parse(file, 'fasta'):
+
+        # passing the filehandle to SeqIO.parse: The SeqIO fasta parser tries
+        # to skip over comments and empty lines at the begin of the file by
+        # iterating over the passed file handle.  After the first line with '>'
+        # is found, the line is kept and then it breaks out of the for loop and
+        # enters another for loop over the file handle iterator to get the rest
+        # of the data.  When we pass a django.core.files.base.File object the
+        # second loop entry calls a seek(0) as part of the chunking machinery
+        # and it gets messy.  This is why we pass the underlying file object
+        # and hope this won't blow up when something about the file storage
+        # changes.
+        for i in SeqIO.parse(file_rec.file.file.file, 'fasta'):
             try:
-                numkw = cls.natural_lookup(i.id)
+                kwnum = cls.natural_lookup(i.id)  # expect {'number': N}
             except ValueError:
-                numkw = dict()
-                number = None
-            else:
-                number = numkw['number']
+                # SeqIO sequence id does not parse,
+                # is something from analysis pipeline, no ASV number
+                kwnum = {}
 
-            obj, new = cls.objects.get_or_create(sequence=i.seq, **numkw)
-
-            if new:
+            try:
+                obj = cls.objects.get(sequence=i.seq)
+            except cls.DoesNotExist:
+                obj = cls(sequence=i.seq, **kwnum)
                 added += 1
             else:
-                if obj.number is None and number:
+                if obj.number is None and kwnum:
                     # update number
-                    obj.number = number
-                    obj.save()
+                    for k, v in kwnum.items():
+                        setattr(obj, k, v)
                     updated += 1
 
-            if number is None:
+            if obj.pk is None or updated:
+                try:
+                    obj.full_clean()
+                except Exception as e:
+                    log.error('Failed importing ASV: at fasta record '
+                              f'{total + 1}: {i}: {e}')
+                    raise
+
+                obj.add_change_record(file=file_rec, line=total + 1)
+                obj.save()
+
+            if not kwnum:
                 # save map from irregular sequence id to ASV
                 irregular[i.id] = obj
 
@@ -373,10 +414,15 @@ class Taxonomy(Model):
         The taxonomy for existing ASV records is imported, everything else is
         ignored.
         """
+        file_rec = ImportFile.create_from_file(file=file)
         asvs = {i.number: i for i in ASV.objects.select_related()}
-        file.readline()
+        is_header = True  # first line is header
         updated, total = 0, 0
-        for line in file:
+        for line in file_rec.file.open('r'):
+            if is_header:
+                is_header = False
+                continue
+
             try:
                 total += 1
                 row = line.rstrip('\n').split('\t')
@@ -393,7 +439,14 @@ class Taxonomy(Model):
                     # ASV not in database
                     continue
 
-                taxon, _ = cls.objects.get_or_create(taxid=taxid, name=name)
+                try:
+                    taxon = cls.objects.get(taxid=taxid, name=name)
+                except cls.DoesNotExist:
+                    taxon = cls(taxid=taxid, name=name)
+                    taxon.full_clean()
+                    taxon.add_change_record(file=file_rec, line=total + 1)
+                    taxon.save()
+
                 if asvs[num].taxon == taxon:
                     del asvs[num]
                 else:
@@ -406,3 +459,13 @@ class Taxonomy(Model):
 
         ASV.objects.bulk_update(asvs.values(), ['taxon'])
         return dict(total=total, update=updated)
+
+
+class AbundanceImportFile(ImportFile):
+    """
+    An import file that keeps tab to which project it belongs
+
+    Since Abundance opts out of history this connecting the import file with
+    the project keeps at leas some record of the origin of abundance data.
+    """
+    project = models.ForeignKey(AnalysisProject, on_delete=models.CASCADE)
