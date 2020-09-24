@@ -48,7 +48,8 @@ def get_field_search_form(field):
     return type('FieldSearchForm', (forms.Form, ), {name: field})
 
 
-def get_export_form(query_dict, formats, initial_fields=None):
+def get_export_form(query_dict, formats, initial_fields=None,
+                    initial_format=None):
     """
     Factory building export format forms
 
@@ -69,11 +70,10 @@ def get_export_form(query_dict, formats, initial_fields=None):
         label='fields to be exported',
     )
 
-    # TODO: get default from ExportBaseMixin
     opts[QUERY_FORMAT] = forms.ChoiceField(
         widget=forms.RadioSelect,
         choices=[(i[0], i[2].description) for i in formats],
-        initial=formats[0][0],
+        initial=initial_format,
         label='file format',
     )
 

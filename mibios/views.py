@@ -622,7 +622,7 @@ class ExportBaseMixin:
 
     def get_format(self):
         """
-        Get export file format
+        Get the requested export file format
         """
         fmt_name = self.request.GET.get(QUERY_FORMAT)
         for i in self.FORMATS:
@@ -714,6 +714,7 @@ class ExportFormView(ExportBaseMixin, FormMixin, TableView):
             self.to_query_dict(fields=self.fields, keep_other=True),
             self.FORMATS,
             initial,
+            initial_format=self.DEFAULT_FORMAT,
         )
 
     def get_context_data(self, **ctx):
