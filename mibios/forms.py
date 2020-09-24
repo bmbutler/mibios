@@ -67,8 +67,12 @@ def export_form_factory(view):
         except ValueError:
             pass
 
+    verbose_names = {
+        i.name: i.verbose_name
+        for i in view.model.get_fields().fields
+    }
 
-    choices = ((i, i) for i in fields)
+    choices = ((i, verbose_names.get(i, i)) for i in fields)
     opts = {}
 
     opts[QUERY_FIELD] = forms.MultipleChoiceField(
