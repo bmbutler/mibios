@@ -674,7 +674,7 @@ class ExportView(ExportMixin, TableView):
         # do not export count columns
         count_cols = [
             i.name + '__count'
-            for i in self.model._meta.related_objects
+            for i in self.model.get_related_objects()
         ]
         return self.get_table().as_values(exclude_columns=count_cols)
 

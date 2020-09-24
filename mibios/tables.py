@@ -240,7 +240,7 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
 
     if count_columns:
         # reverse relations -> count columns
-        for i in model._meta.related_objects:
+        for i in model.get_related_objects():
             opts[i.name + '__count'] = CountColumn(i, view=view)
             meta_opts['fields'].append(i.name + '__count')
 

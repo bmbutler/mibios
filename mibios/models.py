@@ -279,7 +279,7 @@ class QuerySet(models.QuerySet):
         Add reverse relation count annotations
         """
         count_args = {}
-        for i in self.model._meta.related_objects:
+        for i in self.model.get_related_objects():
             f = i.related_model.published.get_publish_filter()
             kwargs = dict(filter=f) if f else {}
             name = i.related_model._meta.model_name + '__count'
@@ -857,6 +857,20 @@ class Model(models.Model):
         names = [i.name for i in fields]
         verbose = [getattr(i, 'verbose_name', i.name) for i in fields]
         return Fields(fields=fields, names=names, verbose=verbose)
+
+    @classmethod
+    def get_related_objects(cls):
+        """
+        Get compatible one-to-many related objects
+
+        This returns Model._meta.related_objects whose related Model inherits
+        from mibios.Model. These can meaningful participant in e.g. count
+        columns.
+        """
+        return [
+            i for i in cls._meta.related_objects
+            if issubclass(i.related_model, Model)
+        ]
 
     @classmethod
     def get_field(cls, accessor):
