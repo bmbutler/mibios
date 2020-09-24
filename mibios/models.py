@@ -822,6 +822,10 @@ class Model(models.Model):
     """ average_by is a list of lists (or tuples) of field names over which
     taking averages makes sense """
 
+    hidden_fields = []
+    """ Fields that are not displayed or exported by default, hidden from
+    public view """
+
     @classmethod
     def pd_type(cls, field):
         """
@@ -863,7 +867,7 @@ class Model(models.Model):
             return True
 
     @classmethod
-    def get_fields(cls, skip_auto=False, with_m2m=False):
+    def get_fields(cls, skip_auto=False, with_m2m=False, with_hidden=False):
         """
         Get fields to be displayed in table (in order) and used for import
 
@@ -882,6 +886,9 @@ class Model(models.Model):
 
         if not with_m2m:
             tests.append(lambda x: x.many_to_many)
+
+        if not with_hidden:
+            tests.append(lambda x: x.name in cls.hidden_fields)
 
         fields = []
         for i in cls._meta.get_fields():
