@@ -54,13 +54,10 @@ def export_form_factory(view):
 
     :param TableView view: View whose table will be exported
     """
-    initial_fields = []
-    for i in view.model.get_fields().names:
-        # FIXME: this gets the wrong fields with AverageMixin since the
-        # fields change during the call to AverageMixin.get_table_class()
-        if i in view.fields:
-            initial_fields.append(i)
+    query_dict = view.to_query_dict(fields=view.fields, keep_other=True)
+    fields = query_dict.getlist(QUERY_FIELD)
 
+    initial_fields = fields
     # prefer name over id
     if 'name' in view.fields and 'name' not in initial_fields:
         initial_fields.append('name')
@@ -70,8 +67,6 @@ def export_form_factory(view):
         except ValueError:
             pass
 
-    query_dict = view.to_query_dict(fields=view.fields, keep_other=True)
-    fields = query_dict.getlist(QUERY_FIELD)
 
     choices = ((i, i) for i in fields)
     opts = {}
