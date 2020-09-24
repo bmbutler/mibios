@@ -6,7 +6,6 @@ import re
 import sys
 
 from django.core.exceptions import FieldDoesNotExist, ValidationError
-from django.core.files import File
 from django.db import transaction, IntegrityError
 
 from . import get_registry
@@ -74,6 +73,7 @@ class Loader():
         self.dry_run = dry_run
         self.user = user
         self.erase_on_blank = erase_on_blank
+        self.file_record = None
         if dry_run:
             self.log = log
         else:
@@ -159,18 +159,15 @@ class Loader():
         Load data from given file
         """
         log.debug('processing:', file, vars(file))
-        file_object = File(file)
-        self.file_record = ImportFile(name=file_object.name, file=file_object)
         self.linenum = 1
         self.last_warning = None
         row = None
         try:
             with transaction.atomic():
-                self.file_record.full_clean()
+                self.file_record = ImportFile.create_from_file(file=file)
                 # Saving input file to storage: if the input file come from the
                 # local filesystem, ImportFile.save() we need to seek(0) our
                 # file handle.  Do uploaded files in memory do something else?
-                self.file_record.save()
                 file.seek(0)
                 # Getting the DictReader set up must happen after saving to
                 # disk as csv.reader takes some sort of control over the file
@@ -184,7 +181,8 @@ class Loader():
                 if self.dry_run:
                     raise DryRunRollback
         except Exception as e:
-            self.file_record.file.delete(save=False)
+            if self.file_record is not None:
+                self.file_record.file.delete(save=False)
             if isinstance(e, DryRunRollback):
                 pass
             elif isinstance(e, UserDataError):

@@ -8,6 +8,7 @@ from django.contrib.auth.models import User
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.core import serializers
+from django.core.files import File
 from django.core.management import call_command
 from django.urls import reverse
 from django.core.exceptions import FieldDoesNotExist, ValidationError
@@ -434,7 +435,14 @@ class ImportFile(models.Model):
     Represents the imported files
     """
     timestamp = models.DateTimeField(auto_now_add=True)
-    name = models.CharField(max_length=300, verbose_name='original filename',)
+    name = models.CharField(
+        max_length=300, verbose_name='original filename',
+        help_text='This is the original, human-readable name for this file. '
+                  'It is allowed to have the same name for multiple imported '
+                  'file records.  This practice is encouraged e.g. if the '
+                  'same file is uploaded multiple times, e.g. re-uploading '
+                  'after making offline changes to the file.',
+            )
     file = models.FileField(
         upload_to='imported/%Y/', verbose_name='data source file',
     )
@@ -446,6 +454,35 @@ class ImportFile(models.Model):
 
     def __str__(self):
         return '{} {}'.format(self.timestamp, self.name)
+
+    @classmethod
+    def create_from_file(cls, file, **kwargs):
+        """
+        Create a new instance from given file-like object
+
+        This will take the last component of the path as the original filename
+        and remove path components before storiung the file.
+
+        :param file: Either a str or pathlib.Path containing the (original)
+                     path to the file or a file-like object.
+        :param dict kwargs: Additional instance attributes to support
+                            subclasses
+        """
+        need_close = True
+        if isinstance(file, str):
+            file = open(file)
+        elif isinstance(file, Path):
+            file = file.open()
+        else:
+            # assume file-like obj, caller must call close
+            need_close = False
+
+        name = Path(file.name).name
+        file = File(file, name=name)
+        obj = cls.objects.create(name=name, file=file, **kwargs)
+        if need_close:
+            file.close()
+        return obj
 
 
 class ChangeRecord(models.Model):
