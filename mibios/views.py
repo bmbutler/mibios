@@ -568,6 +568,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
 
 class CSVRenderer():
     content_type = 'text/csv'
+    delimiter = ','
 
     def __init__(self, response, **kwargs):
         self.response = response
@@ -576,9 +577,13 @@ class CSVRenderer():
         """
         Render all rows to the response
         """
-        writer = csv.writer(self.response, delimiter='\t')
+        writer = csv.writer(self.response, delimiter=self.delimiter)
         for i in values:
             writer.writerow(i)
+
+
+class CSVTabRenderer(CSVRenderer):
+    delimiter = '\t'
 
 
 class CSVRendererZipped():
@@ -607,6 +612,7 @@ class ExportBaseMixin:
     # (name, file suffix, renderer class)
     FORMATS = (
         ('csv', '.csv', CSVRenderer),
+        ('tab', '.csv', CSVTabRenderer),
         ('csv/zipped', '.csv.zip', CSVRendererZipped),
     )
     DEFAULT_FORMAT = 'csv'
