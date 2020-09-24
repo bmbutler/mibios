@@ -19,7 +19,7 @@ from django_tables2 import SingleTableView, Column
 
 from . import (__version__, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE,
                QUERY_FIELD, QUERY_FORMAT, QUERY_EXPAND, get_registry)
-from .forms import get_export_form, get_field_search_form, UploadFileForm
+from .forms import export_form_factory, get_field_search_form, UploadFileForm
 from .load import Loader
 from .management.import_base import AbstractImportCommand
 from .models import Q, ChangeRecord, ImportFile, Snapshot
@@ -700,22 +700,7 @@ class ExportFormView(ExportBaseMixin, FormMixin, TableView):
     export_url_name = 'export'
 
     def get_form_class(self):
-        initial = []
-        for i in self.model.get_fields(skip_auto=True).names:
-            # FIXME: this gets the wrong fields with AverageMixin since the
-            # fields change during the call to AverageMixin.get_table_class()
-            if i in self.fields:
-                initial.append(i)
-        if 'id' in self.fields and 'name' not in initial:
-            # prefer name over id
-            initial.append('id')
-
-        return get_export_form(
-            self.to_query_dict(fields=self.fields, keep_other=True),
-            self.FORMATS,
-            initial,
-            initial_format=self.DEFAULT_FORMAT,
-        )
+        return export_form_factory(self)
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)

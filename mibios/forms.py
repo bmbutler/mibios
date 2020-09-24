@@ -48,18 +48,25 @@ def get_field_search_form(field):
     return type('FieldSearchForm', (forms.Form, ), {name: field})
 
 
-def get_export_form(query_dict, formats, initial_fields=None,
-                    initial_format=None):
+def export_form_factory(view):
     """
-    Factory building export format forms
+    Return the export format form class for a given view
 
-    :params list initial_fields: List of field names that have their checkbox
-                                 in check state intially. If None, the default,
-                                 then all fields are checked initially.
+    :param TableView view: View whose table will be exported
     """
+    initial_fields = []
+    for i in view.model.get_fields(skip_auto=True).names:
+        # FIXME: this gets the wrong fields with AverageMixin since the
+        # fields change during the call to AverageMixin.get_table_class()
+        if i in view.fields:
+            initial_fields.append(i)
+    if 'id' in view.fields and 'name' not in initial_fields:
+        # prefer name over id
+        initial_fields.append('id')
+
+    query_dict = view.to_query_dict(fields=view.fields, keep_other=True)
     fields = query_dict.getlist(QUERY_FIELD)
-    if initial_fields is None:
-        initial_fields = fields
+
     choices = ((i, i) for i in fields)
     opts = {}
 
@@ -72,8 +79,8 @@ def get_export_form(query_dict, formats, initial_fields=None,
 
     opts[QUERY_FORMAT] = forms.ChoiceField(
         widget=forms.RadioSelect,
-        choices=[(i[0], i[2].description) for i in formats],
-        initial=initial_format,
+        choices=[(i[0], i[2].description) for i in view.FORMATS],
+        initial=view.DEFAULT_FORMAT,
         label='file format',
     )
 
