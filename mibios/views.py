@@ -688,12 +688,7 @@ class ExportView(ExportMixin, TableView):
         return self.data_name
 
     def get_values(self):
-        # do not export count columns
-        count_cols = [
-            i.name + '__count'
-            for i in self.model.get_related_objects()
-        ]
-        return self.get_table().as_values(exclude_columns=count_cols)
+        return self.get_table().as_values()
 
 
 class ExportFormView(ExportBaseMixin, FormMixin, TableView):

@@ -19,7 +19,7 @@ class CountColumn(tables.Column):
     reverse foreign key relation or the elements of a grouped-by record.
     """
     def __init__(self, related_object=None, view=None, group_by=[],
-                 force_verbose_name=True, **kwargs):
+                 force_verbose_name=True, exclude_from_export=True, **kwargs):
         """
         Count column constructor
 
@@ -100,7 +100,8 @@ class CountColumn(tables.Column):
         q = view.build_query_dict(filter=f, excludes=elist, negate=view.negate)
         self.footer_url = url + ('?' + q.urlencode()) if q else ''
 
-        super().__init__(self, **kwargs)
+        super().__init__(self, exclude_from_export=exclude_from_export,
+                         **kwargs)
 
         # django_tables2 internals somehow mess up the verbose name, but
         # verb name can be set after __init__, setting explicitly before
