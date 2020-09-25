@@ -104,6 +104,8 @@ class DatasetMixin():
     dataset_filter = None
     dataset_excludes = None
 
+    show_hidden = False
+
     def setup(self, request, *args, data_name=None, **kwargs):
         """
         Set up dataset/model attributes of instance
@@ -140,7 +142,10 @@ class DatasetMixin():
                 self.data_name_verbose = self.model._meta.verbose_name
                 # set default fields - just the "simple" ones
                 no_name_field = True
-                fields = self.model.get_fields(with_m2m=True)
+                fields = self.model.get_fields(
+                    with_m2m=True,
+                    with_hidden=self.show_hidden,
+                )
                 for name, verbose_name in zip(fields.names, fields.verbose):
                     if name == 'name':
                         no_name_field = False
@@ -229,7 +234,11 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             if rel_model is None:
                 raise Http404('is not a relation: {}'.format(accessor))
 
-            rel_fields = rel_model.get_fields(skip_auto=True).names
+            rel_fields = (
+                rel_model
+                .get_fields(skip_auto=True, with_hidden=self.show_hidden)
+                .names
+            )
             rel_fields = [
                 accessor + '__' + i
                 for i in rel_fields
@@ -711,6 +720,7 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
     template_name = 'mibios/import.html'
     form_class = UploadFileForm
     log = getLogger('dataimport')
+    show_hidden = True
 
     def form_valid(self, form):
         # do data import

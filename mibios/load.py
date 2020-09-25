@@ -53,7 +53,7 @@ class Loader():
                         self.blanks[accr] += i['blanks']
         else:
             # set accessor map from model
-            fields = self.model.get_fields()
+            fields = self.model.get_fields(with_hidden=True)
             self.accr_map = {
                 v.casefold(): model_name + '__' + n
                 for v, n in zip(fields.verbose, fields.names)
