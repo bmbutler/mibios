@@ -89,10 +89,20 @@ class DatasetMixin():
     """
     Mixin for views that deal with one dataset/model
 
-    The url to which the inheriting view responds must supply a 'dataset' kwarg
-    that identifies the dataset or model.
+    The url to which the inheriting view responds must supply a 'data_name'
+    kwarg that identifies the dataset or model.
     """
+    # set by setup():
+    model = None
     data_name = None
+    avg_by = None
+    fields = None
+    col_names = None
+    filter = None
+    excludes = None
+    negate = None
+    dataset_filter = None
+    dataset_excludes = None
 
     def setup(self, request, *args, data_name=None, **kwargs):
         """
@@ -194,17 +204,6 @@ class TableViewPlugin():
 
 class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
     template_name = 'mibios/table.html'
-
-    # set by setup()
-    model = None
-    avg_by = None
-    fields = None
-    col_names = None
-    filter = None
-    excludes = None
-    negate = None
-    dataset_filter = None
-    dataset_excludes = None
 
     def get(self, request, *args, **kwargs):
         log.debug('GET query string:', request.GET)
