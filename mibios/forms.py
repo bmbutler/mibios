@@ -69,7 +69,7 @@ def export_form_factory(view):
 
     verbose_names = {
         i.name: i.verbose_name
-        for i in view.model.get_fields().fields
+        for i in view.model.get_fields(with_hidden=True).fields
     }
 
     choices = ((i, verbose_names.get(i, i)) for i in fields)
