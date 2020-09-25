@@ -142,10 +142,7 @@ class DatasetMixin():
                 self.data_name_verbose = self.model._meta.verbose_name
                 # set default fields - just the "simple" ones
                 no_name_field = True
-                fields = self.model.get_fields(
-                    with_m2m=True,
-                    with_hidden=self.show_hidden,
-                )
+                fields = self.model.get_fields(with_hidden=self.show_hidden)
                 for name, verbose_name in zip(fields.names, fields.verbose):
                     if name == 'name':
                         no_name_field = False
