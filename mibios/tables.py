@@ -203,9 +203,15 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
         # preserve verbose names with odd capitalization, e.g: 'pH':
         # (By default django_tables2 uses capfirst() transforms)
         if field is not None:
-            if field.verbose_name[0].islower():
-                if field.verbose_name[1].isupper():
-                    col_kw['verbose_name'] = field.verbose_name
+            try:
+                verbose_name = field.verbose_name
+            except AttributeError:
+                # M2M fields don't have verbose_name, but:
+                verbose_name = field.related_model._meta.verbose_name
+
+            if verbose_name[0].islower():
+                if verbose_name[1].isupper():
+                    col_kw['verbose_name'] = verbose_name
 
         if accessor == 'name':
             table_class = tables.Column
