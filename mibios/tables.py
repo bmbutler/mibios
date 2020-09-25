@@ -198,7 +198,7 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
         # django_tables2 wants dotted accessors
         col = tables.A(accessor.replace('__', '.'))
         meta_opts['fields'].append(col)
-        col_kw = {}  # common Column kwargs
+        col_kw = {}
 
         # preserve verbose names with odd capitalization, e.g: 'pH':
         # (By default django_tables2 uses capfirst() transforms)
@@ -207,8 +207,8 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
                 if field.verbose_name[1].isupper():
                     col_kw['verbose_name'] = field.verbose_name
 
-        # make one of id or name columns have an edit link
         if accessor == 'name':
+            table_class = tables.Column
             if 'name' not in model.get_fields().names:
                 # name is actually the natural property, so have to set
                 # some proxy sorting, else the machinery tries to fetch the
@@ -217,34 +217,40 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
                     col_kw['order_by'] = model._meta.ordering
                 else:
                     col_kw['order_by'] = None
-            opts[col] = tables.Column(linkify=True, **col_kw)
+            col_kw['linkify'] = True
+
         elif accessor == 'id':
-            # hide id if name is present
-            opts[col] = tables.Column(linkify='name' not in field_names,
-                                      visible='name' not in field_names,
-                                      **col_kw)
+            table_class = tables.Column
+            # make one of id or name columns have an edit link / hide id if
+            # name is present
+            col_kw['linkify'] = 'name' not in field_names
+            col_kw['visible'] = 'name' not in field_names
 
         # m2m fields
         elif field is not None and field.many_to_many:
-            opts[col] = tables.ManyToManyColumn(**col_kw)
+            table_class = tables.ManyToManyColumn
 
         elif name == 'natural':
+            table_class = tables.Column
             # TODO: add order by proxy
-            opts[col] = tables.Column(orderable=False, **col_kw)
+            col_kw['orderable'] = False
 
         # averages
         elif accessor == 'avg_group_count':
-            opts[col] = CountColumn(view=view, group_by=view.avg_by,
-                                    force_verbose_name='avg group count',
-                                    **col_kw)
+            table_class = CountColumn
+            col_kw['view'] = view
+            col_kw['group_by'] = view.avg_by
+            col_kw['force_verbose_name'] = 'avg group count'
 
         elif isinstance(field, DecimalField) or name.endswith('_avg'):
-            places = getattr(field, 'decimal_places',
-                             DecimalColumn.DEFAULT_PLACES)
-            opts[col] = DecimalColumn(places=places, **col_kw)
+            table_class = DecimalColumn
+            col_kw['places'] = getattr(field, 'decimal_places',
+                                       DecimalColumn.DEFAULT_PLACES)
 
         else:
-            opts[col] = tables.Column(**col_kw)
+            table_class = tables.Column
+
+        opts[col] = table_class(**col_kw)
 
     if count_columns:
         # reverse relations -> count columns
