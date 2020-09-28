@@ -11,9 +11,9 @@
 <h2>
     {{ data_name_verbose }} data
     {% if view.avg_by %}
-    (averaged over {{ view.avg_by|join:" and " }}, {{ count }} record groups)
+    (averaged over {{ view.avg_by|join:" and " }}, {{ table.rows|length }} record groups)
     {% else %}
-    ({{ count }} records)
+    ({{ table.rows|length }} records)
     {% endif %}
 </h2>
 

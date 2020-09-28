@@ -488,7 +488,6 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         ctx['data_name'] = self.data_name
         ctx['page_title'].append(self.data_name)
         ctx['data_name_verbose'] = self.data_name_verbose
-        ctx['count'] = self.get_queryset().count()
 
         ctx['applied_filter'] = [
             (k, v, self.to_query_string(without=[{k: v}]))
