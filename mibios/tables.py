@@ -38,7 +38,7 @@ class CountColumn(tables.Column):
             our_name = view.data_name
         else:
             # name of the relation's model
-            data_name = related_object.name
+            data_name = related_object.related_model._meta.model_name
             # our_name: the name of the foreign key field of the related model
             # to the current table
             our_name = related_object.remote_field.name
@@ -262,8 +262,10 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
     if count_columns:
         # reverse relations -> count columns
         for i in model.get_related_objects():
-            opts[i.name + '__count'] = CountColumn(i, view=view)
-            meta_opts['fields'].append(i.name + '__count')
+            # col_name here must be same as what the annotation is made with
+            col_name = i.related_model._meta.model_name + '__count'
+            opts[col_name] = CountColumn(i, view=view)
+            meta_opts['fields'].append(col_name)
 
     for k, v in extra.items():
         # TODO: allow specifiying the position

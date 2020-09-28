@@ -280,11 +280,17 @@ class QuerySet(models.QuerySet):
         Add reverse relation count annotations
         """
         count_args = {}
-        for i in self.model.get_related_objects():
+        rels = self.model.get_related_objects()
+
+        for i in rels:
+            kwargs = dict(distinct=True)
             f = i.related_model.published.get_publish_filter()
-            kwargs = dict(filter=f) if f else {}
+            if f:
+                kwargs['filter'] = f
             name = i.related_model._meta.model_name + '__count'
             count_args[name] = models.Count(i.name, **kwargs)
+
+        log.debug(f'COUNT COLS: {count_args=}')
         return self.annotate(**count_args)
 
     def average(self, *avg_by, natural=True):
@@ -912,8 +918,12 @@ class Model(models.Model):
         columns.
         """
         return [
+            i for i in cls.get_fields(with_m2m=True).fields
+            if i.many_to_many
+        ] + [
             i for i in cls._meta.related_objects
             if issubclass(i.related_model, Model)
+            and i.one_to_many  # prevents m2ms from being returned twice
         ]
 
     @classmethod
