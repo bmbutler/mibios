@@ -25,7 +25,7 @@ from .management.import_base import AbstractImportCommand
 from .models import Q, ChangeRecord, ImportFile, Snapshot
 from .tables import (DeletedHistoryTable, HistoryTable, NONE_LOOKUP,
                      SnapshotListTable, SnapshotTableColumn, Table,
-                     table_factory)
+                     table_factory, ORDER_BY_FIELD)
 from .utils import getLogger
 
 
@@ -457,7 +457,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         If the sort-by field is not a field in the current table view None is
         returned.
         """
-        field = self.request.GET.get(self.get_table()._meta.order_by_field)
+        field = self.request.GET.get(ORDER_BY_FIELD)
         if not field:
             return None
 
