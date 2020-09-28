@@ -303,7 +303,7 @@ class QuerySet(models.QuerySet):
         # annotation kwargs:
         kwargs = {'avg_group_count': models.Count('id')}
         for i in self.model.get_average_fields():
-            kwargs[i.name + '_avg'] = models.Avg(i.name)
+            kwargs[i.name] = models.Avg(i.name)
 
         self._avg_by = avg_by
         self._avg_fields = list(avg_by) + list(kwargs)

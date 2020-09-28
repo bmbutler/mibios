@@ -249,7 +249,7 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
             col_kw['group_by'] = view.avg_by
             col_kw['force_verbose_name'] = 'avg group count'
 
-        elif isinstance(field, DecimalField) or name.endswith('_avg'):
+        elif isinstance(field, DecimalField):
             table_class = DecimalColumn
             col_kw['places'] = getattr(field, 'decimal_places',
                                        DecimalColumn.DEFAULT_PLACES)
