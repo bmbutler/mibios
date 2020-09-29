@@ -290,7 +290,7 @@ class QuerySet(models.QuerySet):
             name = i.related_model._meta.model_name + '__count'
             count_args[name] = models.Count(i.name, **kwargs)
 
-        log.debug(f'COUNT COLS: {count_args=}')
+        log.debug(f'COUNT COLS: {count_args}')
         return self.annotate(**count_args)
 
     def average(self, *avg_by, natural=True):
