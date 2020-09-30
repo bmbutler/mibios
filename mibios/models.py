@@ -107,9 +107,12 @@ class Q(models.Q):
 
 
 class QuerySet(models.QuerySet):
-    _avg_by = None
-    _avg_fields = None
-    _pre_annotation_clone = None
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._avg_by = None
+        self._avg_fields = None
+        self._pre_annotation_clone = None
+        self._rev_rel_count_fields = []
 
     def as_dataframe(self, *fields, natural=False):
         """
@@ -293,8 +296,23 @@ class QuerySet(models.QuerySet):
             name = i.related_model._meta.model_name + '__count'
             count_args[name] = models.Count(i.name, **kwargs)
 
+        qs = self.annotate(**count_args)
+        if qs._rev_rel_count_fields is None:
+            qs._rev_rel_count_fields = []
+        qs._rev_rel_count_fields += count_args.keys()
         log.debug(f'COUNT COLS: {count_args}')
-        return self.annotate(**count_args)
+        return qs
+
+    def sum_rev_rel_counts(self):
+        """
+        Aggregate sums over reverse relation counts
+
+        Returns a dict with {<model_name>__count__sum: int} per rev rel count
+        annotation.  If no such annotation exist then an empty dict is
+        returned.
+        """
+        args = [models.Sum(i) for i in self._rev_rel_count_fields or []]
+        return self.aggregate(*args)
 
     def count(self):
         """
@@ -353,6 +371,7 @@ class QuerySet(models.QuerySet):
         c._avg_by = self._avg_by
         c._avg_fields = self._avg_fields
         c._pre_annotation_clone = self._pre_annotation_clone
+        c._rev_rel_count_fields = list(self._rev_rel_count_fields)
         return c
 
 

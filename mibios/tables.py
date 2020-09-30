@@ -1,10 +1,15 @@
 from django.db.models import DecimalField
 from django.urls import reverse
+from django.utils.functional import cached_property
 from django.utils.html import format_html
 
 import django_tables2 as tables
 
 from .models import ChangeRecord, Snapshot
+from .utils import getLogger
+
+
+log = getLogger('mibios')
 
 
 NONE_LOOKUP = 'NULL'
@@ -116,9 +121,25 @@ class CountColumn(tables.Column):
                 self.verbose_name = related_object.name + ' count'
 
     def render_footer(self, bound_column, table):
+        """
+        Sum up the counts and render a link a table with related records
+
+        This needs to look at the whole table not just the page that is
+        displayed and so needs a separate database query.
+        """
         total = 0
-        for row in table.data:
-            total += bound_column.accessor.resolve(row)
+        try:
+            total = \
+                table.rev_rel_counts_totals[bound_column.accessor + '__sum']
+        except AttributeError as e:
+            # raised if table.data.data is not a mibios.QuerySet
+            log.debug('Failed getting count column totals optimized:', e)
+            # try the normal way, also extra database query: retrieves the
+            # whole table with annotations but the result is cached for
+            # subsequent count columns
+            for row in table.data:
+                total += bound_column.accessor.resolve(row)
+
         return format_html('all: <a href={}>{}</a>', self.footer_url, total)
 
 
@@ -131,7 +152,16 @@ class ManyToManyColumn(tables.ManyToManyColumn):
 
 
 class Table(tables.Table):
-    pass
+    @cached_property
+    def rev_rel_counts_totals(self):
+        """
+        Provide the sums of count columns
+
+        Requires the data to be backed by mibios.QuerySet.  This returns a dict
+        with keys of the form <model_name>__count__sum and int values for each
+        count column.
+        """
+        return self.data.data.sum_rev_rel_counts()
 
 
 class DecimalColumn(tables.Column):
@@ -274,7 +304,7 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
         meta_opts.append(k)
         opts[k] = v
 
-    parent = tables.Table
+    parent = Table
     Meta = type('Meta', (getattr(parent, 'Meta', object),), meta_opts)
     opts.update(Meta=Meta)
 
