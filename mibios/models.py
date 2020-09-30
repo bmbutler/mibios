@@ -109,6 +109,7 @@ class Q(models.Q):
 class QuerySet(models.QuerySet):
     _avg_by = None
     _avg_fields = None
+    _pre_annotation_clone = None
 
     def as_dataframe(self, *fields, natural=False):
         """
@@ -208,6 +209,7 @@ class QuerySet(models.QuerySet):
         """
         Handle natural lookups for filtering operations
         """
+        self._pre_annotation_clone = None
         kwargs = self.model.resolve_natural_lookups(**kwargs)
         return super()._filter_or_exclude(negate, *args, **kwargs)
 
@@ -279,6 +281,7 @@ class QuerySet(models.QuerySet):
         """
         Add reverse relation count annotations
         """
+        self._pre_annotation_clone = self._clone()
         count_args = {}
         rels = self.model.get_related_objects()
 
@@ -293,6 +296,25 @@ class QuerySet(models.QuerySet):
         log.debug(f'COUNT COLS: {count_args}')
         return self.annotate(**count_args)
 
+    def count(self):
+        """
+        Count that optimizes count annotations away
+
+        This overriding method checks _pre_annotation_clone for presence of a
+        clone made before a count column annotation is made.  Running the count
+        query without such annotations is faster.  The validity of the
+        resulting count depends on the stipped annotations not having any
+        filter effect.  Also the clone needs to be reset when adding new
+        filters.
+
+        Hence, the general QuerySet build order should have filters first and
+        the count annotations added last.
+        """
+        if self._pre_annotation_clone is None:
+            return super().count()
+        else:
+            return self._pre_annotation_clone.count()
+
     def average(self, *avg_by, natural=True):
         """
         Average data of DecimalFields
@@ -303,6 +325,7 @@ class QuerySet(models.QuerySet):
                              populated with their natural key, otherwise with
                              the primary key.
         """
+        self._pre_annotation_clone = None
         # TODO: average over fields in reverse related models
         # add group count
 
@@ -329,6 +352,7 @@ class QuerySet(models.QuerySet):
         c = super()._clone()
         c._avg_by = self._avg_by
         c._avg_fields = self._avg_fields
+        c._pre_annotation_clone = self._pre_annotation_clone
         return c
 
 
