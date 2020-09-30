@@ -284,7 +284,6 @@ class QuerySet(models.QuerySet):
         """
         Add reverse relation count annotations
         """
-        self._pre_annotation_clone = self._clone()
         count_args = {}
         rels = self.model.get_related_objects()
 
@@ -297,6 +296,7 @@ class QuerySet(models.QuerySet):
             count_args[name] = models.Count(i.name, **kwargs)
 
         qs = self.annotate(**count_args)
+        qs._pre_annotation_clone = self._clone()
         if qs._rev_rel_count_fields is None:
             qs._rev_rel_count_fields = []
         qs._rev_rel_count_fields += count_args.keys()
