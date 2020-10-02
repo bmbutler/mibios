@@ -57,7 +57,7 @@ def export_form_factory(view):
     query_dict = view.to_query_dict(fields=view.fields, keep_other=True)
     fields = query_dict.getlist(QUERY_FIELD)
 
-    initial_fields = fields
+    initial_fields = list(fields)
     # prefer name over id
     if 'name' in view.fields and 'name' not in initial_fields:
         initial_fields.append('name')
