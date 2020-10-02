@@ -213,6 +213,10 @@ class TableViewPlugin():
 class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
     template_name = 'mibios/table.html'
 
+    # Tunables adjusting display varying on number of unique values:
+    MEDIUM_UNIQUE_LIMIT = 10
+    HIGH_UNIQUE_LIMIT = 30
+
     def get(self, request, *args, **kwargs):
         log.debug('GET query string:', request.GET)
         self.update_state(*self.compile_state_params())
@@ -506,10 +510,12 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             in self.excludes
         ]
 
+        ctx['field_search_form'] = None
         sort_by_field = self.get_sort_by_field()
         if sort_by_field is None:
             ctx['sort_by_stats'] = {}
         else:
+            add_search_form = False
             ctx['sort_by_field'] = sort_by_field
             qs = self.get_queryset()
             stats = qs.get_field_stats(sort_by_field, natural=True)
@@ -521,8 +527,8 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                     pass
 
                 if 'unique' in stats:
-                    ctx['field_search_form'] = \
-                        get_field_search_form(sort_by_field)()
+                    add_search_form = True
+
             else:
                 # a non-boring column
                 if 'description' in stats:
@@ -544,24 +550,33 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
 
                 filter_link_data = []
                 if 'choice_counts' in stats:
-                    counts = {
-                        None if isinstance(k, float) and isnan(k) else k: v
-                        for k, v in
-                        stats['choice_counts'].items()
-                    }
-                    filter_link_data = [
-                        (
-                            value,
-                            count,
-                            # TODO: applying filter to negated queryset is more
-                            # complicated
-                            self.to_query_string(filter={sort_by_field: value})
-                        )
-                        for value, count
-                        in counts.items()
-                    ]
+                    if len(stats['choice_counts']) > self.MEDIUM_UNIQUE_LIMIT:
+                        add_search_form = True
+                    if len(stats['choice_counts']) < self.HIGH_UNIQUE_LIMIT:
+                        # link display gets unwieldy at high numbers
+                        counts = {
+                            None if isinstance(k, float) and isnan(k) else k: v
+                            for k, v in
+                            stats['choice_counts'].items()
+                        }
+                        filter_link_data = [
+                            (
+                                value,
+                                count,
+                                # TODO: applying filter to negated queryset is
+                                # more complicated
+                                self.to_query_string(
+                                    filter={sort_by_field: value}
+                                )
+                            )
+                            for value, count
+                            in counts.items()
+                        ]
                 ctx['filter_link_data'] = filter_link_data
             ctx['sort_by_stats'] = stats
+            if add_search_form:
+                ctx['field_search_form'] = \
+                    get_field_search_form(sort_by_field)()
 
         # the original querystring:
         query = self.request.GET.urlencode()

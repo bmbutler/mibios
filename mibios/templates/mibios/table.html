@@ -84,14 +84,18 @@
 	{% for val, count in stats_obj.items %}"{{ val|default:table.default }}"({{ count }}){% endfor %}
 	<br>
     {% elif stats_type == 'unique' %}
-	Sorted column "{{ sort_by_field }}": all values unique
-        <form action="{% url 'table' data_name=data_name %}{{ querystr }}" method="get">
-            {{ field_search_form }}
-            <input type="submit" value="Search">
-        </form>
-        <br>
+        Sorted column "{{ sort_by_field }}": all values unique
     {% endif %}
 {% endfor %}
+
+{% if field_search_form %}
+    <form action="{% url 'table' data_name=data_name %}{{ querystr }}" method="get">
+        {{ field_search_form }}
+        <input type="submit" value="Search">
+    </form>
+    <br>
+{% endif %}
+
 {% if view.avg_by %}
     <a href="{% url 'average_export_form' data_name=data_name avg_by=avg_url_slug %}{{ querystr }}">export</a>
 {% else %}
