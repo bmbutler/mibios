@@ -138,7 +138,7 @@ class AbundanceQuerySet(QuerySet):
         """
         sh = self.as_shared()
         header = ['Group'] + list(sh.columns)
-        recs = sh.itertuples(index=True, name=False)
+        recs = sh.itertuples(index=True, name=None)
         return chain([header], recs)
 
 
