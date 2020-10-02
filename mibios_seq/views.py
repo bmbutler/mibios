@@ -1,3 +1,5 @@
+from django.utils.text import slugify
+
 from mibios.views import CSVRenderer, CSVRendererZipped
 from mibios.views import ExportMixin, TableView, TableViewPlugin
 from mibios_seq import models
@@ -30,7 +32,7 @@ class ExportSharedView(ExportMixin, TableView):
     DEFAULT_FORMAT = 'shared/zipped'
 
     def get_filename(self):
-        return self.project_name
+        return slugify(self.project_name)
 
     def setup(self, request, *args, project, **kwargs):
         self.project_name = project
