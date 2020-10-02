@@ -58,6 +58,8 @@ class Loader():
                 v.casefold(): model_name + '__' + n
                 for v, n in zip(fields.verbose, fields.names)
             }
+            if 'name' not in self.accr_map and hasattr(self.model, 'name'):
+                self.accr_map['name'] = model_name + '__natural'
 
         self.warnings = []
         self.sep = sep
