@@ -156,9 +156,15 @@ class DatasetMixin():
                 del name, verbose_name, fields
 
                 if no_name_field and hasattr(self.model, 'name'):
-                    # add column for natural name
-                    self.fields = ['name'] + self.fields
-                    self.col_names = [None] + self.col_names
+                    try:
+                        # insert column for natural name after id
+                        nameidx = self.fields.index('id') + 1
+                    except ValueError:
+                        # or else left-most
+                        nameidx = 0
+                    self.fields.insert(nameidx, 'name')
+                    self.col_names.insert(nameidx, None)
+                    del nameidx
         else:
             # setup for special dataset
             self.data_name_verbose = self.data_name
