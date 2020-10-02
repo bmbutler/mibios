@@ -1,4 +1,6 @@
-from itertools import chain
+from collections import OrderedDict
+from itertools import chain, groupby
+from operator import itemgetter
 
 from Bio import SeqIO
 from django.db import models
@@ -120,6 +122,8 @@ class AbundanceQuerySet(QuerySet):
 
         Missing counts are inserted as zero, mirroring the skipping of zeros at
         import.
+
+        DEPRECATED (and possibly incorrect)
         """
         df = (
             self
@@ -129,17 +133,73 @@ class AbundanceQuerySet(QuerySet):
         df.fillna(value=0, inplace=True)  # pivot introduced NaNs
         return df
 
-    def as_shared_values_list(self):
+    def as_shared_values_list_old(self):
         """
-        Make mothur-shared table
+        Make mothur-shared table (slow, memory intense version)
 
         Returns an iterator over tuple rows, first row is the header.  This is
         intended to support data export.
+
+        DEPRECATED (and possibly incorrect)
         """
         sh = self.as_shared()
         header = ['Group'] + list(sh.columns)
         recs = sh.itertuples(index=True, name=None)
         return chain([header], recs)
+
+    def _shared_file_items(self, asvs, group):
+        """
+        Generator over the items of a row in a shared file
+
+        :param asvs: iterable over all ASV pks of QuerySet in order
+        :param group: Data for one sample, row; an iterable over triplets
+                      (count, seq name, ASV pk)
+        """
+        count, _, asv_pk = next(group)
+        for i in asvs:
+            if asv_pk == i:
+                yield count
+                try:
+                    count, _, asv_pk = next(group)
+                except StopIteration:
+                    pass
+            else:
+                yield 0
+
+    def _shared_file_rows(self, asvs):
+        """
+        Generator of shared file rows
+        """
+        it = (
+            self.order_by('sequencing', 'asv')
+            .values_list('count', 'sequencing__name', 'asv')
+            .iterator()
+        )
+        for name, group in groupby(it, key=itemgetter(1)):
+            yield tuple(chain([name], self._shared_file_items(asvs, group)))
+
+    def as_shared_values_list(self):
+        """
+        Make mothur shared table for download
+
+        Returns an iterator over tuple rows, first row is the header.  This is
+        intended to support data export.  Missing counts are inserted as zero,
+        mirroring the skipping of zeros at import.
+        """
+        # get ASVs that actually occur in QuerySet:
+        asv_pks = set(self.values_list('asv', flat=True).distinct().iterator())
+        # ASV order here must correspond to order in which count values are
+        # generated later, in the _shared_file_rows() method.  It is assumed
+        # that the ASV model defines an appropriate order; ASV pk->name
+        # mapping, use values for header, keys for zeros injection
+        asvs = OrderedDict((
+            (i.pk, i.natural)
+            for i in ASV.objects.iterator()
+            if i.pk in asv_pks
+        ))
+        header = ['Group'] + list(asvs.values())
+
+        return chain([header], self._shared_file_rows(list(asvs.keys())))
 
 
 class Abundance(Model):
