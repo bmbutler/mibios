@@ -292,11 +292,6 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                 val = val_list[-1]
                 if val == NONE_LOOKUP:
                     val = None
-                else:
-                    try:
-                        val = int(val)
-                    except ValueError:
-                        pass
                 filter[filter_key] = val
 
             elif qkey.startswith(QUERY_EXCLUDE + '-'):
@@ -304,11 +299,6 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                 val = val_list[-1]
                 if val == NONE_LOOKUP:
                     val = None
-                else:
-                    try:
-                        val = int(val)
-                    except ValueError:
-                        pass
                 if idx not in excludes:
                     excludes[idx] = {}
                 excludes[idx][exclude_key] = val
