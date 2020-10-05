@@ -596,26 +596,31 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         no corresponding field(s) on which to perform a search, i.e.  no search
         form should be displayed.
         """
+        name = self.get_sort_by_field()
         try:
-            field = self.model.get_field(self.get_sort_by_field())
+            field = self.model.get_field(name)
         except LookupError as e:
-            raise SearchFieldLookupError from e
+            # name column is assumed to be natural key
+            if name == 'name':
+                field = None
+                model = self.model
+            else:
+                raise SearchFieldLookupError from e
+        else:
+            if field.name == 'id':
+                return [field.name]
 
-        if field.name == 'id':
-            return [field.name]
-
-        if not field.is_relation:
-            return [field.name]
+            if field.is_relation:
+                model = field.related_model
+            else:
+                return [field.name]
 
         try:
-            kw = field.related_model.natural_lookup(None)
+            kw = model.natural_lookup(None)
         except Exception as e:
             raise SearchFieldLookupError from e
 
-        if len(kw) != 1:
-            raise SearchFieldLookupError
-
-        return [field.name + '__' + list(kw.keys())[0]]
+        return [(field.name + '__' if field else '') + i for i in kw.keys()]
 
 
 class CSVRenderer():

@@ -48,6 +48,7 @@ def get_field_search_form(*fields):
         field = forms.CharField(
             label=i.capitalize().replace('__', ' '),
             strip=True,
+            required=False,
         )
         opts[name] = field
     return type('FieldSearchForm', (forms.Form, ), opts)
