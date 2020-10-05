@@ -247,7 +247,7 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
                     col_kw['verbose_name'] = verbose_name
 
         if accessor == 'name':
-            table_class = tables.Column
+            col_class = tables.Column
             if 'name' not in model.get_fields().names:
                 # name is actually the natural property, so have to set
                 # some proxy sorting, else the machinery tries to fetch the
@@ -259,7 +259,7 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
             col_kw['linkify'] = True
 
         elif accessor == 'id':
-            table_class = tables.Column
+            col_class = tables.Column
             # make one of id or name columns have an edit link / hide id if
             # name is present
             col_kw['linkify'] = 'name' not in field_names
@@ -267,29 +267,29 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
 
         # m2m fields
         elif field is not None and field.many_to_many:
-            table_class = tables.ManyToManyColumn
+            col_class = tables.ManyToManyColumn
 
         elif name == 'natural':
-            table_class = tables.Column
+            col_class = tables.Column
             # TODO: add order by proxy
             col_kw['orderable'] = False
 
         # averages
         elif accessor == 'avg_group_count':
-            table_class = CountColumn
+            col_class = CountColumn
             col_kw['view'] = view
             col_kw['group_by'] = view.avg_by
             col_kw['force_verbose_name'] = 'avg group count'
 
         elif isinstance(field, DecimalField):
-            table_class = DecimalColumn
+            col_class = DecimalColumn
             col_kw['places'] = getattr(field, 'decimal_places',
                                        DecimalColumn.DEFAULT_PLACES)
 
         else:
-            table_class = tables.Column
+            col_class = tables.Column
 
-        opts[col] = table_class(**col_kw)
+        opts[col] = col_class(**col_kw)
 
     if count_columns:
         # reverse relations -> count columns
