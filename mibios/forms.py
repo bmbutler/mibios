@@ -36,16 +36,21 @@ class UploadFileForm(forms.Form):
     )
 
 
-def get_field_search_form(field):
+def get_field_search_form(*fields):
     """
     Factory to build field search forms
+
+    :param fields: list of field names
     """
-    name = QUERY_FILTER + '-' + field + '__regex'
-    field = forms.CharField(
-        label=field.capitalize().replace('__', ' '),
-        strip=True,
-    )
-    return type('FieldSearchForm', (forms.Form, ), {name: field})
+    opts = {}
+    for i in fields:
+        name = QUERY_FILTER + '-' + i + '__regex'
+        field = forms.CharField(
+            label=i.capitalize().replace('__', ' '),
+            strip=True,
+        )
+        opts[name] = field
+    return type('FieldSearchForm', (forms.Form, ), opts)
 
 
 def export_form_factory(view):

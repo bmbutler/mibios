@@ -571,7 +571,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             if add_search_form:
                 try:
                     ctx['field_search_form'] = \
-                        get_field_search_form(self._get_search_field())()
+                        get_field_search_form(*self.get_search_field())()
                 except SearchFieldLookupError:
                     pass
 
@@ -587,11 +587,14 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
 
         return ctx
 
-    def _get_search_field(self):
+    def get_search_field(self):
         """
         Helper to figure out on which field to search
 
-        If this returns None no search field should be displayed
+        Returns a non-empty list of field names, else raises
+        SearchFieldLookupError to indicate that the current sort-by column has
+        no corresponding field(s) on which to perform a search, i.e.  no search
+        form should be displayed.
         """
         try:
             field = self.model.get_field(self.get_sort_by_field())
@@ -599,10 +602,10 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             raise SearchFieldLookupError from e
 
         if field.name == 'id':
-            return field.name
+            return [field.name]
 
         if not field.is_relation:
-            return field.name
+            return [field.name]
 
         try:
             kw = field.related_model.natural_lookup(None)
@@ -612,7 +615,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         if len(kw) != 1:
             raise SearchFieldLookupError
 
-        return field.name + '__' + list(kw.keys())[0]
+        return [field.name + '__' + list(kw.keys())[0]]
 
 
 class CSVRenderer():
