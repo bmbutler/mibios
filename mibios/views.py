@@ -435,7 +435,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             q = ~q
 
         log.debug('QUERYSET FILTER:', q)
-        qs = super().get_queryset().filter(q)
+        qs = super().get_queryset().select_related().filter(q)
         # Do not annotate with rev rel counts on the average table.  Doing so
         # will mess up the group count in some circumstances (group members
         # each counted multiply times (for each rev rel count))
