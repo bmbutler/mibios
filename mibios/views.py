@@ -32,6 +32,10 @@ from .utils import getLogger
 log = getLogger(__name__)
 
 
+class SearchFieldLookupError(LookupError):
+    pass
+
+
 class UserRequiredMixin(LoginRequiredMixin):
     raise_exception = True
     permission_denied_message = 'You don\'t have an active user account here.'
@@ -565,8 +569,11 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                 ctx['filter_link_data'] = filter_link_data
             ctx['sort_by_stats'] = stats
             if add_search_form:
-                ctx['field_search_form'] = \
-                    get_field_search_form(sort_by_field)()
+                try:
+                    ctx['field_search_form'] = \
+                        get_field_search_form(self._get_search_field())()
+                except SearchFieldLookupError:
+                    pass
 
         # the original querystring:
         query = self.request.GET.urlencode()
@@ -579,6 +586,33 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         ctx['avg_by_data'] = {'-'.join(i): i for i in self.model.average_by}
 
         return ctx
+
+    def _get_search_field(self):
+        """
+        Helper to figure out on which field to search
+
+        If this returns None no search field should be displayed
+        """
+        try:
+            field = self.model.get_field(self.get_sort_by_field())
+        except LookupError as e:
+            raise SearchFieldLookupError from e
+
+        if field.name == 'id':
+            return field.name
+
+        if not field.is_relation:
+            return field.name
+
+        try:
+            kw = field.related_model.natural_lookup(None)
+        except Exception as e:
+            raise SearchFieldLookupError from e
+
+        if len(kw) != 1:
+            raise SearchFieldLookupError
+
+        return field.name + '__' + list(kw.keys())[0]
 
 
 class CSVRenderer():

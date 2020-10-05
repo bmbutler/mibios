@@ -42,7 +42,7 @@ def get_field_search_form(field):
     """
     name = QUERY_FILTER + '-' + field + '__regex'
     field = forms.CharField(
-        label=field.capitalize(),
+        label=field.capitalize().replace('__', ' '),
         strip=True,
     )
     return type('FieldSearchForm', (forms.Form, ), {name: field})
