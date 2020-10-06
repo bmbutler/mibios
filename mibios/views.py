@@ -444,7 +444,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                 field = self.model.get_field(i)
             except LookupError:
                 continue
-            if field.is_relation:
+            if field.is_relation and not field.many_to_many:
                 related_fields.append(i)
 
         log.debug('get_queryset:', f'{q}', f'{related_fields}')
