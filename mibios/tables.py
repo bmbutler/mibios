@@ -143,6 +143,23 @@ class CountColumn(tables.Column):
         return format_html('all: <a href={}>{}</a>', self.footer_url, total)
 
 
+class AvgGroupCountColumn(CountColumn):
+    """
+    Group count column for average tables
+
+    Need a different (i.e. the old manual) way to sum the total for the footer
+    because the queryset for average tables is different.  The CountColumn way
+    causes an OperationError (syntax error at the database?) so putting this
+    into a subclass makes the manual summing regular for average tables.  The
+    disadvantage remains that the database is queried again.
+    """
+    def render_footer(self, bound_column, table):
+        total = 0
+        for row in table.data:
+            total += bound_column.accessor.resolve(row)
+        return format_html('all: <a href={}>{}</a>', self.footer_url, total)
+
+
 class ManyToManyColumn(tables.ManyToManyColumn):
     def __init__(self, *args, **kwargs):
         if 'default' not in kwargs:
@@ -276,7 +293,7 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
 
         # averages
         elif accessor == 'avg_group_count':
-            col_class = CountColumn
+            col_class = AvgGroupCountColumn
             col_kw['view'] = view
             col_kw['group_by'] = view.avg_by
             col_kw['force_verbose_name'] = 'avg group count'
