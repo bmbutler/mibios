@@ -296,10 +296,11 @@ class QuerySet(models.QuerySet):
             count_args[name] = models.Count(i.name, **kwargs)
 
         qs = self.annotate(**count_args)
-        qs._pre_annotation_clone = self.all()
-        if qs._rev_rel_count_fields is None:
-            qs._rev_rel_count_fields = []
-        qs._rev_rel_count_fields += count_args.keys()
+        if count_args:
+            qs._pre_annotation_clone = self.all()
+            if qs._rev_rel_count_fields is None:
+                qs._rev_rel_count_fields = []
+            qs._rev_rel_count_fields += count_args.keys()
         log.debug(f'COUNT COLS: {count_args}')
         return qs
 
