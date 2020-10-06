@@ -438,8 +438,17 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         if self.negate:
             q = ~q
 
-        log.debug('QUERYSET FILTER:', q)
-        qs = super().get_queryset().select_related().filter(q)
+        related_fields = []
+        for i in self.fields:
+            try:
+                field = self.model.get_field(i)
+            except LookupError:
+                continue
+            if field.is_relation:
+                related_fields.append(i)
+
+        log.debug('get_queryset:', f'{q}', f'{related_fields}')
+        qs = super().get_queryset().select_related(*related_fields).filter(q)
         # Do not annotate with rev rel counts on the average table.  Doing so
         # will mess up the group count in some circumstances (group members
         # each counted multiply times (for each rev rel count))
