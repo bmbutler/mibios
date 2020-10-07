@@ -147,6 +147,68 @@ class AbundanceQuerySet(QuerySet):
         recs = sh.itertuples(index=True, name=None)
         return chain([header], recs)
 
+    @classmethod
+    def _normalize(cls, group, size, debug=0):
+        """
+        Scale counts to normal sample size
+        """
+        group = list(group)
+        debug <= 1 or print(f'{group=}')
+        vals = [i[0] for i in group]
+        debug <= 1 or print(f'{vals=}')
+        total = sum(vals)
+        debug <= 0 or print(f'{total=}')
+        f = size / total
+        frac = [i * f for i in vals]
+        debug <= 1 or print(f'{frac=}')
+        disc = [round(i) for i in frac]
+        overhang = sum(disc) - size
+        debug <= 0 or print(f'{overhang=}')
+        for _ in range(abs(overhang)):
+            errs = [i - j for i, j in zip(disc, frac)]  # round-up errs are pos
+            debug <= 1 or print(f'{disc=} {sum(disc)=}')
+            debug <= 1 or print(f'{errs=}')
+            if overhang > 0:
+                abs_err_max = max(errs)
+            else:
+                abs_err_max = min(errs)
+            idx = errs.index(abs_err_max)
+            if overhang > 0:
+                disc[idx] -= 1
+            else:
+                disc[idx] += 1
+            debug <= 0 or print(f'{idx=} {disc[idx]=} err: '
+                                '{errs[idx]}->{disc[idx]-frac[idx]}')
+        debug <= 1 or print(f'{disc=} {sum(disc)=}')
+        debug <= 1 or print(sum(disc))
+        return ((i, j, k) for i, (_, j, k) in zip(disc, group))
+
+    @classmethod
+    def test_norm(cls, vals, norm_size, verbose=False, verboser=False):
+        if verboser:
+            debug = 2
+        elif verbose:
+            debug = 1
+        else:
+            debug = 0
+        ret = cls._normalize(
+            ((i, None, None) for i in vals),
+            norm_size,
+            debug=debug,
+        )
+        if not verboser:
+            print([i[0] for i in ret])
+
+    @classmethod
+    def _unit_normalize(cls, group):
+        """
+        Normalize to unit interval, return fractions
+        """
+        group = list(group)
+        vals = [i[0] for i in group]
+        total = sum(vals)
+        return ((i / total, j, k) for i, j, k in group)
+
     def _shared_file_items(self, asvs, group):
         """
         Generator over the items of a row in a shared file
@@ -166,9 +228,14 @@ class AbundanceQuerySet(QuerySet):
             else:
                 yield 0
 
-    def _shared_file_rows(self, asvs):
+    def _shared_file_rows(self, asvs, normalize=None):
         """
         Generator of shared file rows
+
+        :param int normalize: Normalization mode.  If None then absolute counts
+        are returned.  If 0 then relative abundance, as fractional values in
+        [0, 1] are returned.  If an integer above 0 is given, then the counts
+        are normalized by 'discrete scaling' to the targeted sample size.
         """
         it = (
             self.order_by('sequencing', 'asv')
@@ -176,9 +243,13 @@ class AbundanceQuerySet(QuerySet):
             .iterator()
         )
         for name, group in groupby(it, key=itemgetter(1)):
+            if normalize == 0:
+                group = self._unit_normalize(group)
+            elif normalize is not None:
+                group = self._normalize(group, size=normalize)
             yield tuple(chain([name], self._shared_file_items(asvs, group)))
 
-    def as_shared_values_list(self):
+    def as_shared_values_list(self, normalize=None):
         """
         Make mothur shared table for download
 
@@ -199,7 +270,10 @@ class AbundanceQuerySet(QuerySet):
         ))
         header = ['Group'] + list(asvs.values())
 
-        return chain([header], self._shared_file_rows(list(asvs.keys())))
+        return chain([header], self._shared_file_rows(
+            list(asvs.keys()),
+            normalize=normalize,
+        ))
 
 
 class Abundance(Model):

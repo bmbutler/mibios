@@ -10,7 +10,7 @@ _abundance = Abundance._meta.model_name
 
 urlpatterns = [
     path(
-        _abundance + '/export-shared/<str:project>/',
+        _abundance + '/export-shared/<str:shared_type>/<str:project>/',
         views.ExportSharedView.as_view(data_name=_abundance),
         name='export_shared',
     ),

@@ -1,3 +1,9 @@
 {% if uniform_project %}
-<p>Export for analysis project {{ uniform_project }}:<a href="{% url 'mibios_seq:export_shared' project=uniform_project %}{{ querystr }}">shared file</a></p>
+<p>
+Export shared table data for analysis project {{ uniform_project }}:
+<br>
+{% for i in shared_types %}
+    <a href="{% url 'mibios_seq:export_shared' project=uniform_project shared_type=i %}{{ querystr }}">{{ i }}</a>
+{% endfor %}
+</p>
 {% endif %}
