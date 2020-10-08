@@ -294,19 +294,14 @@ class AbundanceQuerySet(QuerySet):
 
 class Abundance(Model):
     history = None
-    name = models.CharField(
-        max_length=50, verbose_name='project internal id',
-        default='',
-        blank=True,
-        help_text='project specific ASV/OTU identifier',
+    otu = models.ForeignKey(
+        'OTU',
+        on_delete=models.CASCADE,
+        editable=False,
+        verbose_name='OTU',
     )
     count = models.PositiveIntegerField(
         help_text='absolute abundance',
-        editable=False,
-    )
-    project = models.ForeignKey(
-        'AnalysisProject',
-        on_delete=models.CASCADE,
         editable=False,
     )
     sequencing = models.ForeignKey(
@@ -314,16 +309,16 @@ class Abundance(Model):
         on_delete=models.CASCADE,
         editable=False,
     )
-    otu = models.ForeignKey(
-        'OTU',
+    project = models.ForeignKey(
+        'AnalysisProject',
         on_delete=models.CASCADE,
         editable=False,
+        verbose_name='analysis project',
     )
 
     class Meta:
         unique_together = (
-            # one count per project / ASV / sample
-            ('name', 'sequencing', 'project'),
+            # one count per project / OTU / sample
             ('otu', 'sequencing', 'project'),
         )
 
