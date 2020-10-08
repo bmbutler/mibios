@@ -153,21 +153,21 @@ class AbundanceQuerySet(QuerySet):
         Scale counts to normal sample size
         """
         group = list(group)
-        debug <= 1 or print(f'{group=}')
+        debug <= 1 or print(f'group={group}')
         vals = [i[0] for i in group]
-        debug <= 1 or print(f'{vals=}')
+        debug <= 1 or print(f'vals={vals}')
         total = sum(vals)
-        debug <= 0 or print(f'{total=}')
+        debug <= 0 or print(f'total={total}')
         f = size / total
         frac = [i * f for i in vals]
-        debug <= 1 or print(f'{frac=}')
+        debug <= 1 or print(f'frac={frac}')
         disc = [round(i) for i in frac]
         overhang = sum(disc) - size
-        debug <= 0 or print(f'{overhang=}')
+        debug <= 0 or print(f'overhang={overhang}')
         for _ in range(abs(overhang)):
             errs = [i - j for i, j in zip(disc, frac)]  # round-up errs are pos
-            debug <= 1 or print(f'{disc=} {sum(disc)=}')
-            debug <= 1 or print(f'{errs=}')
+            debug <= 1 or print(f'dict={disc} at {sum(disc)}')
+            debug <= 1 or print(f'errs={errs}')
             if overhang > 0:
                 abs_err_max = max(errs)
             else:
@@ -177,9 +177,9 @@ class AbundanceQuerySet(QuerySet):
                 disc[idx] -= 1
             else:
                 disc[idx] += 1
-            debug <= 0 or print(f'{idx=} {disc[idx]=} err: '
+            debug <= 0 or print(f'idx={idx} count={disc[idx]} err: '
                                 '{errs[idx]}->{disc[idx]-frac[idx]}')
-        debug <= 1 or print(f'{disc=} {sum(disc)=}')
+        debug <= 1 or print(f'disc={disc} at {sum(disc)}')
         debug <= 1 or print(sum(disc))
         return ((i, j, k) for i, (_, j, k) in zip(disc, group))
 
