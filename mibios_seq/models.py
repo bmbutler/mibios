@@ -314,7 +314,7 @@ class Abundance(Model):
         on_delete=models.CASCADE,
         editable=False,
     )
-    asv = models.ForeignKey(
+    otu = models.ForeignKey(
         'OTU',
         on_delete=models.CASCADE,
         editable=False,
@@ -324,7 +324,7 @@ class Abundance(Model):
         unique_together = (
             # one count per project / ASV / sample
             ('name', 'sequencing', 'project'),
-            ('asv', 'sequencing', 'project'),
+            ('otu', 'sequencing', 'project'),
         )
 
     objects = Manager.from_queryset(AbundanceQuerySet)()
@@ -404,17 +404,22 @@ class AnalysisProject(Model):
 
 
 class OTU(Model):
-    PREFIX = 'ASV'
     NUM_WIDTH = 5
 
-    number = models.PositiveIntegerField(null=True, blank=True, unique=True)
-    taxon = models.ForeignKey('Taxonomy', on_delete=models.SET_NULL,
-                              blank=True, null=True)
-    sequence = models.CharField(
-        max_length=300,  # > length of 16S V4
-        blank=True,
+    ASV_KIND = 'ASV'
+    PCT97_KIND = '97pct'
+    KIND_CHOICES = (
+        (ASV_KIND, 'ASV'),
+        (PCT97_KIND, '97% OTU'),
     )
-    sequence_fk = models.ForeignKey(
+
+    prefix = models.CharField(max_length=8)
+    number = models.PositiveIntegerField()
+    project = models.ForeignKey('AnalysisProject', on_delete=models.CASCADE,
+                                null=True, blank=True)
+    kind = models.CharField(max_length=5, choices=KIND_CHOICES,
+                            verbose_name='OTU type')
+    sequence = models.ForeignKey(
         Sequence,
         on_delete=models.SET_NULL,
         null=True,
@@ -423,7 +428,8 @@ class OTU(Model):
     )
 
     class Meta:
-        ordering = ('number',)
+        ordering = ('prefix', 'number',)
+        unique_together = (('prefix', 'number', 'project'),)
 
     def __str__(self):
         return str(self.natural)
@@ -444,20 +450,26 @@ class OTU(Model):
 
     @Model.natural.getter
     def natural(self):
-        if self.number:
-            return self.PREFIX + '{}'.format(self.number).zfill(self.NUM_WIDTH)
-        else:
-            return self.pk
+        return self.prefix + '{}'.format(self.number).zfill(self.NUM_WIDTH)
 
     @classmethod
     def natural_lookup(cls, value):
         """
         Given e.g. ASV00023, return dict(number=23)
 
-        Raises ValueError if value does not parse
+        Raises ValueError if value does not end with a number.
+        Raises KeyError if value has no non-numeric prefix.
         """
-        # FIXME: require casefolded ASV prefix?
-        return dict(number=int(value[len(cls.PREFIX):]))
+        if value is None:
+            return dict(prefix=None, number=None)
+
+        places = 0
+        while value[-1 - places].isdecimal():
+            places += 1
+
+        number = int(value[-places:])
+        prefix = value[:-places]
+        return dict(prefix=prefix, number=number)
 
     @classmethod
     @atomic
