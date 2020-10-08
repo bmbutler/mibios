@@ -103,7 +103,7 @@ class SequencingRun(Model):
 
 
 class Strain(Model):
-    asv = models.ForeignKey('ASV', on_delete=models.SET_NULL, blank=True,
+    asv = models.ForeignKey('OTU', on_delete=models.SET_NULL, blank=True,
                             null=True)
 
 
@@ -265,7 +265,7 @@ class AbundanceQuerySet(QuerySet):
         # mapping, use values for header, keys for zeros injection
         asvs = OrderedDict((
             (i.pk, i.natural)
-            for i in ASV.objects.iterator()
+            for i in OTU.objects.iterator()
             if i.pk in asv_pks
         ))
         header = ['Group'] + list(asvs.values())
@@ -299,7 +299,7 @@ class Abundance(Model):
         editable=False,
     )
     asv = models.ForeignKey(
-        'ASV',
+        'OTU',
         on_delete=models.CASCADE,
         editable=False,
     )
@@ -332,11 +332,11 @@ class Abundance(Model):
         sh = MothurShared(file, verbose=False, threads=1)
         with atomic():
             if fasta:
-                fasta_result = ASV.from_fasta(fasta)
+                fasta_result = OTU.from_fasta(fasta)
 
             AbundanceImportFile.create_from_file(file=file, project=project)
             sequencings = Sequencing.published.in_bulk(field_name='name')
-            asvs = ASV.published.in_bulk(field_name='number')  # get numbered
+            asvs = OTU.published.in_bulk(field_name='number')  # get numbered
 
             if fasta:
                 asvs.update(fasta_result['irregular'])
@@ -355,7 +355,7 @@ class Abundance(Model):
                     continue
 
                 try:
-                    asv_key = ASV.natural_lookup(asv)['number']
+                    asv_key = OTU.natural_lookup(asv)['number']
                 except ValueError:
                     asv_key = asv
 
@@ -378,7 +378,7 @@ class Abundance(Model):
 
 class AnalysisProject(Model):
     name = models.CharField(max_length=100, unique=True)
-    asv = models.ManyToManyField('ASV', through=Abundance, editable=False)
+    asv = models.ManyToManyField('OTU', through=Abundance, editable=False)
     description = models.TextField(blank=True)
 
     @classmethod
@@ -387,7 +387,7 @@ class AnalysisProject(Model):
         return super().get_fields(with_m2m=False, **kwargs)
 
 
-class ASV(Model):
+class OTU(Model):
     PREFIX = 'ASV'
     NUM_WIDTH = 5
 
@@ -549,7 +549,7 @@ class Taxonomy(Model):
         ignored.
         """
         file_rec = ImportFile.create_from_file(file=file)
-        asvs = {i.number: i for i in ASV.objects.select_related()}
+        asvs = {i.number: i for i in OTU.objects.select_related()}
         is_header = True  # first line is header
         updated, total = 0, 0
         for line in file_rec.file.open('r'):
@@ -567,7 +567,7 @@ class Taxonomy(Model):
                     taxid = lctaxid
 
                 taxid = int(taxid)
-                num = ASV.natural_lookup(asv)['number']
+                num = OTU.natural_lookup(asv)['number']
 
                 if num not in asvs:
                     # ASV not in database
@@ -591,7 +591,7 @@ class Taxonomy(Model):
                     f'error loading file: {file} at line {total}: {row}'
                 ) from e
 
-        ASV.objects.bulk_update(asvs.values(), ['taxon'])
+        OTU.objects.bulk_update(asvs.values(), ['taxon'])
         return dict(total=total, update=updated)
 
 
