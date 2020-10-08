@@ -13,7 +13,10 @@ class UploadFileForm(forms.Form):
                   'not committed to database',
     )
     overwrite = forms.BooleanField(
-        widget=forms.RadioSelect(choices=((True, 'overwrite'), (False, 'append-only'))),
+        widget=forms.RadioSelect(
+            choices=((True, 'overwrite'), (False, 'append-only')),
+            attrs={'class': None},
+        ),
         initial=False,
         required=False,
         label='data import mode',
@@ -25,7 +28,10 @@ class UploadFileForm(forms.Form):
                   'interface to delete records or blank a field.',
     )
     erase_on_blank = forms.BooleanField(
-        widget=forms.RadioSelect(choices=((True, 'erase'), (False, 'keep values'))),
+        widget=forms.RadioSelect(
+            choices=((True, 'erase'), (False, 'keep values')),
+            attrs={'class': None},
+        ),
         initial=False,
         required=False,
         label='blank value behavior',
@@ -82,14 +88,14 @@ def export_form_factory(view):
     opts = {}
 
     opts[QUERY_FIELD] = forms.MultipleChoiceField(
-        widget=forms.CheckboxSelectMultiple,
+        widget=forms.CheckboxSelectMultiple(attrs={'class': None}),
         choices=choices,
         initial=initial_fields,
         label='fields to be exported',
     )
 
     opts[QUERY_FORMAT] = forms.ChoiceField(
-        widget=forms.RadioSelect,
+        widget=forms.RadioSelect(attrs={'class': None}),
         choices=[(i[0], i[2].description) for i in view.FORMATS],
         initial=view.DEFAULT_FORMAT,
         label='file format',

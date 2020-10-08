@@ -222,7 +222,6 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
     HIGH_UNIQUE_LIMIT = 30
 
     def get(self, request, *args, **kwargs):
-        log.debug('GET query string:', request.GET)
         self.update_state(*self.compile_state_params())
         return super().get(request, *args, **kwargs)
 
@@ -766,6 +765,7 @@ class ExportFormView(ExportBaseMixin, FormMixin, TableView):
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['page_title'].append('export')
+        ctx['avg_url_slug'] = None
         return ctx
 
 
