@@ -102,9 +102,25 @@ class SequencingRun(Model):
         return dict(serial=s, number=int(n))
 
 
+class Sequence(Model):
+    """
+    Models a 16S/V4 sequence
+
+    Can be an ASV or a representative sequence
+    """
+    taxon = models.ForeignKey('Taxonomy', on_delete=models.SET_NULL,
+                              blank=True, null=True)
+    seq = models.CharField(
+        max_length=300,  # >> length of 16S V4
+        unique=True,
+        editable=False,
+        verbose_name='sequence',
+    )
+
+
 class Strain(Model):
-    asv = models.ForeignKey('OTU', on_delete=models.SET_NULL, blank=True,
-                            null=True)
+    sequence = models.ForeignKey(Sequence, on_delete=models.SET_NULL,
+                                 blank=True, null=True)
 
 
 class AbundanceQuerySet(QuerySet):
@@ -396,7 +412,13 @@ class OTU(Model):
                               blank=True, null=True)
     sequence = models.CharField(
         max_length=300,  # > length of 16S V4
-        unique=True,
+        blank=True,
+    )
+    sequence_fk = models.ForeignKey(
+        Sequence,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         editable=False,
     )
 
