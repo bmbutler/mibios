@@ -98,8 +98,12 @@ class SequencingRun(Model):
 
     @classmethod
     def natural_lookup(cls, value):
-        s, n = value.split('-')
-        return dict(serial=s, number=int(n))
+        if value is None:
+            s, n = None, None
+        else:
+            s, n = value.split('-')
+            n = int(n)
+        return dict(serial=s, number=n)
 
 
 class Sequence(Model):
@@ -116,6 +120,9 @@ class Sequence(Model):
         editable=False,
         verbose_name='sequence',
     )
+
+    def __str__(self):
+        return self.seq[:20] + '...'
 
 
 class Strain(Model):
@@ -143,8 +150,8 @@ class AbundanceQuerySet(QuerySet):
         """
         df = (
             self
-            .as_dataframe('asv', 'sequencing', 'count', natural=True)
-            .pivot(index='sequencing', columns='asv', values='count')
+            .as_dataframe('otu', 'sequencing', 'count', natural=True)
+            .pivot(index='sequencing', columns='otu', values='count')
         )
         df.fillna(value=0, inplace=True)  # pivot introduced NaNs
         return df
@@ -225,26 +232,26 @@ class AbundanceQuerySet(QuerySet):
         total = sum(vals)
         return ((i / total, j, k) for i, j, k in group)
 
-    def _shared_file_items(self, asvs, group):
+    def _shared_file_items(self, otus, group):
         """
         Generator over the items of a row in a shared file
 
-        :param asvs: iterable over all ASV pks of QuerySet in order
+        :param otus: iterable over all ASV pks of QuerySet in order
         :param group: Data for one sample, row; an iterable over triplets
-                      (count, seq name, ASV pk)
+                      (count, seq name, OTU pk)
         """
-        count, _, asv_pk = next(group)
-        for i in asvs:
-            if asv_pk == i:
+        count, _, otu_pk = next(group)
+        for i in otus:
+            if otu_pk == i:
                 yield count
                 try:
-                    count, _, asv_pk = next(group)
+                    count, _, otu_pk = next(group)
                 except StopIteration:
                     pass
             else:
                 yield 0
 
-    def _shared_file_rows(self, asvs, normalize=None):
+    def _shared_file_rows(self, otus, normalize=None):
         """
         Generator of shared file rows
 
@@ -254,8 +261,8 @@ class AbundanceQuerySet(QuerySet):
         are normalized by 'discrete scaling' to the targeted sample size.
         """
         it = (
-            self.order_by('sequencing', 'asv')
-            .values_list('count', 'sequencing__name', 'asv')
+            self.order_by('sequencing', 'otu')
+            .values_list('count', 'sequencing__name', 'otu')
             .iterator()
         )
         for name, group in groupby(it, key=itemgetter(1)):
@@ -263,7 +270,7 @@ class AbundanceQuerySet(QuerySet):
                 group = self._unit_normalize(group)
             elif normalize is not None:
                 group = self._normalize(group, size=normalize)
-            yield tuple(chain([name], self._shared_file_items(asvs, group)))
+            yield tuple(chain([name], self._shared_file_items(otus, group)))
 
     def as_shared_values_list(self, normalize=None):
         """
@@ -274,20 +281,20 @@ class AbundanceQuerySet(QuerySet):
         mirroring the skipping of zeros at import.
         """
         # get ASVs that actually occur in QuerySet:
-        asv_pks = set(self.values_list('asv', flat=True).distinct().iterator())
+        otu_pks = set(self.values_list('otu', flat=True).distinct().iterator())
         # ASV order here must correspond to order in which count values are
         # generated later, in the _shared_file_rows() method.  It is assumed
         # that the ASV model defines an appropriate order; ASV pk->name
         # mapping, use values for header, keys for zeros injection
-        asvs = OrderedDict((
+        otus = OrderedDict((
             (i.pk, i.natural)
             for i in OTU.objects.iterator()
-            if i.pk in asv_pks
+            if i.pk in otu_pks
         ))
-        header = ['Group'] + list(asvs.values())
+        header = ['Group'] + list(otus.values())
 
         return chain([header], self._shared_file_rows(
-            list(asvs.keys()),
+            list(otus.keys()),
             normalize=normalize,
         ))
 
@@ -329,11 +336,12 @@ class Abundance(Model):
         return super().__str__() + f' |{self.count}|'
 
     @classmethod
-    def from_file(cls, file, project, fasta=None):
+    def from_file(cls, file, project, fasta=None, otu_type=None):
         """
         Load abundance data from shared file
 
         :param file fasta: Fasta file object
+        :param str otu_type: A valid OTU type.
 
         If a fasta file is given, then the input does not need to use proper
         ASV numbers.  Instead ASVs are identified by sequence and ASV objects
@@ -343,18 +351,21 @@ class Abundance(Model):
         sh = MothurShared(file, verbose=False, threads=1)
         with atomic():
             if fasta:
-                fasta_result = OTU.from_fasta(fasta)
+                fasta_result = OTU.from_fasta(fasta, project=project,
+                                              kind=otu_type)
+            else:
+                fasta_result = None
 
             AbundanceImportFile.create_from_file(file=file, project=project)
             sequencings = Sequencing.published.in_bulk(field_name='name')
-            asvs = OTU.published.in_bulk(field_name='number')  # get numbered
-
-            if fasta:
-                asvs.update(fasta_result['irregular'])
+            otus = {
+                (i.prefix, i.number): i
+                for i in OTU.published.all().filter(project=project).iterator()
+            }
 
             skipped, zeros = 0, 0
             objs = []
-            for (sample, asv), count in sh.counts.stack().items():
+            for (sample, otu), count in sh.counts.stack().items():
                 if count == 0:
                     # don't store zeros
                     zeros += 1
@@ -366,30 +377,36 @@ class Abundance(Model):
                     continue
 
                 try:
-                    asv_key = OTU.natural_lookup(asv)['number']
+                    otu_key = OTU.natural_lookup(otu)
                 except ValueError:
-                    asv_key = asv
+                    raise UserDataError(
+                        f'Irregular OTU identifier not supported: {otu}'
+                    )
+                else:
+                    otu_key = (otu_key['prefix'], otu_key['number'])
 
                 try:
-                    asv_obj = asvs[asv_key]
+                    otu_obj = otus[otu_key]
                 except KeyError:
-                    raise UserDataError(f'Unknown ASV: {asv}')
+                    raise UserDataError(
+                        f'OTU unknown to analysis project: {otu}'
+                    )
 
                 objs.append(cls(
-                    name=asv,
                     count=count,
                     project=project,
                     sequencing=sequencings[sample],
-                    asv=asv_obj,
+                    otu=otu_obj,
                 ))
 
             cls.published.bulk_create(objs)
-        return dict(count=len(objs), zeros=zeros, skipped=skipped)
+        return dict(count=len(objs), zeros=zeros, skipped=skipped,
+                    fasta=fasta_result)
 
 
 class AnalysisProject(Model):
     name = models.CharField(max_length=100, unique=True)
-    asv = models.ManyToManyField('OTU', through=Abundance, editable=False)
+    otu = models.ManyToManyField('OTU', through=Abundance, editable=False)
     description = models.TextField(blank=True)
 
     @classmethod
@@ -411,6 +428,7 @@ class OTU(Model):
     prefix = models.CharField(max_length=8)
     number = models.PositiveIntegerField()
     project = models.ForeignKey('AnalysisProject', on_delete=models.CASCADE,
+                                related_name='owned_otus',
                                 null=True, blank=True)
     kind = models.CharField(max_length=5, choices=KIND_CHOICES,
                             verbose_name='OTU type')
@@ -421,6 +439,8 @@ class OTU(Model):
         blank=True,
         editable=False,
     )
+
+    hidden_fields = ['prefix', 'number']  # use name property instead
 
     class Meta:
         ordering = ('prefix', 'number',)
@@ -468,21 +488,22 @@ class OTU(Model):
 
     @classmethod
     @atomic
-    def from_fasta(cls, file):
+    def from_fasta(cls, file, project=None, kind=None):
         """
         Import from given fasta file
 
-        For fasta headers that do not have ASV00000 type id the returned
-        'irregular' dict will map the irregular names to the corresponding ASV
-        instance.  Re-loading un-numbered sequences with a proper ASV number
-        will get the number updated.  If a sequence already has a number and it
-        doesn't match the number in the file an IntegrityError is raised.
+        :param file: Fasta-formatted input file
+        :param AnalysisProject project: AnalysisProject that generated the OTUs
+                                        If this is None, then the OTU kind will
+                                        be set to ASV.
+        :param str kind: OTU kind, must be a valid choice or must be None if
+                         project is also None.
         """
         file_rec = ImportFile.create_from_file(file=file)
 
         try:
             file_rec.file.open('r')
-            return cls._from_fasta(file_rec)
+            return cls._from_fasta(file_rec, project, kind)
         except Exception:
             try:
                 file_rec.file.close()
@@ -494,9 +515,9 @@ class OTU(Model):
             file_rec.file.close()
 
     @classmethod
-    def _from_fasta(cls, file_rec):
-        added, updated, total = 0, 0, 0
-        irregular = {}
+    def _from_fasta(cls, file_rec, project, kind):
+        added, updated, skipped, total = 0, 0, 0, 0
+        seq_added = 0
 
         # passing the filehandle to SeqIO.parse: The SeqIO fasta parser tries
         # to skip over comments and empty lines at the begin of the file by
@@ -509,26 +530,44 @@ class OTU(Model):
         # and hope this won't blow up when something about the file storage
         # changes.
         for i in SeqIO.parse(file_rec.file.file.file, 'fasta'):
-            try:
-                kwnum = cls.natural_lookup(i.id)  # expect {'number': N}
+            try:  # expect {'prefix': X, 'number': N}
+                kwnum = cls.natural_lookup(i.id)
             except ValueError:
                 # SeqIO sequence id does not parse,
-                # is something from analysis pipeline, no ASV number
-                kwnum = {}
+                # is something from analysis pipeline, no OTU number?
+                skipped += 1
+                continue
 
+            seq, new_seq = Sequence.objects.get_or_create(seq=i.seq)
+            if new_seq:
+                seq_added += 1
+
+            if project is None and kind is None:
+                kind = cls.ASV_KIND
+
+            obj_kw = dict(
+                prefix=kwnum['prefix'],
+                number=kwnum['number'],
+                kind=kind,
+                project=project,
+            )
+            has_changed = False
             try:
-                obj = cls.objects.get(sequence=i.seq)
+                obj = cls.objects.get(**obj_kw)
             except cls.DoesNotExist:
-                obj = cls(sequence=i.seq, **kwnum)
+                obj = cls(sequence=seq, **obj_kw)
                 added += 1
+                has_changed = True
             else:
-                if obj.number is None and kwnum:
-                    # update number
-                    for k, v in kwnum.items():
-                        setattr(obj, k, v)
+                if obj.seq is None:
+                    obj.seq = seq
                     updated += 1
+                    has_changed = True
+                elif obj.seq != seq:
+                    raise UserDataError(f'OTU record already exists with'
+                                        f'different sequence: {obj}')
 
-            if obj.pk is None or updated:
+            if has_changed:
                 try:
                     obj.full_clean()
                 except Exception as e:
@@ -539,14 +578,10 @@ class OTU(Model):
                 obj.add_change_record(file=file_rec, line=total + 1)
                 obj.save()
 
-            if not kwnum:
-                # save map from irregular sequence id to ASV
-                irregular[i.id] = obj
-
             total += 1
 
         return dict(total=total, new=added, updated=updated,
-                    irregular=irregular)
+                    skipped=skipped)
 
 
 class Taxonomy(Model):
@@ -578,7 +613,7 @@ class Taxonomy(Model):
         ignored.
         """
         file_rec = ImportFile.create_from_file(file=file)
-        asvs = {i.number: i for i in OTU.objects.select_related()}
+        otus = {(i.prefix, i.number): i for i in OTU.objects.select_related()}
         is_header = True  # first line is header
         updated, total = 0, 0
         for line in file_rec.file.open('r'):
@@ -596,9 +631,12 @@ class Taxonomy(Model):
                     taxid = lctaxid
 
                 taxid = int(taxid)
-                num = OTU.natural_lookup(asv)['number']
+                match = OTU.natural_lookup(asv)
+                prefix = match['prefix']
+                num = match['number']
+                del match
 
-                if num not in asvs:
+                if (prefix, num) not in otus:
                     # ASV not in database
                     continue
 
@@ -610,17 +648,17 @@ class Taxonomy(Model):
                     taxon.add_change_record(file=file_rec, line=total + 1)
                     taxon.save()
 
-                if asvs[num].taxon == taxon:
-                    del asvs[num]
+                if otus[num].taxon == taxon:
+                    del otus[num]
                 else:
-                    asvs[num].taxon = taxon
+                    otus[num].taxon = taxon
                     updated += 1
             except Exception as e:
                 raise RuntimeError(
                     f'error loading file: {file} at line {total}: {row}'
                 ) from e
 
-        OTU.objects.bulk_update(asvs.values(), ['taxon'])
+        OTU.objects.bulk_update(otus.values(), ['taxon'])
         return dict(total=total, update=updated)
 
 
