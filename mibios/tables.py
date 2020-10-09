@@ -330,11 +330,16 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
 
 
 class HistoryTable(tables.Table):
+    changes = tables.TemplateColumn("""
+        {% load static mibios_extras %}
+        {{ value|prettyformat }}
+    """)
+
     class Meta:
         model = ChangeRecord
         fields = (
-            'timestamp', 'is_created', 'is_deleted', 'user', 'file.file',
-            'line', 'command_line', 'fields',
+            'timestamp', 'is_created', 'is_deleted', 'changes', 'user',
+            'file.file', 'line', 'command_line',
         )
 
 

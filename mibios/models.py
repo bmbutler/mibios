@@ -1,5 +1,6 @@
 from collections import namedtuple, OrderedDict
 from decimal import Decimal
+import json
 from pathlib import Path
 from shutil import copy2
 
@@ -625,6 +626,12 @@ class ChangeRecord(models.Model):
         super().save(*args, **kwargs)
         self.record.history.add(self)
         del self.record.change
+
+    def fields_as_dict(self):
+        """
+        Return serialized object as dict
+        """
+        return json.loads(self.fields)[0]
 
 
 def _default_snapshot_name():

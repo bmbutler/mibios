@@ -913,6 +913,40 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
 
         return self.object_list
 
+    def get_table_data(self):
+        if self.table_data is not None:
+            return self.table_data
+
+        qs = self.get_queryset()
+
+        # extract just the fields:
+        flist = []
+        for i in qs:
+            data = i.fields_as_dict()
+            fields = data['fields']
+            fields['pk'] = data['pk']
+            flist.append(fields)
+        del data, fields
+
+        # calulate changes between successive entries
+        # processing order is oldest to newest:
+        diffs = []
+        last = {}
+        for fields in reversed(flist):
+            diffs.append({
+                k: v
+                for k, v in fields.items()
+                if k not in last or v != last[k]
+            })
+            last = fields
+        diffs = reversed(diffs)
+
+        # combine into data
+        data = qs.values()
+        for diff, row in zip(diffs, data):
+            row['changes'] = diff
+        return data
+
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['record_model'] = self.record_type.name
