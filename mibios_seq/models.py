@@ -337,7 +337,7 @@ class Abundance(Model):
         return super().__str__() + f' |{self.count}|'
 
     @classmethod
-    def from_file(cls, file, project, fasta=None, otu_type=None):
+    def from_file(cls, file, project, fasta=None):
         """
         Load abundance data from shared file
 
@@ -352,8 +352,7 @@ class Abundance(Model):
         sh = MothurShared(file, verbose=False, threads=1)
         with atomic():
             if fasta:
-                fasta_result = OTU.from_fasta(fasta, project=project,
-                                              kind=otu_type)
+                fasta_result = OTU.from_fasta(fasta, project=project)
             else:
                 fasta_result = None
 
@@ -406,8 +405,17 @@ class Abundance(Model):
 
 
 class AnalysisProject(Model):
+    ASV_TYPE = 'ASV'
+    PCT97_TYPE = '97pct'
+    OTU_TYPE_CHOICES = (
+        (ASV_TYPE, 'ASV'),
+        (PCT97_TYPE, '97% OTU'),
+    )
+
     name = models.CharField(max_length=100, unique=True)
     otu = models.ManyToManyField('OTU', through=Abundance, editable=False)
+    otu_type = models.CharField(max_length=5, choices=OTU_TYPE_CHOICES,
+                                verbose_name='OTU type')
     description = models.TextField(blank=True)
 
     @classmethod
@@ -419,20 +427,11 @@ class AnalysisProject(Model):
 class OTU(Model):
     NUM_WIDTH = 5
 
-    ASV_KIND = 'ASV'
-    PCT97_KIND = '97pct'
-    KIND_CHOICES = (
-        (ASV_KIND, 'ASV'),
-        (PCT97_KIND, '97% OTU'),
-    )
-
     prefix = models.CharField(max_length=8)
     number = models.PositiveIntegerField()
     project = models.ForeignKey('AnalysisProject', on_delete=models.CASCADE,
                                 related_name='owned_otus',
                                 null=True, blank=True)
-    kind = models.CharField(max_length=5, choices=KIND_CHOICES,
-                            verbose_name='OTU type')
     sequence = models.ForeignKey(
         Sequence,
         on_delete=models.SET_NULL,
@@ -490,22 +489,20 @@ class OTU(Model):
 
     @classmethod
     @atomic
-    def from_fasta(cls, file, project=None, kind=None):
+    def from_fasta(cls, file, project=None):
         """
         Import from given fasta file
 
         :param file: Fasta-formatted input file
         :param AnalysisProject project: AnalysisProject that generated the OTUs
-                                        If this is None, then the OTU kind will
+                                        If this is None, then the OTU type will
                                         be set to ASV.
-        :param str kind: OTU kind, must be a valid choice or must be None if
-                         project is also None.
         """
         file_rec = ImportFile.create_from_file(file=file)
 
         try:
             file_rec.file.open('r')
-            return cls._from_fasta(file_rec, project, kind)
+            return cls._from_fasta(file_rec, project)
         except Exception:
             try:
                 file_rec.file.close()
@@ -517,7 +514,7 @@ class OTU(Model):
             file_rec.file.close()
 
     @classmethod
-    def _from_fasta(cls, file_rec, project, kind):
+    def _from_fasta(cls, file_rec, project):
         added, updated, skipped, total = 0, 0, 0, 0
         seq_added = 0
 
@@ -544,13 +541,13 @@ class OTU(Model):
             if new_seq:
                 seq_added += 1
 
-            if project is None and kind is None:
-                kind = cls.ASV_KIND
+            if project and project.otu_type == project.ASV_TYPE:
+                # ASVs do not belong to a project
+                project = None
 
             obj_kw = dict(
                 prefix=kwnum['prefix'],
                 number=kwnum['number'],
-                kind=kind,
                 project=project,
             )
             has_changed = False
