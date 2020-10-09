@@ -975,10 +975,14 @@ class FrontPageView(BaseMixin, UserRequiredMixin, TemplateView):
         ctx = super().get_context_data(**ctx)
         ctx['counts'] = {}
         models = get_registry().get_models()
-        for i in sorted(models, key=lambda x: x._meta.verbose_name):
+
+        def sort_key(m):
+            return m._meta.verbose_name_plural.casefold()
+
+        for i in sorted(models, key=sort_key):
             count = i.objects.count()
             if count:
-                ctx['counts'][i._meta.verbose_name] = count
+                ctx['counts'][i._meta.verbose_name_plural.capitalize()] = count
 
         try:
             ctx['latest'] = ChangeRecord.objects.latest()

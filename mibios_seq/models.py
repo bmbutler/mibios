@@ -328,6 +328,7 @@ class Abundance(Model):
             # one count per project / OTU / sample
             ('otu', 'sequencing', 'project'),
         )
+        verbose_name_plural = 'abundance'
 
     objects = Manager.from_queryset(AbundanceQuerySet)()
     published = PublishManager.from_queryset(AbundanceQuerySet)()
@@ -445,6 +446,7 @@ class OTU(Model):
     class Meta:
         ordering = ('prefix', 'number',)
         unique_together = (('prefix', 'number', 'project'),)
+        verbose_name = 'OTU'
 
     def __str__(self):
         return str(self.natural)
@@ -594,6 +596,9 @@ class Taxonomy(Model):
         unique=True,
         verbose_name='taxonomic name',
     )
+
+    class Meta:
+        verbose_name_plural = 'taxonomy'
 
     def __str__(self):
         return '{} ({})'.format(self.name, self.taxid)
