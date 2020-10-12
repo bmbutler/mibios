@@ -12,8 +12,10 @@ from django.contrib.contenttypes.models import ContentType
 from django.http import Http404, HttpResponse
 from django.http.request import QueryDict
 from django.urls import reverse
+from django.utils.decorators import method_decorator
 from django.utils.html import format_html
 from django.utils.text import slugify
+from django.views.decorators.cache import cache_page
 from django.views.generic.base import ContextMixin, TemplateView, View
 from django.views.generic.edit import FormMixin, FormView
 
@@ -216,6 +218,7 @@ class TableViewPlugin():
         return ctx
 
 
+@method_decorator(cache_page(None), name='dispatch')
 class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
     template_name = 'mibios/table.html'
 
@@ -1004,6 +1007,7 @@ class DeletedHistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
         return ctx
 
 
+@method_decorator(cache_page(None), name='dispatch')
 class FrontPageView(BaseMixin, UserRequiredMixin, TemplateView):
     template_name = 'mibios/frontpage.html'
 

@@ -55,6 +55,9 @@ class MibiosConfig(apps.AppConfig):
         admin = import_string('django.contrib.admin')
         admin.site.register_all()
 
+        # signaling
+        import_module('mibios.signals')
+
 
 class AdminConfig(UpstreamAdminConfig):
     default_site = 'mibios.admin.AdminSite'
