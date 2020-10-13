@@ -497,6 +497,9 @@ class ImportFile(models.Model):
     file = models.FileField(
         upload_to='imported/%Y/', verbose_name='data source file',
     )
+    log = models.TextField(
+        blank=True, default='', help_text='log output from data import',
+    )
 
     class Meta:
         get_latest_by = 'timestamp'

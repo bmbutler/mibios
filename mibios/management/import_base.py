@@ -115,7 +115,14 @@ class AbstractImportCommand(BaseCommand):
 
         kwargs = dict(**options)
         kwargs.update(**stats)
-        logger.info(self.format_import_stats(**kwargs))
+        log_msg = self.format_import_stats(**kwargs)
+
+        file_rec = stats.get('file_record', None)
+        if file_rec is not None:
+            file_rec.log = log_msg
+            file_rec.save()
+
+        logger.info(log_msg)
         self.stdout.write(' All done.')
 
     @classmethod

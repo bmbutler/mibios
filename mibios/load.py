@@ -185,6 +185,7 @@ class Loader():
         except Exception as e:
             if self.file_record is not None:
                 self.file_record.file.delete(save=False)
+                self.file_record = None
             if isinstance(e, DryRunRollback):
                 pass
             elif isinstance(e, UserDataError):
@@ -208,6 +209,7 @@ class Loader():
             dry_run=self.dry_run,
             overwrite=self.can_overwrite,
             erase_on_blank=self.erase_on_blank,
+            file_record=self.file_record,
         )
 
     def get_from_row(self, *keys):

@@ -811,6 +811,11 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
                 verbose_changes=True,
             )
             msg_level = messages.SUCCESS
+
+            file_rec = stats.get('file_record', None)
+            if file_rec is not None:
+                file_rec.log = msg
+                file_rec.save()
         finally:
             f.close()
 
