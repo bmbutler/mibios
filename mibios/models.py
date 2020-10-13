@@ -1168,9 +1168,12 @@ class Model(models.Model):
         """
         for k, v in self.natural_lookup(value).items():
             if '__' in k:
-                raise RuntimeError(
-                    'can not set a natural key that is derived from a relation'
-                )
+                # set foreign key field to related instance
+                field, _, lookup = k.partition('__')
+                rel_model = self.get_field(field).related_model
+                kw = {lookup: v}
+                k, v = field, rel_model.objects.get(**kw)
+
             setattr(self, k, v)
 
     def __str__(self):
