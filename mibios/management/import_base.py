@@ -132,11 +132,10 @@ class AbstractImportCommand(BaseCommand):
             out += ' Column(s) not processd ({}): '.format(len(ignored))
             out += ', '.join(ignored) + '\n'
         if new:
-            out += ' Imported:\n' + '\n'.join([
-                '  {}: {}'.format(k, v)
-                for k, v
-                in new.items()
-            ]) + '\n'
+            out += ' Imported:\n'
+            for k, v in new.items():
+                out += f'  {k} ({len(v)}):\n'
+                out += ''.join([f'    {i}\n' for i in v])
         else:
             out += ' No new records\n'
 

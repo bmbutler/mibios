@@ -63,7 +63,7 @@ class Loader():
 
         self.warnings = []
         self.sep = sep
-        self.new = Counter()
+        self.new = defaultdict(list)
         self.added = Counter()
         self.changed = defaultdict(lambda: defaultdict(list))
         self.erased = defaultdict(lambda: defaultdict(list))
@@ -238,7 +238,7 @@ class Loader():
         )
         need_to_save = False
         if is_new:
-            self.new[model_name] += 1
+            self.new[model_name].append(obj)
             need_to_save = False
             obj.full_clean()
             obj.save()
