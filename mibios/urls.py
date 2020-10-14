@@ -22,7 +22,7 @@ archive_urls = [
 ]
 
 data_name_urls = [
-    # URLs starting with the data name
+    # URLs starting <str:data_name>/
     path('', views.TableView.as_view(), name='table'),
     path('mean/<str:avg_by>/', views.AverageView.as_view(),
          name='average'),
@@ -49,6 +49,7 @@ urlpatterns = [
     path('api/', include(rest_router.urls)),
     path(settings.MEDIA_URL.lstrip('/') + 'imported/<int:year>/<str:name>',
          views.ImportFileDownloadView.as_view(), name='import_file_download'),
+    path('log/<int:import_file_pk>/', views.LogView.as_view(), name='log'),
     # fixed string paths go above this comment
     path('<str:data_name>/', include(data_name_urls)),
 ]

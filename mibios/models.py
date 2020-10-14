@@ -16,6 +16,7 @@ from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import models, transaction
 from django.db.migrations.recorder import MigrationRecorder
 from django.db.utils import DEFAULT_DB_ALIAS, ConnectionHandler
+from django.utils.html import format_html
 from rest_framework.serializers import HyperlinkedModelSerializer
 from rest_framework.viewsets import ReadOnlyModelViewSet
 
@@ -537,6 +538,17 @@ class ImportFile(models.Model):
         if need_close:
             file.close()
         return obj
+
+    def get_log_url(self):
+        """
+        Return URL to log view as HTML-safe string
+        """
+        if not self.log:
+            return None
+        templ = '<a href="{}">view</a>'
+        url = reverse('log', kwargs=dict(import_file_pk=self.pk))
+        return format_html(templ, url)
+    get_log_url.short_description = 'Import log'
 
 
 class ChangeRecord(models.Model):

@@ -82,7 +82,7 @@ class ModelAdmin(admin.ModelAdmin):
 
 class ImportFileAdmin(admin.ModelAdmin):
     actions = None
-    list_display = ('timestamp', 'name', 'file')
+    list_display = ('timestamp', 'name', 'get_log_url', 'file')
 
 
 class SnapshotAdmin(admin.ModelAdmin):

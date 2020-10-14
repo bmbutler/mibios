@@ -1173,3 +1173,14 @@ class AverageExportFormView(AverageMixin, ExportFormView):
         # Have to get correct fields for this
         self.fields = self.get_queryset()._avg_fields
         return super().get_form_class()
+
+
+class LogView(BaseMixin, CuratorRequiredMixin, TemplateView):
+    template_name = 'mibios/log.html'
+
+    def get(self, request, *args, import_file_pk=None, **kwargs):
+        try:
+            self.import_file = ImportFile.objects.get(pk=import_file_pk)
+        except ImportFile.DoesNotExist:
+            raise Http404
+        return super().get(request, *args, **kwargs)

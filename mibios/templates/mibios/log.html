@@ -1,0 +1,23 @@
+{% extends "mibios/base.html" %}
+{% load static %}
+
+{% block link %}
+<link rel="stylesheet" href="{% static 'mibios/css/bootstrap.min.css' %}" />
+{% endblock %}
+
+{% block content %}
+<h2>Data Import Log</h2>
+<p>
+Original data source file: {{ view.import_file.name }}
+<br>
+Imported on {{ view.import_file.timestamp }}
+<br>
+Log:
+{% if view.import_file.log %}
+    <br>
+    <pre>{{ view.import_file.log }}</pre>
+{% else %}
+    output missing
+{% endif %}
+</p>
+{% endblock %}
