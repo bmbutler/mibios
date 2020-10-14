@@ -1,4 +1,5 @@
 import csv
+from itertools import tee, zip_longest
 from io import StringIO
 from math import isnan
 from zipfile import ZipFile, ZIP_DEFLATED
@@ -919,32 +920,21 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
         return self.object_list
 
     def get_table_data(self):
+        """
+        Get table data as usual from queryset but add column with diffs
+        """
         if self.table_data is not None:
             return self.table_data
 
         qs = self.get_queryset()
 
-        # extract just the fields:
-        flist = []
-        for i in qs:
-            data = i.fields_as_dict()
-            fields = data['fields']
-            fields['pk'] = data['pk']
-            flist.append(fields)
-        del data, fields
-
-        # calulate changes between successive entries
-        # processing order is oldest to newest:
+        # diffs for each and precessor, compare itertools pairwise recipe:
+        a, b = tee(qs)
+        next(b, None)  # shift forward, diff to last/None will give all fields
         diffs = []
-        last = {}
-        for fields in reversed(flist):
-            diffs.append({
-                k: v
-                for k, v in fields.items()
-                if k not in last or v != last[k]
-            })
-            last = fields
-        diffs = reversed(diffs)
+        for i, j in zip_longest(a, b):
+            d = i.diff(to=j)
+            diffs.append(d)
 
         # combine into data
         data = qs.values()

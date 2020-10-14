@@ -332,7 +332,7 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
 class HistoryTable(tables.Table):
     changes = tables.TemplateColumn("""
         {% load static mibios_extras %}
-        {{ value|prettyformat }}
+        {{ value|prettychanges }}
     """)
 
     class Meta:
