@@ -12,6 +12,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.http import Http404, HttpResponse
 from django.http.request import QueryDict
 from django.urls import reverse
+from django.utils.html import format_html
 from django.utils.text import slugify
 from django.views.generic.base import ContextMixin, TemplateView, View
 from django.views.generic.edit import FormMixin, FormView
@@ -807,16 +808,23 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
                    ''.format(type(e).__name__, e))
             msg_level = messages.ERROR
         else:
-            msg = AbstractImportCommand.format_import_stats(
+            import_log = AbstractImportCommand.format_import_stats(
                 **stats,
                 verbose_changes=True,
             )
+            msg = 'data successfully imported'
             msg_level = messages.SUCCESS
 
             file_rec = stats.get('file_record', None)
-            if file_rec is not None:
-                file_rec.log = msg
+            if file_rec is None:
+                msg += ', log:<br><pre>{}</pre>'
+                msg = format_html(msg, import_log)
+            else:
+                file_rec.log = import_log
                 file_rec.save()
+                msg += ', for details see <a href="{}">import log</a>'
+                url = reverse('log', kwargs=dict(import_file_pk=file_rec.pk))
+                msg = format_html(msg, url)
         finally:
             f.close()
 
