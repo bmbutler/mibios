@@ -460,8 +460,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         return qs
 
     def get_table_class(self):
-        t = table_factory(model=self.model, field_names=self.fields, view=self,
-                          count_columns=True)
+        t = table_factory(view=self, count_columns=True)
         return t
 
     def get_sort_by_field(self):
@@ -1155,8 +1154,7 @@ class AverageMixin():
         Generate django_tables2 table class
         """
         self.fields = self.get_queryset()._avg_fields
-        t = table_factory(model=self.model, field_names=self.fields, view=self,
-                          count_columns=False)
+        t = table_factory(view=self, count_columns=False)
         return t
 
     def get_context_data(self, **ctx):
