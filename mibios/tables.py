@@ -226,6 +226,7 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
     """
     Generate table class from list of field/annotation/column names etc.
 
+    :param mibios.Model (class) model: The model class.
     :param list field_names: Names of a queryset's fields/annotations/lookups
     :param TableView view: The TableView object, will be passed to e.g.
                            CountColumn which needs various view attributes to
@@ -234,7 +235,25 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
                                 tables.  This column will get a special link to
                                 the table of group members, similar to the
                                 reverse relation count columns.
+
+    The table factory can be called with just the view argument but attempts to
+    also work if no TableView is available.  In such a case at least the model
+    argument is required.  If both are given, then field_names override
+    TableView.fields.
     """
+    if model is None:
+        model = view.model
+
+    if not field_names:
+        if view is None:
+            field_names = model.get_fields().names
+        else:
+            field_names = view.fields
+
+    if view is None:
+        verbose_field_names = [None] * len(field_names)
+    else:
+        verbose_field_names = view.col_names
 
     meta_opts = dict(
         model=model,
@@ -244,11 +263,19 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
     )
     opts = {}
 
-    for accessor in field_names:
+    for accessor, verbose_name in zip(field_names, verbose_field_names):
         try:
             field = model.get_field(accessor)
         except LookupError:
             field = None
+            verbose_name = accessor
+        else:
+            if verbose_name is None:
+                try:
+                    verbose_name = field.verbose_name
+                except AttributeError:
+                    # M2M fields don't have verbose_name, but:
+                    verbose_name = field.related_model._meta.verbose_name
 
         relations, _, name = accessor.rpartition('__')
         # django_tables2 wants dotted accessors
@@ -258,16 +285,10 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
 
         # preserve verbose names with odd capitalization, e.g: 'pH':
         # (By default django_tables2 uses capfirst() transforms)
-        if field is not None:
-            try:
-                verbose_name = field.verbose_name
-            except AttributeError:
-                # M2M fields don't have verbose_name, but:
-                verbose_name = field.related_model._meta.verbose_name
-
-            if verbose_name[0].islower():
-                if verbose_name[1].isupper():
-                    col_kw['verbose_name'] = verbose_name
+        # TODO: replace by test on internal capital
+        if verbose_name[0].islower():
+            if verbose_name[1].isupper():
+                col_kw['verbose_name'] = verbose_name
 
         if accessor == 'name':
             col_class = tables.Column
