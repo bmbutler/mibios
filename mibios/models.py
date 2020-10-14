@@ -636,6 +636,58 @@ class ChangeRecord(models.Model):
         """
         return json.loads(self.fields)[0]
 
+    def predecessor(self, constant_pk=False):
+        """
+        Return previous change of object.
+
+        Returns None if this is the first change record for given object.
+
+        :param bool constant_pk: If True, then the precessor is guarrantied to
+                                 have the same primary key, but may have a
+                                 different natural key.  The default behavior
+                                 is to pick the precessor with the same natural
+                                 key, allowing a change in pk.
+        """
+        f = dict(record_type=self.record_type, timestamp__lt=self.timestamp)
+        if constant_pk:
+            f['record_pk'] = self.record_pk
+        else:
+            f['record_natural'] = self.record_natural
+
+        try:
+            return ChangeRecord.objects.filter(**f).latest()
+        except ChangeRecord.DoesNotExist:
+            return None
+
+    def diff(self, to=None):
+        """
+        Get the difference in field values introduced by this change
+
+        Fields that were dropped from the tables between the changes will not
+        be listed.
+        """
+        if to is None:
+            to = self.predecessor()
+
+        # get dict of fields, inlc. pk, same with theirs below:
+        ours = self.fields_as_dict()
+        ours['fields']['pk'] = ours['pk']
+        ours = ours['fields']
+
+        if to is None:
+            theirs = {}
+        else:
+            theirs = to.fields_as_dict()
+            theirs['fields']['pk'] = theirs['pk']
+            theirs = theirs['fields']
+
+        diff = {}
+        for k, v in ours.items():
+            old_v = theirs.get(k, None)
+            if v != old_v:
+                diff[k] = (old_v, v)
+        return diff
+
 
 def _default_snapshot_name():
     try:
