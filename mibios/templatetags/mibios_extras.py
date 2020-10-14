@@ -1,4 +1,5 @@
 from django import template
+from django.utils.html import format_html, format_html_join
 from django.utils.safestring import mark_safe
 
 
@@ -17,10 +18,12 @@ def object_to_html(value):
 
 
 def dict_to_html(value):
-    return '<ul>{}\n</ul>\n'.format(
-        '\n  '.join([
-            '<li>{}: {}</li>'.format(k, object_to_html(v))
-            for k, v in value.items()
-        ])
+    return format_html(
+        '<ul>\n{}\n</ul>\n',
+        format_html_join(
+            '\n  ',
+            '<li>{}: {}</li>',
+            ((k, object_to_html(v)) for k, v in value.items())
+        )
     )
 
