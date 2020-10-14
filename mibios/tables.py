@@ -24,13 +24,13 @@ class CountColumn(tables.Column):
     link to exactly those related records.  Those related records can be from a
     reverse foreign key relation or the elements of a grouped-by record.
     """
-    def __init__(self, related_object=None, view=None, group_by=[],
+    def __init__(self, rel_object=None, view=None, group_by=[],
                  force_verbose_name=True, exclude_from_export=True, **kwargs):
         """
         Count column constructor
 
-        :param related_object: The reverse relation field, i.e. an element of
-                               Model._meta.related_objects
+        :param rel_object: The reverse relation field, i.e. an element of
+                               Model._meta.rel_objects
         :param list group_by: Names (str) by which the data was grouped,
                               e.g. when taking averaged
         :param force_verbose_name: Overrides the verbose column name that the
@@ -39,19 +39,19 @@ class CountColumn(tables.Column):
                                    generated and if a string is given that will
                                    be used instead.
         """
-        if related_object is None:
+        if rel_object is None:
             data_name = view.data_name
             our_name = view.data_name
         else:
             # name of the relation's model
-            data_name = related_object.related_model._meta.model_name
+            data_name = rel_object.related_model._meta.model_name
             # our_name: the name of the foreign key field of the related model
             # to the current table
-            our_name = related_object.remote_field.name
+            our_name = rel_object.remote_field.name
 
         url = reverse('table', kwargs=dict(data_name=data_name))
 
-        if 'linkify' not in kwargs:
+        if 'linkify' not in kwargs and view:
             def linkify(record):
                 f = {}
                 for i in group_by:
@@ -72,19 +72,39 @@ class CountColumn(tables.Column):
 
             kwargs.update(linkify=linkify)
 
-        # prepare URL for footer
-        if related_object is None:
+        if view is not None:
+            self.set_footer_url(rel_object, view, url, our_name)
+
+        super().__init__(self, exclude_from_export=exclude_from_export,
+                         **kwargs)
+
+        # django_tables2 internals somehow mess up the verbose name, but
+        # verb name can be set after __init__, setting explicitly before
+        # interferes with the automatic column class selection
+        if force_verbose_name:
+            if isinstance(force_verbose_name, str):
+                self.verbose_name = force_verbose_name
+            elif rel_object is None:
+                self.verbose_name = 'group count'
+            else:
+                self.verbose_name = rel_object.name + ' count'
+
+    def set_footer_url(self, rel_object, view, url, our_name):
+        """
+        prepare and set URL for footer
+        """
+        if rel_object is None:
             f = view.filter.copy()
             elist = view.excludes.copy()
         else:
             via_parent = (
-                issubclass(view.model, related_object.model)
-                and not view.model == related_object.model
+                issubclass(view.model, rel_object.model)
+                and not view.model == rel_object.model
             )
             if via_parent:
                 # have to add the parent between us and the relation
                 # child name: how we're known to the parent
-                child = related_object.model.get_child_info()[view.model].name
+                child = rel_object.model.get_child_info()[view.model].name
                 our_name = our_name + '__' + child
 
             f = {our_name + '__' + k: v for k, v in view.filter.items()}
@@ -105,20 +125,6 @@ class CountColumn(tables.Column):
 
         q = view.build_query_dict(filter=f, excludes=elist, negate=view.negate)
         self.footer_url = url + ('?' + q.urlencode()) if q else ''
-
-        super().__init__(self, exclude_from_export=exclude_from_export,
-                         **kwargs)
-
-        # django_tables2 internals somehow mess up the verbose name, but
-        # verb name can be set after __init__, setting explicitly before
-        # interferes with the automatic column class selection
-        if force_verbose_name:
-            if isinstance(force_verbose_name, str):
-                self.verbose_name = force_verbose_name
-            elif related_object is None:
-                self.verbose_name = 'group count'
-            else:
-                self.verbose_name = related_object.name + ' count'
 
     def render_footer(self, bound_column, table):
         """
