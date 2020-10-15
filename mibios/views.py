@@ -218,7 +218,7 @@ class TableViewPlugin():
         return ctx
 
 
-@method_decorator(cache_page(None), name='dispatch')
+# @method_decorator(cache_page(None), name='dispatch')
 class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
     template_name = 'mibios/table.html'
 
@@ -1007,7 +1007,7 @@ class DeletedHistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
         return ctx
 
 
-@method_decorator(cache_page(None), name='dispatch')
+# @method_decorator(cache_page(None), name='dispatch')
 class FrontPageView(BaseMixin, UserRequiredMixin, TemplateView):
     template_name = 'mibios/frontpage.html'
 
