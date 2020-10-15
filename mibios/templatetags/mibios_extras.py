@@ -55,7 +55,6 @@ def changes_to_html(value):
         elif new is None:
             new = NONE
         row_args.append((k, old, new))
-    print('BORK rowargs', row_args)
 
     templ = templ.replace(' ', '&nbsp;').replace('->', '&rarr;')
     return format_html(
