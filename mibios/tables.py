@@ -1,3 +1,5 @@
+import re
+
 from django.db.models import DecimalField
 from django.urls import reverse
 from django.utils.functional import cached_property
@@ -250,6 +252,7 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
         else:
             field_names = view.fields
 
+    # verbose names for column headers
     if view is None:
         verbose_field_names = [None] * len(field_names)
     else:
@@ -263,12 +266,17 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
     )
     opts = {}
 
+    # pattern matching a mid-(or end)-word capital letter; for verbose_names
+    # this indicates that capitalize() should not be applied
+    mid_upper_pat = re.compile(r'^..*[A-Z]')
+
     for accessor, verbose_name in zip(field_names, verbose_field_names):
         try:
             field = model.get_field(accessor)
         except LookupError:
             field = None
-            verbose_name = accessor
+            if verbose_name is None:
+                verbose_name = accessor
         else:
             if verbose_name is None:
                 try:
@@ -277,18 +285,20 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
                     # M2M fields don't have verbose_name, but:
                     verbose_name = field.related_model._meta.verbose_name
 
+        # capitalize verbose name (like django_tables2 does)
+        if mid_upper_pat.match(verbose_name):
+            # unusual case, e.h. pH, leave as-is
+            pass
+        else:
+            verbose_name = verbose_name.capitalize()
+
         relations, _, name = accessor.rpartition('__')
         # django_tables2 wants dotted accessors
         col = tables.A(accessor.replace('__', '.'))
         meta_opts['fields'].append(col)
         col_kw = {}
 
-        # preserve verbose names with odd capitalization, e.g: 'pH':
-        # (By default django_tables2 uses capfirst() transforms)
-        # TODO: replace by test on internal capital
-        if verbose_name[0].islower():
-            if verbose_name[1].isupper():
-                col_kw['verbose_name'] = verbose_name
+        col_kw['verbose_name'] = verbose_name
 
         if accessor == 'name':
             col_class = tables.Column
