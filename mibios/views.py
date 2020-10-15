@@ -817,21 +817,24 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
             msg = 'data successfully imported'
             msg_level = messages.SUCCESS
 
+            msg_log = msg + '\n{}' + import_log
+
             file_rec = stats.get('file_record', None)
             if file_rec is None:
-                msg += ', log:<br><pre>{}</pre>'
-                msg = format_html(msg, import_log)
+                msg_html = msg + ', log:<br><pre>{}</pre>'
+                msg_html = format_html(msg_html, import_log)
             else:
                 file_rec.log = import_log
                 file_rec.save()
-                msg += ', for details see <a href="{}">import log</a>'
+                msg_html = msg + ', see details at <a href="{}">import log</a>'
                 url = reverse('log', kwargs=dict(import_file_pk=file_rec.pk))
-                msg = format_html(msg, url)
+                msg_html = format_html(msg_html, url)
         finally:
             f.close()
 
-        messages.add_message(self.request, msg_level, msg)
-        args = (msg_level, 'user:', self.request.user, 'file:', f, '\n', msg)
+        messages.add_message(self.request, msg_level, msg_html)
+        args = (msg_level, 'user:', self.request.user, 'file:', f, '\n',
+                msg_log)
         if dry_run:
             log.log(*args)
         else:
