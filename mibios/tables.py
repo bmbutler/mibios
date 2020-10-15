@@ -27,7 +27,7 @@ class CountColumn(tables.Column):
     reverse foreign key relation or the elements of a grouped-by record.
     """
     def __init__(self, rel_object=None, view=None, group_by=[],
-                 force_verbose_name=True, exclude_from_export=True, **kwargs):
+                 exclude_from_export=True, **kwargs):
         """
         Count column constructor
 
@@ -35,11 +35,6 @@ class CountColumn(tables.Column):
                                Model._meta.rel_objects
         :param list group_by: Names (str) by which the data was grouped,
                               e.g. when taking averaged
-        :param force_verbose_name: Overrides the verbose column name that the
-                                   django_table2 internals come up with. If
-                                   this is True a verbose name will be
-                                   generated and if a string is given that will
-                                   be used instead.
         """
         if rel_object is None:
             data_name = view.data_name
@@ -77,19 +72,21 @@ class CountColumn(tables.Column):
         if view is not None:
             self.set_footer_url(rel_object, view, url, our_name)
 
+        # django_tables2 internals somehow mess up the verbose name, but
+        # verb name can be set after __init__, setting explicitly before
+        # would interfere with the automatic column class selection
+        verbose_name = kwargs.pop('verbose_name', None)
+
         super().__init__(self, exclude_from_export=exclude_from_export,
                          **kwargs)
 
-        # django_tables2 internals somehow mess up the verbose name, but
-        # verb name can be set after __init__, setting explicitly before
-        # interferes with the automatic column class selection
-        if force_verbose_name:
-            if isinstance(force_verbose_name, str):
-                self.verbose_name = force_verbose_name
-            elif rel_object is None:
-                self.verbose_name = 'group count'
-            else:
+        if verbose_name is None:
+            if rel_object:
                 self.verbose_name = rel_object.name + ' count'
+            else:
+                self.verbose_name = 'group count'
+        else:
+            self.verbose_name = verbose_name
 
     def set_footer_url(self, rel_object, view, url, our_name):
         """
@@ -161,6 +158,11 @@ class AvgGroupCountColumn(CountColumn):
     into a subclass makes the manual summing regular for average tables.  The
     disadvantage remains that the database is queried again.
     """
+    def __init__(self, *args, verbose_name=None, **kwargs):
+        if verbose_name is None:
+            verbose_name = 'avg group count'
+        super().__init__(*args, verbose_name=verbose_name, **kwargs)
+
     def render_footer(self, bound_column, table):
         total = 0
         for row in table.data:
@@ -333,7 +335,7 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
             col_class = AvgGroupCountColumn
             col_kw['view'] = view
             col_kw['group_by'] = view.avg_by
-            col_kw['force_verbose_name'] = 'avg group count'
+            del col_kw['verbose_name']  # is supplied by constructor
 
         elif isinstance(field, DecimalField):
             col_class = DecimalColumn
