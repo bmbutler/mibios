@@ -61,7 +61,7 @@ class NaturalValuesIterable(models.query.ValuesIterable):
             # TODO: this only gets direct relations, we need a routine to
             # resolve multiple-hop relations
             model = self.model_class._meta.get_field(field).related_model
-            for i in model.published.iterator():
+            for i in model.curated.iterator():
                 m[i.pk] = i.natural
             value_maps[field] = m
 
@@ -162,7 +162,7 @@ class QuerySet(models.QuerySet):
 
                 if f.is_relation and natural:
                     # replace pks with natural key, 1 extra DB query
-                    qs = f.related_model.published.iterator()
+                    qs = f.related_model.curated.iterator()
                     nat_dict = {i.pk: i.natural for i in qs}
                     col_dat = map(
                         lambda pk: None if pk is None else nat_dict[pk],
@@ -291,7 +291,7 @@ class QuerySet(models.QuerySet):
 
         for i in rels:
             kwargs = dict(distinct=True)
-            f = i.related_model.published.get_publish_filter()
+            f = i.related_model.curated.get_curation_filter()
             if f:
                 kwargs['filter'] = f
             name = i.related_model._meta.model_name + '__count'
@@ -383,7 +383,7 @@ class BaseManager(models.manager.BaseManager):
         return self.get(**self.model.natural_lookup(key))
 
 
-class PublishBaseManager(BaseManager):
+class CurationBaseManager(BaseManager):
     """
     Manager to implement publishable vs. hidden data
     """
@@ -423,7 +423,7 @@ class PublishBaseManager(BaseManager):
         for i in self.model.get_fields().fields:
             if i.is_relation and (i.many_to_one or i.one_to_one):
                 # is a foreign key
-                other = i.related_model.published
+                other = i.related_model.curated
                 prefix = i.name + '__'
                 other.ensure_filter_setup()
                 for k, v in other.filter.items():
@@ -444,9 +444,9 @@ class PublishBaseManager(BaseManager):
 
         return qs
 
-    def get_publish_filter(self):
+    def get_curation_filter(self):
         """
-        Return the publish filter/exclude as Q object
+        Return the curation filter/exclude as Q object
 
         A Q return value can be used for the filter keyword in calls to
         Aggregate() and friends, e.g. Count().  A None return value can be used
@@ -472,7 +472,7 @@ class Manager(BaseManager.from_queryset(QuerySet)):
     pass
 
 
-class PublishManager(PublishBaseManager.from_queryset(QuerySet)):
+class CurationManager(CurationBaseManager.from_queryset(QuerySet)):
     pass
 
 
@@ -949,7 +949,7 @@ class Model(models.Model):
         abstract = True
 
     objects = Manager()
-    published = PublishManager()
+    curated = CurationManager()
 
     average_by = ()
     """ average_by is a list of lists (or tuples) of field names over which
@@ -1431,7 +1431,7 @@ class Model(models.Model):
         Return REST framework ViewSet class
         """
         opts = dict(
-            queryset=self.published.all(),
+            queryset=self.curated.all(),
             serializer_class=self.get_serializer_class(),
         )
         name = self._meta.model_name.capitalize() + 'RESTViewSet'

@@ -8,7 +8,7 @@ from django.db.transaction import atomic
 
 from omics.shared import MothurShared
 from mibios.dataset import UserDataError
-from mibios.models import (ImportFile, Manager, PublishManager, Model,
+from mibios.models import (ImportFile, Manager, CurationManager, Model,
                            ParentModel, QuerySet, TagNote)
 from mibios.utils import getLogger
 
@@ -326,7 +326,7 @@ class Abundance(Model):
         verbose_name_plural = 'abundance'
 
     objects = Manager.from_queryset(AbundanceQuerySet)()
-    published = PublishManager.from_queryset(AbundanceQuerySet)()
+    curated = CurationManager.from_queryset(AbundanceQuerySet)()
 
     def __str__(self):
         return super().__str__() + f' |{self.count}|'
@@ -352,10 +352,10 @@ class Abundance(Model):
                 fasta_result = None
 
             AbundanceImportFile.create_from_file(file=file, project=project)
-            sequencings = Sequencing.published.in_bulk(field_name='name')
+            sequencings = Sequencing.curated.in_bulk(field_name='name')
             otus = {
                 (i.prefix, i.number): i
-                for i in OTU.published.all().filter(project=project).iterator()
+                for i in OTU.curated.all().filter(project=project).iterator()
             }
 
             skipped, zeros = 0, 0
@@ -394,7 +394,7 @@ class Abundance(Model):
                     otu=otu_obj,
                 ))
 
-            cls.published.bulk_create(objs)
+            cls.curated.bulk_create(objs)
         return dict(count=len(objs), zeros=zeros, skipped=skipped,
                     fasta=fasta_result)
 

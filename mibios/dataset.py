@@ -15,7 +15,7 @@ class Dataset():
     filter = {}
     excludes = []
     blanks = ['']
-    manager = 'published'
+    manager = 'curated'
 
     # instance container for subclass singletons
     __instance = {}

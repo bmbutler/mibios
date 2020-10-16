@@ -146,7 +146,7 @@ class DatasetMixin():
                 raise Http404
             else:
                 # setup for normal model
-                self.queryset = self.model.published.all()
+                self.queryset = self.model.curated.all()
                 self.data_name_verbose = self.model._meta.verbose_name
                 # set default fields - just the "simple" ones
                 no_name_field = True
