@@ -63,6 +63,10 @@ def get_app_urls():
     """
     ret = []
     for i in get_registry().apps.values():
+        if i.name == 'mibios':
+            # skip including this module, avoids infinite recursion
+            continue
+
         try:
             ret.append(path('', include(i.name + '.urls')))
         except ModuleNotFoundError:
