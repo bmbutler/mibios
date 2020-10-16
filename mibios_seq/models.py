@@ -9,7 +9,7 @@ from django.db.transaction import atomic
 from omics.shared import MothurShared
 from mibios.dataset import UserDataError
 from mibios.models import (ImportFile, Manager, PublishManager, Model,
-                           ParentModel, QuerySet)
+                           ParentModel, QuerySet, TagNote)
 from mibios.utils import getLogger
 
 
@@ -25,11 +25,6 @@ class Sample(ParentModel):
     the usual auto-primary-key and history.
     """
     pass
-
-
-class SeqNote(Model):
-    name = models.CharField(max_length=100, unique=True)
-    text = models.TextField(max_length=5000, blank=True)
 
 
 class Sequencing(Model):
@@ -54,7 +49,7 @@ class Sequencing(Model):
                                null=True)
     r2_file = models.CharField(max_length=300, unique=True, blank=True,
                                null=True)
-    note = models.ManyToManyField(SeqNote, blank=True)
+    note = models.ManyToManyField(TagNote, blank=True)
     run = models.ForeignKey('SequencingRun', on_delete=models.CASCADE,
                             blank=True, null=True)
     plate = models.PositiveSmallIntegerField(blank=True, null=True)

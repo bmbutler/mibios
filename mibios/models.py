@@ -1502,3 +1502,12 @@ class ParentModel(Model):
                 return {field.name + '__' + k: v for k, v in kwargs.items()}
         else:
             raise NaturalKeyLookupError(errors)
+
+
+class TagNote(Model):
+    tag = models.CharField(max_length=100, default='info', db_index=True)
+    name = models.CharField(max_length=100, unique=True)
+    text = models.TextField(max_length=5000, blank=True)
+
+    class Meta:
+        verbose_name = 'note'
