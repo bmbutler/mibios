@@ -390,6 +390,8 @@ class PublishBaseManager(BaseManager):
     filter = None
     excludes = None
 
+    EXCLUDE_TAG = 'exclude'
+
     def __init__(self, *args, filter={}, excludes=[], **kwargs):
         super().__init__(*args, **kwargs)
         # Setting base filters, must be completed after all the managers are
@@ -409,7 +411,14 @@ class PublishBaseManager(BaseManager):
             return
 
         self.filter = self.base_filter.copy()
-        self.excludes = [i.copy() for i in self.base_excludes]
+        self.excludes = []
+
+        # tag filtering:
+        for i in self.model.get_fields(with_m2m=True).fields:
+            if i.related_model is TagNote:
+                self.excludes.append({i.name + '__tag': self.EXCLUDE_TAG})
+
+        self.excludes += [i.copy() for i in self.base_excludes]
 
         for i in self.model.get_fields().fields:
             if i.is_relation and (i.many_to_one or i.one_to_one):
