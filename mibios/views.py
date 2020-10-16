@@ -19,7 +19,7 @@ from django.views.decorators.cache import cache_page
 from django.views.generic.base import ContextMixin, TemplateView, View
 from django.views.generic.edit import FormMixin, FormView
 
-from django_tables2 import SingleTableView, Column
+from django_tables2 import SingleTableView, Column, MultiTableMixin
 
 from . import (__version__, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE,
                QUERY_FIELD, QUERY_FORMAT, QUERY_EXPAND, get_registry)
@@ -857,9 +857,11 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
         return ctx
 
 
-class HistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
+class HistoryView(BaseMixin, CuratorRequiredMixin, MultiTableMixin,
+                  TemplateView):
     table_class = HistoryTable
     record = None
+    template_name = 'mibios/history.html'
 
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)
@@ -870,7 +872,7 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
             self.record_pk = self.record.pk
             self.record_natural = self.record.natural
             app_label = self.record._meta.app_label
-            data_name = self.record._meta.model_name
+            self.model_name = self.record._meta.model_name
         else:
             # via other url conf, NOTE: has no current users
             try:
@@ -880,26 +882,15 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
                 self.record_pk = None
                 self.record_natural = kwargs['natural']
 
-            data_name = kwargs['dataset']
+            self.model_name = kwargs['dataset']
             try:
-                model_class = get_registry().models[data_name]
+                model_class = get_registry().models[self.model_name]
             except KeyError:
                 raise Http404
             else:
                 app_label = model_class._meta.app_label
 
-        try:
-            # record_type: can't name this content_type, that's taken in
-            # TemplateResponseMixin
-            self.record_type = ContentType.objects.get_by_natural_key(
-                app_label,
-                data_name,
-            )
-        except ContentType.DoesNotExist:
-            raise Http404
-
         if self.record is None:
-            model_class = self.record_type.model_class()
             get_kw = {}
             if self.record_natural:
                 get_kw['natural'] = self.record_natural
@@ -918,29 +909,34 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
             else:
                 self.extra_context.update(kwargs['extra_context'])
 
-    def get_queryset(self):
-        if not hasattr(self, 'object_list'):
-            f = dict(
-                record_type=self.record_type,
-            )
-            if self.record_natural:
-                f['record_natural'] = self.record_natural
-            elif self.record_pk:
-                f['record_pk'] = self.record_pk
-
-            self.object_list = ChangeRecord.objects.filter(**f)
-
-        return self.object_list
-
-    def get_table_data(self):
+    def get_tables(self):
         """
-        Get table data as usual from queryset but add column with diffs
+        Get the regular history and a table of lost/missing
         """
-        if self.table_data is not None:
-            return self.table_data
+        tables = []
+        regular = self.record.history.all()
+        tables.append(self.table_class(self._add_diffs(regular)))
 
-        qs = self.get_queryset()
+        # get lost or otherwise extra
+        reg_pks = (i.pk for i in regular)
+        f = dict(
+            record_type__model=self.model_name,
+        )
+        if self.record_natural:
+            f['record_natural'] = self.record_natural
+        elif self.record_pk:
+            f['record_pk'] = self.record_pk
 
+        extra = ChangeRecord.objects.exclude(pk__in=reg_pks).filter(**f)
+        list(extra)
+        if extra.exists():
+            tables.append(self.table_class(self._add_diffs(extra)))
+        return tables
+
+    def _add_diffs(self, qs):
+        """
+        Add differences to history queryset
+        """
         # diffs for each and precessor, compare itertools pairwise recipe:
         a, b = tee(qs)
         next(b, None)  # shift forward, diff to last/None will give all fields
@@ -957,15 +953,11 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['record_model'] = self.record_type.name
         if self.record:
             natural_key = self.record.natural
         else:
-            try:
-                natural_key = self.get_queryset().first().record_natural
-            except AttributeError:
-                # if no history saved, first() returns None
-                natural_key = '???'
+            # TODO: review this use-case and maybe get the key from table data
+            natural_key = '???'
         ctx['natural_key'] = natural_key
         ctx['page_title'].append('history of ' + natural_key)
         return ctx

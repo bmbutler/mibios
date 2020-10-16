@@ -7,9 +7,11 @@
 {% endblock %}
 
 {% block content %}
-<h2>History of {{ record_model }}: {% if view.record %}<a href="{{ view.record.get_absolute_url }}">{{ natural_key }}</a>{% else %}{{ natural_key }}{% endif %}</h2>
+<h2>History of {{ view.model_name }}: {% if view.record %}<a href="{{ view.record.get_absolute_url }}">{{ natural_key }}</a>{% else %}{{ natural_key }}{% endif %}</h2>
 
+{% for table in tables %}
 {% render_table table %}
+{% endfor %}
 
 {% endblock %}
 
