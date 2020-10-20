@@ -286,8 +286,6 @@ class Loader():
             obj.full_clean()
             obj.save()
 
-        self.rec[model_name] = obj
-
     def is_blank(self, col_name, value):
         """
         Say if a value is "empty" or missing.
