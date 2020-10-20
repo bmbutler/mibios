@@ -499,11 +499,15 @@ class Loader():
                         id_arg[i] = data.pop(i)
 
                 # separate many_to_many fields from data
-                m2ms = {
-                    _k: _v
-                    for _k, _v in data.items()
-                    if model._meta.get_field(_k).many_to_many
-                }
+                m2ms = {}
+                for _k, _v in data.items():
+                    try:
+                        field = model._meta.get_field(_k)
+                    except FieldDoesNotExist:
+                        continue
+                    if field.many_to_many:
+                        m2ms[_k] = _v
+
                 for i in m2ms:
                     del data[i]
                 m2ms = {
@@ -516,7 +520,11 @@ class Loader():
                 data1 = {}
                 for _k, _v in data.items():
                     if _v is None:
-                        field = model._meta.get_field(_k)
+                        try:
+                            field = model._meta.get_field(_k)
+                        except FieldDoesNotExist:
+                            # TODO: issue a warning?  Can this even happen?
+                            continue
                         if field.null:
                             data1[_k] = None
                         elif field.blank:
