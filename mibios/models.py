@@ -1241,6 +1241,9 @@ class Model(models.Model):
 
         The default implementation should be general enough to be used by
         inheriting classes
+
+        Raises a Model.DoesNotExist if a foreign key lookup is used and the
+        related object does not already exist.
         """
         for k, v in self.natural_lookup(value).items():
             if '__' in k:
@@ -1248,7 +1251,12 @@ class Model(models.Model):
                 field, _, lookup = k.partition('__')
                 rel_model = self.get_field(field).related_model
                 kw = {lookup: v}
-                k, v = field, rel_model.objects.get(**kw)
+                try:
+                    k, v = field, rel_model.objects.get(**kw)
+                except rel_model.DoesNotExist as e:
+                    extra = f'failed on: {lookup} = {v}'
+                    e.args = (*e.args, extra)
+                    raise
 
             setattr(self, k, v)
 
