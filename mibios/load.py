@@ -5,7 +5,8 @@ from io import TextIOBase, TextIOWrapper
 import re
 import sys
 
-from django.core.exceptions import FieldDoesNotExist, ValidationError
+from django.core.exceptions import (FieldDoesNotExist, ObjectDoesNotExist,
+                                    ValidationError)
 from django.db import transaction, IntegrityError
 
 from . import get_registry
@@ -541,7 +542,11 @@ class Loader():
                     # id_arg was used as lookup in get() above but used now for
                     # the model constructor, this works as long as the keys are
                     # limited to field or property names
-                    obj = model(**id_arg, **data)
+                    try:
+                        obj = model(**id_arg, **data)
+                    except ObjectDoesNotExist as e:
+                        # rel obj within natural key missing
+                        raise UserDataError(f'record not found: {e}') from e
                     new = True
                 except model.MultipleObjectsReturned as e:
                     # id_arg under-specifies
