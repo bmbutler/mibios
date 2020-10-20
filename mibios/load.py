@@ -68,6 +68,7 @@ class Loader():
         self.changed = defaultdict(lambda: defaultdict(list))
         self.erased = defaultdict(lambda: defaultdict(list))
         self.count = 0
+        self.line_key = {}
         self.fq_file_ids = set()
         self.can_overwrite = can_overwrite
         self.warn_on_error = warn_on_error
@@ -226,13 +227,23 @@ class Loader():
                 ret[i] = self.row[i]
         return ret
 
-    def account(self, obj, is_new, from_row=None):
+    def account(self, obj, is_new, from_row=None, is_primary_obj=False):
         """
         Account for object creation, change
 
         Enforce object overwrite as needed.
         Update state with object
         """
+        if is_primary_obj:
+            # check that each row corresponds to distinct record
+            # (the primary record)
+            if obj.natural in self.line_key:
+                msg = (f'record {obj.natural} was already processed on line '
+                       f'{self.line_key[obj.natural]}')
+                raise UserDataError(msg)
+            else:
+                self.line_key[obj.natural] = self.linenum
+
         model_name = obj._meta.model_name
         obj.add_change_record(
             file=self.file_record,
@@ -552,13 +563,18 @@ class Loader():
                 else:
                     new = False
 
-                self.account(obj, new, data)
+                # is this the row's primary record?
+                is_primary_obj = \
+                    len(k) == 1 and k[0] == self.model._meta.model_name
+
+                self.account(obj, new, data, is_primary_obj=is_primary_obj)
 
                 for _k, _v in m2ms.items():
                     getattr(obj, _k).add(_v)
 
                 # replace with real object
                 self.rec[k] = obj
+
             except (IntegrityError, UserDataError, ValidationError):
                 raise
             except Exception as e:
