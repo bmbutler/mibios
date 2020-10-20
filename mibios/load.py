@@ -308,10 +308,10 @@ class Loader():
         # rec: accumulates bits of processing before final assembly
         self.rec = {}
         # backup counters
-        new_ = self.new
-        added_ = self.added
-        changed_ = self.changed
-        erased_ = self.erased
+        new_ = self.new.copy()
+        added_ = self.added.copy()
+        changed_ = self.changed.copy()
+        erased_ = self.erased.copy()
         try:
             with transaction.atomic():
                 self.process_fields()
