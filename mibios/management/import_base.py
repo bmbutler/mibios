@@ -65,6 +65,14 @@ class AbstractImportCommand(BaseCommand):
                  'to overwrite a non-empty value with a non-empty.'
         )
         parser.add_argument(
+            '--no-new-records',
+            action='store_true',
+            help='Allow existing records to be changed but do not create new '
+                 'records.  Rows for which no exiting record is found either '
+                 'raise a warning or an error depending on the --warn-on-error'
+                 ' option.',
+        )
+        parser.add_argument(
             '-s', '--sep',
             default=None,
             help='Column separator, if not given the script will auto-detect '
@@ -106,6 +114,7 @@ class AbstractImportCommand(BaseCommand):
                 erase_on_blank=options['erase_on_blank'],
                 dry_run=options['dry_run'],
                 warn_on_error=options['warn_on_error'],
+                no_new_records=options['no_new_records'],
                 **self.load_file_kwargs(**options),
             )
         except UserDataError as e:

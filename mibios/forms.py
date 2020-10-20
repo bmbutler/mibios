@@ -40,6 +40,13 @@ class UploadFileForm(forms.Form):
                   ' value in the database.  This option allows to instead '
                   'erase the current value.',
     )
+    allow_new_records = forms.BooleanField(
+        required=False,
+        initial=True,
+        label='Allow new records',
+        help_text='De-select this to prevent new records from being created '
+                  'while still allowing modifications to existing records.',
+    )
 
 
 def get_field_search_form(*fields):

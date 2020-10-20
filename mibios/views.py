@@ -800,6 +800,7 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
                 can_overwrite=form.cleaned_data['overwrite'],
                 erase_on_blank=form.cleaned_data['erase_on_blank'],
                 warn_on_error=True,
+                no_new_records=not form.cleaned_data['allow_new_records'],
                 user=self.request.user,
             )
 

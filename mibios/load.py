@@ -32,7 +32,7 @@ class Loader():
 
     def __init__(self, data_name, sep=None, can_overwrite=True,
                  warn_on_error=False, strict_sample_id=False, dry_run=False,
-                 user=None, erase_on_blank=False):
+                 user=None, erase_on_blank=False, no_new_records=False):
         try:
             self.dataset = get_registry().datasets[data_name]
         except KeyError:
@@ -75,6 +75,7 @@ class Loader():
         self.dry_run = dry_run
         self.user = user
         self.erase_on_blank = erase_on_blank
+        self.no_new_records = no_new_records
         self.file_record = None
         if dry_run:
             self.log = log
@@ -209,6 +210,7 @@ class Loader():
             dry_run=self.dry_run,
             overwrite=self.can_overwrite,
             erase_on_blank=self.erase_on_blank,
+            no_new_records=self.no_new_records,
             file_record=self.file_record,
         )
 
@@ -524,7 +526,9 @@ class Loader():
 
                 try:
                     obj = model.objects.get(**id_arg)
-                except model.DoesNotExist:
+                except model.DoesNotExist as e:
+                    if self.no_new_records:
+                        raise UserDataError('record not found') from e
                     # id_arg was used as lookup in get() above but used now for
                     # the model constructor, this works as long as the keys are
                     # limited to field or property names
