@@ -28,7 +28,7 @@ class AdminSite(admin.AdminSite):
         later, maybe has to do with module auto-discovery.
         """
         for i in get_registry().get_models():
-            self.register(i, ModelAdmin)
+            self.register(i, model_admin_factory(i))
 
         self.register(ImportFile, ImportFileAdmin)
         self.register(Snapshot, SnapshotAdmin)
@@ -78,6 +78,17 @@ class ModelAdmin(admin.ModelAdmin):
         record = self.model.objects.get(pk=object_id)
         return HistoryView.as_view()(
                 request, record=record, extra_context=extra_context)
+
+
+def model_admin_factory(model):
+    m2m_field_names = [
+        i.name for i
+        in model.get_fields(with_m2m=True).fields
+        if i.many_to_many
+    ]
+    opts = dict(filter_horizontal=m2m_field_names)
+    name = 'Auto' + model._meta.model_name.capitalize() + 'ModelAdmin'
+    return type(name, (ModelAdmin,), opts)
 
 
 class ImportFileAdmin(admin.ModelAdmin):
