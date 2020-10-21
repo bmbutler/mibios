@@ -244,16 +244,6 @@ class Loader():
         Enforce object overwrite as needed.
         Update state with object
         """
-        if is_primary_obj:
-            # check that each row corresponds to distinct record
-            # (the primary record)
-            if obj.natural in self.line_key:
-                msg = (f'record {obj.natural} was already processed on line '
-                       f'{self.line_key[obj.natural]}')
-                raise UserDataError(msg)
-            else:
-                self.line_key[obj.natural] = self.linenum
-
         model_name = obj._meta.model_name
         obj.add_change_record(
             file=self.file_record,
@@ -292,6 +282,18 @@ class Loader():
 
         if need_to_save:
             obj.full_clean()
+
+        if is_primary_obj:
+            # check that each row corresponds to distinct record
+            # (the primary record)
+            if obj.natural in self.line_key:
+                msg = (f'record {obj.natural} was already processed on line '
+                       f'{self.line_key[obj.natural]}')
+                raise UserDataError(msg)
+            else:
+                self.line_key[obj.natural] = self.linenum
+
+        if need_to_save:
             obj.save()
 
     def is_blank(self, col_name, value):
