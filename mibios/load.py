@@ -44,7 +44,13 @@ class Loader():
         model_name = self.model._meta.model_name
         if self.dataset:
             self.accr_map = {}
-            for accr, col, *extra in self.dataset.fields:
+            for accr, *items in self.dataset.fields:
+                try:
+                    col, *extra = items
+                except ValueError:
+                    col = accr
+                    extra = ()
+
                 accr = model_name + '__' + accr
                 self.accr_map[col.casefold()] = accr
                 for i in extra:
