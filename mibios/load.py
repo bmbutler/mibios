@@ -10,7 +10,7 @@ from django.core.exceptions import (FieldDoesNotExist, ObjectDoesNotExist,
 from django.db import transaction, IntegrityError
 
 from . import get_registry
-from .dataset import UserDataError
+from .dataset import PARSE_BLANK, UserDataError
 from .models import ImportFile, Model, NaturalKeyLookupError
 from .utils import DeepRecord, getLogger
 
@@ -30,6 +30,7 @@ class Loader():
     log = log
     dataset = None
     blanks = {None: ['']}
+    parse_blank = []
 
     def __init__(self, data_name, sep=None, can_overwrite=True,
                  warn_on_error=False, strict_sample_id=False, dry_run=False,
@@ -58,6 +59,8 @@ class Loader():
                         if accr not in self.blanks:
                             self.blanks[accr] = []
                         self.blanks[accr] += i['blanks']
+                    if i == PARSE_BLANK:
+                        self.parse_blank.append(accr)
         else:
             # set accessor map from model
             fields = self.model.get_fields(with_hidden=True)
@@ -261,9 +264,7 @@ class Loader():
         need_to_save = False
         if is_new:
             self.new[model_name].append(obj)
-            need_to_save = False
-            obj.full_clean()
-            obj.save()
+            need_to_save = True
         elif from_row is not None:
             consistent, diffs = obj.compare(from_row)
             for k, v in from_row.items():
@@ -452,7 +453,7 @@ class Loader():
         """
         self.rec = DeepRecord()
         for k, v in self.row.items():
-            if v is not None:
+            if v is not None or k in self.parse_blank:
                 v = self.parse_value(k, v)
 
                 if self.dataset and v is self.dataset.IGNORE_THIS_FIELD:

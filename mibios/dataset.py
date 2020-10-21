@@ -1,6 +1,7 @@
 """
 Definitions for special datasets
 """
+PARSE_BLANK = 'parse_blank'
 
 
 class UserDataError(Exception):
