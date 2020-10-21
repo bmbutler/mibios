@@ -35,7 +35,9 @@ class DeepRecord():
 
     Helps loading complex table
     """
-    def __init__(self, init={}, sep='__'):
+    SEP = '__'
+
+    def __init__(self, init={}, sep=SEP):
         self._ = {}
         self.sep = sep
         for k, v in init.items():
@@ -215,6 +217,12 @@ class DeepRecord():
 
     def __str__(self):
         return str(self._)
+
+    def flatten(self):
+        return {
+            self.SEP.join(k): v
+            for k, v in self.items(leaves_only=True)
+        }
 
 
 class StatsMiddleWare:
