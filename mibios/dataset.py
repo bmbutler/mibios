@@ -29,6 +29,8 @@ class Dataset():
         return cls.__instance[cls.__name__]
 
     def __init__(self):
+        # sentinel return value for parse_FOO methods to indicate to skip field
+        self.IGNORE_THIS_FIELD = object()
         if not self.fields:
             # default to all normal fields of model
             self.fields = self.model.get_fields().names

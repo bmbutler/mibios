@@ -393,7 +393,7 @@ class Loader():
 
     def parse_value(self, accessor, value):
         """
-        Delegate to specified parsing method
+        Delegate to specified Dataset.parse_FOO method
         """
         # rm model prefix from accsr to form method name
         pref, _, a = accessor.partition('__')
@@ -454,8 +454,8 @@ class Loader():
         for k, v in self.row.items():
             if v is not None:
                 v = self.parse_value(k, v)
-                if v is None:
-                    # parse_value said to ignore just this field
+
+                if self.dataset and v is self.dataset.IGNORE_THIS_FIELD:
                     continue
 
             if isinstance(v, dict):
