@@ -878,7 +878,6 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, MultiTableMixin,
             self.record = kwargs['record']
             self.record_pk = self.record.pk
             self.record_natural = self.record.natural
-            app_label = self.record._meta.app_label
             self.model_name = self.record._meta.model_name
         else:
             # via other url conf, NOTE: has no current users
@@ -894,8 +893,6 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, MultiTableMixin,
                 model_class = get_registry().models[self.model_name]
             except KeyError:
                 raise Http404
-            else:
-                app_label = model_class._meta.app_label
 
         if self.record is None:
             get_kw = {}
@@ -967,6 +964,7 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, MultiTableMixin,
             natural_key = '???'
         ctx['natural_key'] = natural_key
         ctx['page_title'].append('history of ' + natural_key)
+
         return ctx
 
 
