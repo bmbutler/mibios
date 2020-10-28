@@ -888,7 +888,7 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, MultiTableMixin,
                 self.record_pk = None
                 self.record_natural = kwargs['natural']
 
-            self.model_name = kwargs['dataset']
+            self.model_name = kwargs['data_name']
             try:
                 model_class = get_registry().models[self.model_name]
             except KeyError:
