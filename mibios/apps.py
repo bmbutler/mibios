@@ -5,6 +5,10 @@ from django.contrib.admin.apps import AdminConfig as UpstreamAdminConfig
 from django.utils.module_loading import import_string
 
 from .registry import Registry
+from .utils import getLogger
+
+
+log = getLogger(__name__)
 
 
 class MibiosConfig(apps.AppConfig):
@@ -41,7 +45,8 @@ class MibiosConfig(apps.AppConfig):
                     app_conf.name + '.dataset',
                     app_conf.label,
                 )
-            except ImportError:
+            except ImportError as e:
+                log.debug(f'Failed registering datasets from: {app_conf} {e}')
                 pass
 
         # register table view plugins
@@ -57,6 +62,15 @@ class MibiosConfig(apps.AppConfig):
 
         # signaling
         import_module('mibios.signals')
+
+        info = f'Registry {registry.name} (app:models+datasets):'
+        for i in registry.apps.keys():
+            info += (
+                f' {i}:'
+                f'{len(registry.get_models(app=i))}'
+                f'+{len(registry.get_datasets(app=i))}'
+            )
+        log.info(info)
 
 
 class AdminConfig(UpstreamAdminConfig):
