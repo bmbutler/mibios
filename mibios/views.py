@@ -855,6 +855,12 @@ class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
             (j if j else i.capitalize())
             for i, j in zip(self.fields, self.col_names)
         ]
+        try:
+            dataset = get_registry().datasets[self.data_name]
+        except KeyError:
+            ctx['dataset_doc'] = None
+        else:
+            ctx['dataset_doc'] = dataset.get_doc()
         return ctx
 
 

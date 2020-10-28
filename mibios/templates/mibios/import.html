@@ -18,4 +18,10 @@ A name or id column is required.  Other columns may be omitted.  Additional colu
     {{ form.as_p }}
     <input type="submit" value="Submit">
 </form>
+
+{% if dataset_doc %}
+About {{ view.data_name }}:
+<pre>{{ dataset_doc }}
+</pre>
+{% endif %}
 {% endblock %}

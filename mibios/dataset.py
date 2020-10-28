@@ -1,3 +1,4 @@
+from inspect import getdoc, getmembers, ismethod
 """
 Definitions for special datasets
 """
@@ -36,3 +37,24 @@ class Dataset():
             # default to all normal fields of model
             self.fields = self.model.get_fields().names
             self.fields = [(i,) for i in self.fields]
+
+    def get_doc(self):
+        """
+        Collect docstrings for dataset class and parse_FOO methods
+        """
+        PARSE_METH_PREFIX = 'parse_'
+        doc = getdoc(self) or ''
+        methdocs = [
+            (name[len(PARSE_METH_PREFIX):], getdoc(meth))
+            for name, meth
+            in getmembers(self, predicate=ismethod)
+            if name.startswith(PARSE_METH_PREFIX)
+        ]
+        if methdocs:
+            if doc:
+                doc += '\n\n'
+            doc += '\n--- Column-specific parser info ---\n'
+            for col, txt in methdocs:
+                doc += f'\nColumn "{col}":\n{txt}\n'
+
+        return doc
