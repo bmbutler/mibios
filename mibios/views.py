@@ -555,12 +555,12 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         ctx['data_name_verbose'] = self.data_name_verbose
 
         ctx['applied_filter'] = [
-            (k, v, self.to_query_string(without=[{k: v}]))
+            (k, v, self.to_query_string(without=[{k: v}], keep=True))
             for k, v
             in self.filter.items()
         ]
         ctx['applied_excludes_list'] = [
-            (i, self.to_query_string(without=[i]))
+            (i, self.to_query_string(without=[i], keep=True))
             for i
             in self.excludes
         ]
@@ -621,7 +621,8 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                                 # TODO: applying filter to negated queryset is
                                 # more complicated
                                 self.to_query_string(
-                                    filter={sort_by_field: value}
+                                    filter={sort_by_field: value},
+                                    keep=True,
                                 )
                             )
                             for value, count
