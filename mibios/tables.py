@@ -46,7 +46,12 @@ class CountColumn(tables.Column):
             # to the current table
             our_name = rel_object.remote_field.name
 
-        url = reverse('table', kwargs=dict(data_name=data_name))
+        if view.curation:
+            url_data_name = data_name
+        else:
+            url_data_name = view.NO_CURATION_PREFIX + data_name
+
+        url = reverse('table', kwargs=dict(data_name=url_data_name))
 
         if 'linkify' not in kwargs and view:
             def linkify(record):

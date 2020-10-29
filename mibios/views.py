@@ -40,20 +40,34 @@ class SearchFieldLookupError(LookupError):
     pass
 
 
+class CuratorMixin():
+    CURATOR_GROUP_NAME = 'curators'
+    user_is_curator = False
+
+    def setup(self, request, *args, **kwargs):
+        f = dict(name=self.CURATOR_GROUP_NAME)
+        try:
+            is_curator = request.user.groups.filter(**f).exists()
+        except Exception:
+            pass
+        self.user_is_curator = is_curator
+        super().setup(request, *args, **kwargs)
+
+
 class UserRequiredMixin(LoginRequiredMixin):
     raise_exception = True
     permission_denied_message = 'You don\'t have an active user account here.'
 
 
-class CuratorRequiredMixin(UserRequiredMixin, UserPassesTestMixin):
-    group_name = 'curators'
+class CuratorRequiredMixin(CuratorMixin, UserRequiredMixin,
+                           UserPassesTestMixin):
     permission_denied_message = 'You are not a curator'
 
     def test_func(self):
-        return self.request.user.groups.filter(name=self.group_name).exists()
+        return self.user_is_curator
 
 
-class BasicBaseMixin(ContextMixin):
+class BasicBaseMixin(CuratorMixin, ContextMixin):
     """
     Mixin to populate context for the base template without model/dataset info
     """
@@ -65,8 +79,7 @@ class BasicBaseMixin(ContextMixin):
                 'verbose_name',
                 apps.get_app_config('mibios').verbose_name
         )]
-        ctx['user_is_curator'] = \
-            self.request.user.groups.filter(name='curators').exists()
+        ctx['user_is_curator'] = self.user_is_curator
         ctx['version_info'] = {'mibios': __version__}
         for conf in get_registry().apps.values():
             ctx['version_info'][conf.name] = getattr(conf, 'version', None)
@@ -113,6 +126,9 @@ class DatasetMixin():
     dataset_excludes = None
 
     show_hidden = False
+    curation = True
+
+    NO_CURATION_PREFIX = 'not-curated-'
 
     def setup(self, request, *args, data_name=None, **kwargs):
         """
@@ -146,7 +162,7 @@ class DatasetMixin():
                 raise Http404
             else:
                 # setup for normal model
-                self.queryset = self.model.curated.all()
+                self.queryset = None
                 self.data_name_verbose = self.model._meta.verbose_name
                 # set default fields - just the "simple" ones
                 no_name_field = True
@@ -284,7 +300,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         """
         Compile filter and field selection state, etc from GET querystring
 
-        Called from get()
+        Called from get() to provide arguments for update_state()/
 
         Converts "NULL" to None, with exact lookup this will translate to
         SQL's "IS NULL"
@@ -294,6 +310,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         negate = False
         fields = []
         expand = []
+
         for qkey, val_list in self.request.GET.lists():
             if qkey.startswith(QUERY_FILTER + '-'):
                 _, _, filter_key = qkey.partition('-')
@@ -452,6 +469,13 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                 related_fields.append(i)
 
         log.debug('get_queryset:', f'{q}', f'{related_fields}')
+
+        if self.queryset is None:
+            if self.curation:
+                self.queryset = self.model.curated.all()
+            else:
+                self.queryset = self.model.objects.all()
+
         qs = super().get_queryset().select_related(*related_fields).filter(q)
         # Do not annotate with rev rel counts on the average table.  Doing so
         # will mess up the group count in some circumstances (group members
@@ -501,6 +525,10 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             ctx = plugin.get_context_data(**ctx)
 
         ctx['model'] = self.model._meta.model_name
+        if self.curation:
+            ctx['url_data_name'] = self.data_name
+        else:
+            ctx['url_data_name'] = self.NO_CURATION_PREFIX + self.data_name
         ctx['data_name'] = self.data_name
         ctx['page_title'].append(self.data_name)
         ctx['data_name_verbose'] = self.data_name_verbose

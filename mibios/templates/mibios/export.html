@@ -7,7 +7,7 @@
 {% endblock %}
 
 {% block content %}
-<h2>Choose export format for {{ view.data_name }} table</h2>
+<h2>Choose export format for {{ view.data_name }} table {% if not view.curation %}[CURATION: OFF]{% endif %}</h2>
 <form action=
 {# FIXME: ugly? hack to get url reversal for average views #}
     {% if avg_url_slug %}

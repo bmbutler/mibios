@@ -15,17 +15,18 @@
     {% else %}
     ({{ table.rows|length }} records)
     {% endif %}
+    {% if not view.curation %}[CURATION: OFF]{% endif %}
 </h2>
 
 {% if avg_by_data %}
     {% if view.avg_by %}
         {# at average view, display link back to normal table view #}
-        [<a href="{% url 'table' data_name=data_name %}{{ querystr }}">normal table</a>]<br>
+        [<a href="{% url 'table' data_name=url_data_name %}{{ querystr }}">normal table</a>]<br>
     {% else %}
         {# display links to average views #}
         average by:
         {% for slug, list in avg_by_data.items %}
-        [<a href="{% url 'average' data_name=data_name avg_by=slug %}{{ querystr }}">{{ list|join:' and '}}</a>]<br>
+        [<a href="{% url 'average' data_name=url_data_name avg_by=slug %}{{ querystr }}">{{ list|join:' and '}}</a>]<br>
         {% endfor %}
     {% endif %}
 {% endif %}
@@ -89,7 +90,7 @@
 {% endfor %}
 
 {% if field_search_form %}
-    <form action="{% url 'table' data_name=data_name %}{{ querystr }}" method="get">
+    <form action="{% url 'table' data_name=url_data_name %}{{ querystr }}" method="get">
         {{ field_search_form }}
         <input type="submit" value="Search">
     </form>
@@ -97,10 +98,10 @@
 {% endif %}
 
 {% if view.avg_by %}
-    <a href="{% url 'average_export_form' data_name=data_name avg_by=avg_url_slug %}{{ querystr }}">export</a>
+    <a href="{% url 'average_export_form' data_name=url_data_name avg_by=avg_url_slug %}{{ querystr }}">export</a>
 {% else %}
     <a href="{% url 'import' data_name=data_name %}">import</a>
-    <a href="{% url 'export_form' data_name=data_name %}{{ querystr }}">export</a>
+    <a href="{% url 'export_form' data_name=url_data_name %}{{ querystr }}">export</a>
 {% endif %}
 
 {% if table_view_plugin_template %}{% include table_view_plugin_template %}{% endif %}
