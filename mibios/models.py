@@ -282,16 +282,21 @@ class QuerySet(models.QuerySet):
 
         return ret
 
-    def annotate_rev_rel_counts(self):
+    def annotate_rev_rel_counts(self, curate=True):
         """
         Add reverse relation count annotations
+
+        :param bool curate: Turn curation filters off or on.  Curation is on by
+                            default.
         """
         count_args = {}
         rels = self.model.get_related_objects()
 
         for i in rels:
             kwargs = dict(distinct=True)
-            f = i.related_model.curated.get_curation_filter()
+            f = {}
+            if curate:
+                f = i.related_model.curated.get_curation_filter()
             if f:
                 kwargs['filter'] = f
             name = i.related_model._meta.model_name + '__count'

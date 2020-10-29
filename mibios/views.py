@@ -504,7 +504,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         if getattr(self, 'avg_by', None):
             qs = qs.average(*self.avg_by)
         else:
-            qs = qs.annotate_rev_rel_counts()
+            qs = qs.annotate_rev_rel_counts(curate=self.curation)
         return qs
 
     def get_table_class(self):
