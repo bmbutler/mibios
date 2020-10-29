@@ -640,6 +640,17 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
 
         ctx['avg_by_data'] = {'-'.join(i): i for i in self.model.average_by}
 
+        # for curation switch:
+        ctx['curation_switch_data'] = {}
+        if self.user_is_curator:
+            if self.curation:
+                ctx['curation_switch_data']['data_name'] = \
+                    self.NO_CURATION_PREFIX + self.data_name
+                ctx['curation_switch_data']['switch'] = 'off'
+            else:
+                ctx['curation_switch_data']['data_name'] = self.data_name
+                ctx['curation_switch_data']['switch'] = 'on'
+
         return ctx
 
     def get_search_field(self):

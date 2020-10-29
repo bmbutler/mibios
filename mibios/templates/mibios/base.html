@@ -34,7 +34,7 @@
 {% endif %}
 {% if view.user_is_curator %}
 <br>
-Data curation: <a href="{% url 'admin:index' %}">admin interface</a>
+Data curation: <a href="{% url 'admin:index' %}">admin interface</a> {% block curation_switch %}{% endblock %}
 {% endif %}
 <hr>
 {% block nav %}{% endblock %}

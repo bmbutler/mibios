@@ -6,6 +6,12 @@
 <link rel="stylesheet" href="{% static 'mibios/css/bootstrap.min.css' %}" />
 {% endblock %}
 
+{% block curation_switch %}
+{% if curation_switch_data %}
+<a href="{% url 'table' data_name=curation_switch_data.data_name %}{{ querystr }}">turn {{ curation_switch_data.switch }} curation</a>
+{% endif %}
+{% endblock %}
+
 {% block content %}
 {% if model %}
 <h2>
