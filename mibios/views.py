@@ -362,7 +362,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         return filter, excludes, negate, fields, expand
 
     def to_query_dict(self, filter={}, excludes=[], negate=False, without=[],
-                      fields=[], keep_other=False):
+                      fields=[], keep=False):
         """
         Compile a query dict from current state
 
@@ -377,11 +377,12 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                             default, is passed, then nothing will be added to
                             the query string, with the intended meaning to then
                             show all the fields.
-        :param bool keep_other: Return additional items, present in the
-                                original request query dict but unrelated to
-                                TableView, e.g. those items handled by
-                                django_tables2 (sort, pagination.)
+        :param bool keep: Return additional items, present in the original
+                          request query dict but unrelated to TableView, e.g.
+                          those items handled by django_tables2 (sort,
+                          pagination.)
         """
+        # (1) set filtering options
         f = {**self.filter, **filter}
         elist = self.excludes + excludes
 
@@ -407,7 +408,11 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
 
         qdict = self.build_query_dict(f, elist, query_negate, fields)
 
-        if keep_other:
+        # (2) set other state
+        # (Nothing here yet)
+
+        # (3) keep others
+        if keep:
             for k, vs in self.request.GET.lists():
                 if k not in qdict:
                     qdict.setlist(k, vs)
@@ -423,12 +428,13 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         query = self.to_query_dict(*args, **kwargs).urlencode()
         if query:
             query = '?' + query
+
         return query
 
     @classmethod
     def build_query_dict(cls, filter={}, excludes=[], negate=False, fields=[]):
         """
-        Build a query dict
+        Build a query dict for table filtering
 
         This is the reverse of the get_filter_from_url method.  This is a class
         method so we can build arbitrary query strings.  Use

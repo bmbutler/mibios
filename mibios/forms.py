@@ -73,7 +73,7 @@ def export_form_factory(view):
 
     :param TableView view: View whose table will be exported
     """
-    query_dict = view.to_query_dict(fields=view.fields, keep_other=True)
+    query_dict = view.to_query_dict(fields=view.fields, keep=True)
     fields = query_dict.getlist(QUERY_FIELD)
 
     initial_fields = list(fields)
