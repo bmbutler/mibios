@@ -9,6 +9,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponse
 from django.http.request import QueryDict
 from django.urls import reverse
@@ -137,7 +138,19 @@ class DatasetMixin():
         This overrides (but calls first) View.setup()
         """
         super().setup(request, *args, **kwargs)
+
         if data_name:
+            if data_name.startswith(self.NO_CURATION_PREFIX):
+                if not hasattr(self, 'user_is_curator'):
+                    raise Http404
+
+                if self.user_is_curator:
+                    self.curation = False
+                else:
+                    raise PermissionDenied
+
+                data_name = data_name[len(self.NO_CURATION_PREFIX):]
+
             self.data_name = data_name
 
         self.filter = {}
@@ -249,6 +262,8 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
     def update_state(self, filter, excludes, negate, fields_selected, expand):
         """
         Update state from info compiled from GET query string
+
+        Is called once from get()
         """
         self.filter.update(**filter)
         self.excludes += excludes
