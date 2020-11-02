@@ -61,7 +61,11 @@ class NaturalValuesIterable(models.query.ValuesIterable):
             # TODO: this only gets direct relations, we need a routine to
             # resolve multiple-hop relations
             model = self.model_class._meta.get_field(field).related_model
-            for i in model.curated.iterator():
+            if self.queryset.is_curated():
+                manager = model.curated
+            else:
+                manager = model.objects
+            for i in manager.iterator():
                 m[i.pk] = i.natural
             value_maps[field] = m
 
@@ -109,12 +113,13 @@ class Q(models.Q):
 
 
 class QuerySet(models.QuerySet):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, manager=None, **kwargs):
         super().__init__(*args, **kwargs)
         self._avg_by = None
         self._avg_fields = None
         self._pre_annotation_clone = None
         self._rev_rel_count_fields = []
+        self._manager = manager
 
     def as_dataframe(self, *fields, natural=False):
         """
@@ -162,7 +167,11 @@ class QuerySet(models.QuerySet):
 
                 if f.is_relation and natural:
                     # replace pks with natural key, 1 extra DB query
-                    qs = f.related_model.curated.iterator()
+                    if self.is_curated():
+                        manager = f.related_model.curated
+                    else:
+                        manager = f.related_model.objects
+                    qs = manager.iterator()
                     nat_dict = {i.pk: i.natural for i in qs}
                     col_dat = map(
                         lambda pk: None if pk is None else nat_dict[pk],
@@ -282,12 +291,9 @@ class QuerySet(models.QuerySet):
 
         return ret
 
-    def annotate_rev_rel_counts(self, curate=True):
+    def annotate_rev_rel_counts(self):
         """
         Add reverse relation count annotations
-
-        :param bool curate: Turn curation filters off or on.  Curation is on by
-                            default.
         """
         count_args = {}
         rels = self.model.get_related_objects()
@@ -295,7 +301,7 @@ class QuerySet(models.QuerySet):
         for i in rels:
             kwargs = dict(distinct=True)
             f = {}
-            if curate:
+            if self.is_curated():
                 f = i.related_model.curated.get_curation_filter()
             if f:
                 kwargs['filter'] = f
@@ -371,6 +377,12 @@ class QuerySet(models.QuerySet):
         qs = qs.order_by(*avg_by).annotate(**kwargs)
         return qs
 
+    def is_curated(self):
+        """
+        Tell if qeryset was created with the CurationManager
+        """
+        return isinstance(self._manager, CurationManager)
+
     def _clone(self):
         """
         Extent non-public _clone() to keep track of extra state
@@ -380,12 +392,25 @@ class QuerySet(models.QuerySet):
         c._avg_fields = self._avg_fields
         c._pre_annotation_clone = self._pre_annotation_clone
         c._rev_rel_count_fields = list(self._rev_rel_count_fields)
+        c._manager = self._manager
         return c
 
 
 class BaseManager(models.manager.BaseManager):
     def get_by_natural_key(self, key):
         return self.get(**self.model.natural_lookup(key))
+
+    def get_queryset(self):
+        """
+        Return a new QuerySet object.
+
+        This overrides method in Django's BaseManager to give a reference to
+        itself to the returned QuerySet.  Hence, we must use the
+        mibios.QuerySet, Django's original QuerySet constructor will not
+        understand the extra argument.
+        """
+        return self._queryset_class(model=self.model, using=self._db,
+                                    hints=self._hints, manager=self)
 
 
 class CurationBaseManager(BaseManager):
