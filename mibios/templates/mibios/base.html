@@ -19,7 +19,7 @@
         {% endfor %}
     {% endfor %}
 {% endif %}
-{% if data_names %}
+{% if data_names and view.user_is_curator %}
     {% for app, names in data_names %}
             <br>
             {{ app }} specials:
