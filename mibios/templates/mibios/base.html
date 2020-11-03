@@ -14,8 +14,8 @@
     {% for app, names in model_names %}
         {% if not forloop.first %}<br>{% endif %}
         {{ app }} tables:
-        {% for i in names %}
-            [<a href="{% url 'table' i %}">{{ i }}</a>]
+        {% for name, plural in names %}
+            [<a href="{% url 'table' name %}">{{ plural }}</a>]
         {% endfor %}
     {% endfor %}
 {% endif %}

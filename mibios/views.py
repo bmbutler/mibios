@@ -95,7 +95,10 @@ class BaseMixin(BasicBaseMixin):
         ctx = super().get_context_data(**ctx)
         ctx['model_names'] = []
         for conf in get_registry().apps.values():
-            names = sorted(get_registry().get_model_names(app=conf.name))
+            names = sorted((
+                (i._meta.model_name, i._meta.verbose_name_plural)
+                for i in get_registry().get_models(app=conf.name)
+            ))
             if names:
                 ctx['model_names'].append((conf.verbose_name, names))
         ctx['data_names'] = []
@@ -551,7 +554,7 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         else:
             ctx['url_data_name'] = self.NO_CURATION_PREFIX + self.data_name
         ctx['data_name'] = self.data_name
-        ctx['page_title'].append(self.data_name)
+        ctx['page_title'].append(self.data_name_verbose)
         ctx['data_name_verbose'] = self.data_name_verbose
 
         ctx['applied_filter'] = [
