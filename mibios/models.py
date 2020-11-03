@@ -1557,4 +1557,5 @@ class TagNote(Model):
     text = models.TextField(max_length=5000, blank=True)
 
     class Meta:
-        verbose_name = 'note'
+        verbose_name = 'tags and notes'
+        verbose_name_plural = verbose_name
