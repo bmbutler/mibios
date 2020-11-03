@@ -149,6 +149,11 @@ class CountColumn(tables.Column):
             # subsequent count columns
             for row in table.data:
                 total += bound_column.accessor.resolve(row)
+        except KeyError:
+            # raised if the counts were not calculated in the queryset for some
+            # reason
+            log.debug(f'sum for count column {bound_column.accessor} missing')
+            total = 'NA'
 
         return format_html('all: <a href={}>{}</a>', self.footer_url, total)
 
