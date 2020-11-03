@@ -295,6 +295,29 @@ class AbundanceQuerySet(QuerySet):
 
 
 class Abundance(Model):
+    """
+    Models read count
+
+    *** HOWTO add data from an analysis run ***
+
+    (1) create a new AnalysisProject record.
+    (2) For a mothur SOP 97% OTU run, abundances only, no sequences, you need
+        these files:
+
+        ugrads19.asv0.precluster.pick.opti_mcc.shared
+        ugrads19.asv0.precluster.pick.opti_mcc.0.03.rep.fasta
+        ugrads19.asv0.precluster.pick.opti_mcc.0.03.cons.taxonomy
+
+    (3) Then in the shell, run:
+
+      1 from mibios_seq.models import Abundance, AnalysisProject
+      2 p = AnalysisProject.objects.get(name='mothur_SOP_97pct')
+      3 Abundance.from_file(
+            'ugrads19.final.shared',
+            project=p,
+            fasta='ugrads19.final.fa'
+        )
+    """
     history = None
     otu = models.ForeignKey(
         'OTU',
@@ -332,7 +355,7 @@ class Abundance(Model):
         return super().__str__() + f' |{self.count}|'
 
     @classmethod
-    def from_file(cls, file, project, fasta=None):
+    def from_file(cls, file, project, fasta=None, threads=1):
         """
         Load abundance data from shared file
 
@@ -344,57 +367,60 @@ class Abundance(Model):
         are created as needed.  Obviously, the OTU/ASV/sequence names in shared
         and fasta files must correspond.
         """
-        sh = MothurShared(file, verbose=False, threads=1)
-        with atomic():
-            if fasta:
-                fasta_result = OTU.from_fasta(fasta, project=project)
+        sh = MothurShared(file, verbose=False, threads=threads)
+        return cls._from_file(file, project, fasta, sh)
+
+    @classmethod
+    @atomic
+    def _from_file(cls, file, project, fasta, sh):
+        if fasta:
+            fasta_result = OTU.from_fasta(fasta, project=project)
+        else:
+            fasta_result = None
+        AbundanceImportFile.create_from_file(file=file, project=project)
+        sequencings = Sequencing.objects.in_bulk(field_name='name')
+        otus = {
+            (i.prefix, i.number): i
+            for i in OTU.objects.all().filter(project=project).iterator()
+        }
+
+        skipped, zeros = 0, 0
+        objs = []
+        for (seqid, otu), count in sh.counts.stack().items():
+            if count == 0:
+                # don't store zeros
+                zeros += 1
+                continue
+
+            if seqid not in sequencings:
+                # ok to skip, e.g. non-public
+                skipped += 1
+                continue
+
+            try:
+                otu_key = OTU.natural_lookup(otu)
+            except ValueError:
+                raise UserDataError(
+                    f'Irregular OTU identifier not supported: {otu}'
+                )
             else:
-                fasta_result = None
+                otu_key = (otu_key['prefix'], otu_key['number'])
 
-            AbundanceImportFile.create_from_file(file=file, project=project)
-            sequencings = Sequencing.curated.in_bulk(field_name='name')
-            otus = {
-                (i.prefix, i.number): i
-                for i in OTU.curated.all().filter(project=project).iterator()
-            }
+            try:
+                otu_obj = otus[otu_key]
+            except KeyError:
+                raise UserDataError(
+                    f'OTU unknown to analysis project: {otu}'
+                )
 
-            skipped, zeros = 0, 0
-            objs = []
-            for (sample, otu), count in sh.counts.stack().items():
-                if count == 0:
-                    # don't store zeros
-                    zeros += 1
-                    continue
+            objs.append(cls(
+                count=count,
+                project=project,
+                sequencing=sequencings[seqid],
+                otu=otu_obj,
+            ))
 
-                if sample not in sequencings:
-                    # ok to skip, e.g. non-public
-                    skipped += 1
-                    continue
-
-                try:
-                    otu_key = OTU.natural_lookup(otu)
-                except ValueError:
-                    raise UserDataError(
-                        f'Irregular OTU identifier not supported: {otu}'
-                    )
-                else:
-                    otu_key = (otu_key['prefix'], otu_key['number'])
-
-                try:
-                    otu_obj = otus[otu_key]
-                except KeyError:
-                    raise UserDataError(
-                        f'OTU unknown to analysis project: {otu}'
-                    )
-
-                objs.append(cls(
-                    count=count,
-                    project=project,
-                    sequencing=sequencings[sample],
-                    otu=otu_obj,
-                ))
-
-            cls.curated.bulk_create(objs)
+        cls.objects.bulk_create(objs)
         return dict(count=len(objs), zeros=zeros, skipped=skipped,
                     fasta=fasta_result)
 
@@ -415,7 +441,7 @@ class AnalysisProject(Model):
 
     @classmethod
     def get_fields(cls, with_m2m=False, **kwargs):
-        # Prevent abundance from being displayed, too much data
+        # Prevent numbers from being displayed, too much data
         return super().get_fields(with_m2m=False, **kwargs)
 
 
@@ -553,11 +579,11 @@ class OTU(Model):
                 added += 1
                 has_changed = True
             else:
-                if obj.seq is None:
-                    obj.seq = seq
+                if obj.sequence is None:
+                    obj.sequence = seq
                     updated += 1
                     has_changed = True
-                elif obj.seq != seq:
+                elif obj.sequence != seq:
                     raise UserDataError(f'OTU record already exists with'
                                         f'different sequence: {obj}')
 
