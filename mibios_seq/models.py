@@ -1,6 +1,6 @@
 from collections import OrderedDict
 from itertools import chain, groupby
-from operator import itemgetter
+from operator import attrgetter, itemgetter
 
 from Bio import SeqIO
 from django.db import models
@@ -329,6 +329,11 @@ class Abundance(Model):
         help_text='absolute abundance',
         editable=False,
     )
+    relative = models.FloatField(
+        default=None, null=True,
+        verbose_name='relative abundance',
+        editable=False,
+    )
     sequencing = models.ForeignKey(
         Sequencing,
         on_delete=models.CASCADE,
@@ -423,6 +428,31 @@ class Abundance(Model):
         cls.objects.bulk_create(objs)
         return dict(count=len(objs), zeros=zeros, skipped=skipped,
                     fasta=fasta_result)
+
+    @classmethod
+    def compute_relative(cls, project=None):
+        """
+        Compute values for the relative abundance field
+
+        :param project: Restrict calculations to given project
+
+        This will overwrite existing data.  If case of errors, partial updates
+        are possible.
+        """
+        qs = (cls.objects
+              .select_related('project', 'sequencing')
+              .order_by('project__pk', 'sequencing__pk'))
+
+        if project:
+            qs = qs.filter(project=project)
+
+        grpkey = attrgetter('project.pk', 'sequencing.pk')
+        for _, group in groupby(qs.iterator(), key=grpkey):
+            group = list(group)
+            total = sum((i.count for i in group))
+            for i in group:
+                i.relative = i.count / total
+            cls.objects.bulk_update(group, ('relative', ))
 
 
 class AnalysisProject(Model):
