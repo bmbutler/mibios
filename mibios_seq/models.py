@@ -356,6 +356,11 @@ class Abundance(Model):
     objects = Manager.from_queryset(AbundanceQuerySet)()
     curated = CurationManager.from_queryset(AbundanceQuerySet)()
 
+    average_by = [('project', 'otu',
+                   'sequencing__sample__fecalsample__participant',
+                   'sequencing__sample__fecalsample__week')]
+    average_fields = ['relative']
+
     def __str__(self):
         return super().__str__() + f' |{self.count}|'
 
