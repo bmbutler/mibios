@@ -372,6 +372,11 @@ class QuerySet(models.QuerySet):
                 self.model,
                 *avg_by,
             )
+
+        # restrict groups to non-NULL members
+        for i in avg_by:
+            qs = qs.exclude(**{i: None})
+
         qs = qs.order_by(*avg_by).annotate(**kwargs)
         return qs
 
