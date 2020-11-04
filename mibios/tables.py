@@ -304,8 +304,13 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
         else:
             verbose_name = verbose_name.capitalize()
 
-        # django_tables2 wants dotted accessors
-        col = tables.A(accessor.replace('__', '.'))
+        if view.avg_by:
+            # accessors are dict keys, so keep as-is
+            col = accessor
+        else:
+            # django_tables2 wants dotted accessors
+            col = tables.A(accessor.replace('__', '.'))
+
         meta_opts['fields'].append(col)
         col_kw = {}
 
