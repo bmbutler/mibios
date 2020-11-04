@@ -17,7 +17,7 @@
 <h2>
     {{ data_name_verbose }} data
     {% if view.avg_by %}
-    (averaged over {{ view.avg_by|join:" and " }}, {{ table.rows|length }} record groups)
+    (averaged over {{ avg_by_short|join:" / " }}, {{ table.rows|length }} record groups)
     {% else %}
     ({{ table.rows|length }} records)
     {% endif %}
@@ -32,7 +32,7 @@
         {# display links to average views #}
         average by:
         {% for slug, list in avg_by_data.items %}
-        [<a href="{% url 'average' data_name=url_data_name avg_by=slug %}{{ querystr }}">{{ list|join:' and '}}</a>]<br>
+        [<a href="{% url 'average' data_name=url_data_name avg_by=slug %}{{ querystr }}">{{ list|join:' / '}}</a>]<br>
         {% endfor %}
     {% endif %}
 {% endif %}

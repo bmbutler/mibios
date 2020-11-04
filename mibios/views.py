@@ -648,7 +648,10 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         else:
             ctx['querystr'] = ''
 
-        ctx['avg_by_data'] = {'-'.join(i): i for i in self.model.average_by}
+        ctx['avg_by_data'] = {
+            '-'.join(i): [self.shorten_lookup(j) for j in i]
+            for i in self.model.average_by
+        }
 
         # for curation switch:
         ctx['curation_switch_data'] = {}
@@ -697,6 +700,21 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             raise SearchFieldLookupError from e
 
         return [(field.name + '__' if field else '') + i for i in kw.keys()]
+
+    @classmethod
+    def shorten_lookup(cls, txt):
+        """
+        Abbreviate a lookup string for display
+
+        Turns "foo__bar__field_name" into "f-n-field_name".  Simple field names
+        are left as-is.
+        """
+        *rels, field = txt.split('__')
+        if rels:
+            rels = '-'.join([j[0] for j in rels]) + '-'
+        else:
+            rels = ''
+        return rels + field
 
 
 class CSVRenderer():
@@ -1229,6 +1247,7 @@ class AverageMixin():
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['avg_url_slug'] = '-'.join(self.avg_by)
+        ctx['avg_by_short'] = [self.shorten_lookup(i) for i in self.avg_by]
         ctx['page_title'].append('average')
         return ctx
 
