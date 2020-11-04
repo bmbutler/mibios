@@ -988,6 +988,10 @@ class Model(models.Model):
     """ average_by is a list of lists (or tuples) of field names over which
     taking averages makes sense """
 
+    average_fields = []
+    """ List of field names of fields other than DecimalField over which an
+    average can be calculated"""
+
     hidden_fields = []
     """ Fields that are not displayed or exported by default, hidden from
     public view """
@@ -1115,10 +1119,12 @@ class Model(models.Model):
 
         Usually these are all the decimal fields
         """
-        return [
-            i for i in cls.get_fields().fields
-            if isinstance(i, models.DecimalField)
-        ]
+        ret = [cls.get_field(i) for i in cls.average_fields]
+        for i in cls.get_fields().fields:
+            if isinstance(i, models.DecimalField):
+                if i not in ret:
+                    ret.append(i)
+        return ret
 
     def export(self):
         """
