@@ -304,7 +304,6 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
         else:
             verbose_name = verbose_name.capitalize()
 
-        relations, _, name = accessor.rpartition('__')
         # django_tables2 wants dotted accessors
         col = tables.A(accessor.replace('__', '.'))
         meta_opts['fields'].append(col)
@@ -335,7 +334,7 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
         elif field is not None and field.many_to_many:
             col_class = tables.ManyToManyColumn
 
-        elif name == 'natural':
+        elif accessor == 'natural' or accessor.endswith('__natural'):
             col_class = tables.Column
             # TODO: add order by proxy
             col_kw['orderable'] = False
