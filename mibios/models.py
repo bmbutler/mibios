@@ -58,9 +58,7 @@ class NaturalValuesIterable(models.query.ValuesIterable):
         # the natural key for each object/row:
         for field in self.pk_fields:
             m = {}
-            # TODO: this only gets direct relations, we need a routine to
-            # resolve multiple-hop relations
-            model = self.model_class._meta.get_field(field).related_model
+            model = self.model_class.get_field(field).related_model
             if self.queryset.is_curated():
                 manager = model.curated
             else:
