@@ -67,6 +67,70 @@ def get_field_search_form(*fields):
     return type('FieldSearchForm', (forms.Form, ), opts)
 
 
+class ExportFormatForm(forms.Form):
+    """
+    Abstract base class for all export forms
+
+    This class only implements the format choice field.
+    """
+    format_choices = ()
+    """The available formats, need to be provided by implementing class"""
+
+    default_format = None
+    """Default choice of format to be provided by implementing class"""
+
+    format = forms.ChoiceField(
+        widget=forms.RadioSelect(attrs={'class': None}),
+        # choices/initial set by constructor
+        label='file format',
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['format'].choices = self.format_choices
+        self.fields['format'].initial = self.default_format
+
+    def add_prefix(self, field_name):
+        """
+        API abuse to correctly set the HTML input attribute
+        """
+        if field_name == 'format':
+            field_name = QUERY_FORMAT
+        return super().add_prefix(field_name)
+
+
+class ExportBaseForm(ExportFormatForm):
+    """
+    Abstract class for all table export forms
+
+    Inheriting classes should be defined by a factory that supplies the missing
+    choice and initial attributes.
+    """
+    field_choices = ()
+    initial_fields = ()
+
+    exported_fields = forms.MultipleChoiceField(
+        widget=forms.CheckboxSelectMultiple(attrs={'class': None}),
+        # choices/initial set by constructor
+        label='fields to be exported',
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['exported_fields'].choices = self.field_choices
+        self.fields['exported_fields'].initial = self.initial_fields
+        # order field choices before format choices:
+        self.order_fields(('exported_fields', 'format'))
+
+    def add_prefix(self, field_name):
+        """
+        API abuse to correctly set the HTML input attribute
+        """
+        if field_name == 'exported_fields':
+            field_name = QUERY_FIELD
+        return super().add_prefix(field_name)
+
+
 def export_form_factory(view):
     """
     Return the export format form class for a given view
@@ -91,22 +155,13 @@ def export_form_factory(view):
         for i in view.model.get_fields(with_hidden=True).fields
     }
 
-    choices = ((i, verbose_names.get(i, i)) for i in fields)
-    opts = {}
-
-    opts[QUERY_FIELD] = forms.MultipleChoiceField(
-        widget=forms.CheckboxSelectMultiple(attrs={'class': None}),
-        choices=choices,
-        initial=initial_fields,
-        label='fields to be exported',
-    )
-
-    opts[QUERY_FORMAT] = forms.ChoiceField(
-        widget=forms.RadioSelect(attrs={'class': None}),
-        choices=[(i[0], i[2].description) for i in view.FORMATS],
-        initial=view.DEFAULT_FORMAT,
-        label='file format',
-    )
+    field_choices = [(i, verbose_names.get(i, i)) for i in fields]
+    opts = {
+        'format_choices': [(i[0], i[2].description) for i in view.FORMATS],
+        'default_format': view.DEFAULT_FORMAT,
+        'field_choices': field_choices,
+        'initial_fields': initial_fields,
+    }
 
     # Hidden fields to keep track of complete state, needed since the GET
     # action get a new query string attached, made entirely up from the form's
@@ -119,4 +174,4 @@ def export_form_factory(view):
             initial=v
         )
 
-    return type('ExportForm', (forms.Form, ), opts)
+    return type('ExportForm', (ExportBaseForm, ), opts)
