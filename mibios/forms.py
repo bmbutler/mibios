@@ -1,3 +1,5 @@
+from collections import OrderedDict
+
 from django import forms
 
 from . import QUERY_FILTER, QUERY_FIELD, QUERY_FORMAT
@@ -85,6 +87,38 @@ class ExportFormatForm(forms.Form):
         label='file format',
     )
 
+    @classmethod
+    def factory(cls, view, name=None, base=None, opts=OrderedDict()):
+        """
+        Return a form class to work with given ExportBaseMixin derived view.
+
+        This method can be called as super().factory() from a deriving class
+        and then will just add the parent attributes.
+
+        Hidden fields to keep track of complete state, needed since the GET
+        action get a new query string attached, made entirely up from the
+        form's input elements.
+        """
+        query_dict = view.to_query_dict(fields=view.fields, keep=True)
+        opts['format_choices'] = [
+            (i[0], i[2].description)
+            for i in view.FORMATS
+        ]
+        opts['default_format'] = view.DEFAULT_FORMAT
+        # add hidden fields:
+        for k, v in query_dict.lists():
+            if k in [QUERY_FIELD, QUERY_FORMAT]:
+                # should be provided by dedicated field
+                continue
+            opts[k] = forms.CharField(
+                widget=forms.MultipleHiddenInput(),
+                initial=v
+            )
+
+        name = name or 'Auto' + cls.__name__
+        base = base or (cls, )
+        return type(name, base, opts)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['format'].choices = self.format_choices
@@ -99,7 +133,7 @@ class ExportFormatForm(forms.Form):
         return super().add_prefix(field_name)
 
 
-class ExportBaseForm(ExportFormatForm):
+class ExportForm(ExportFormatForm):
     """
     Abstract class for all table export forms
 
@@ -115,6 +149,38 @@ class ExportBaseForm(ExportFormatForm):
         label='fields to be exported',
     )
 
+    @classmethod
+    def factory(cls, view, name=None, base=None, opts=OrderedDict()):
+        """
+        Return a form class from the given ExportFormView
+
+        """
+        query_dict = view.to_query_dict(fields=view.fields, keep=True)
+        fields = query_dict.getlist(QUERY_FIELD)
+
+        initial_fields = list(fields)
+        # prefer name over id
+        if 'name' in view.fields and 'name' not in initial_fields:
+            initial_fields.append('name')
+        if 'name' in initial_fields:
+            try:
+                initial_fields.pop(initial_fields.index('id'))
+            except ValueError:
+                pass
+
+        verbose_names = {
+            i.name: i.verbose_name
+            for i in view.model.get_fields(with_hidden=True).fields
+        }
+
+        field_choices = [(i, verbose_names.get(i, i)) for i in fields]
+        opts['field_choices'] = field_choices
+        opts['initial_fields'] = initial_fields
+
+        name = name or 'Auto' + cls.__name__
+        base = base or (cls, )
+        return super().factory(view, name, base, opts)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['exported_fields'].choices = self.field_choices
@@ -129,67 +195,3 @@ class ExportBaseForm(ExportFormatForm):
         if field_name == 'exported_fields':
             field_name = QUERY_FIELD
         return super().add_prefix(field_name)
-
-
-def _export_format_form_helper(view):
-    """
-    Provide dynamic class attributes for ExportFormatForm
-    """
-    return {
-        'format_choices': [(i[0], i[2].description) for i in view.FORMATS],
-        'default_format': view.DEFAULT_FORMAT,
-    }
-
-
-def _get_hidden_input(query_dict):
-    """
-    Helper to provide hidden input fields for export forms
-
-    Hidden fields to keep track of complete state, needed since the GET action
-    get a new query string attached, made entirely up from the form's input
-    elements.
-    """
-    opts = {}
-    for k, v in query_dict.lists():
-        if k == QUERY_FIELD:
-            continue
-        opts[k] = forms.CharField(
-            widget=forms.MultipleHiddenInput(),
-            initial=v
-        )
-    return opts
-
-
-def export_table_form_factory(view):
-    """
-    Return the export format form class for a given view
-
-    :param TableView view: View whose table will be exported
-    """
-    query_dict = view.to_query_dict(fields=view.fields, keep=True)
-    fields = query_dict.getlist(QUERY_FIELD)
-
-    initial_fields = list(fields)
-    # prefer name over id
-    if 'name' in view.fields and 'name' not in initial_fields:
-        initial_fields.append('name')
-    if 'name' in initial_fields:
-        try:
-            initial_fields.pop(initial_fields.index('id'))
-        except ValueError:
-            pass
-
-    verbose_names = {
-        i.name: i.verbose_name
-        for i in view.model.get_fields(with_hidden=True).fields
-    }
-
-    field_choices = [(i, verbose_names.get(i, i)) for i in fields]
-    opts = dict()
-    opts['field_choices'] = field_choices
-    opts['initial_fields'] = initial_fields
-
-    opts.update(_export_format_form_helper(view))
-    opts.update(_get_hidden_input(query_dict))
-
-    return type('ExportForm', (ExportBaseForm, ), opts)
