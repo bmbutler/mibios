@@ -131,7 +131,36 @@ class ExportBaseForm(ExportFormatForm):
         return super().add_prefix(field_name)
 
 
-def export_form_factory(view):
+def _export_format_form_helper(view):
+    """
+    Provide dynamic class attributes for ExportFormatForm
+    """
+    return {
+        'format_choices': [(i[0], i[2].description) for i in view.FORMATS],
+        'default_format': view.DEFAULT_FORMAT,
+    }
+
+
+def _get_hidden_input(query_dict):
+    """
+    Helper to provide hidden input fields for export forms
+
+    Hidden fields to keep track of complete state, needed since the GET action
+    get a new query string attached, made entirely up from the form's input
+    elements.
+    """
+    opts = {}
+    for k, v in query_dict.lists():
+        if k == QUERY_FIELD:
+            continue
+        opts[k] = forms.CharField(
+            widget=forms.MultipleHiddenInput(),
+            initial=v
+        )
+    return opts
+
+
+def export_table_form_factory(view):
     """
     Return the export format form class for a given view
 
@@ -156,22 +185,11 @@ def export_form_factory(view):
     }
 
     field_choices = [(i, verbose_names.get(i, i)) for i in fields]
-    opts = {
-        'format_choices': [(i[0], i[2].description) for i in view.FORMATS],
-        'default_format': view.DEFAULT_FORMAT,
-        'field_choices': field_choices,
-        'initial_fields': initial_fields,
-    }
+    opts = dict()
+    opts['field_choices'] = field_choices
+    opts['initial_fields'] = initial_fields
 
-    # Hidden fields to keep track of complete state, needed since the GET
-    # action get a new query string attached, made entirely up from the form's
-    # input elements
-    for k, v in query_dict.lists():
-        if k == QUERY_FIELD:
-            continue
-        opts[k] = forms.CharField(
-            widget=forms.MultipleHiddenInput(),
-            initial=v
-        )
+    opts.update(_export_format_form_helper(view))
+    opts.update(_get_hidden_input(query_dict))
 
     return type('ExportForm', (ExportBaseForm, ), opts)

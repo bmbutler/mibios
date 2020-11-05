@@ -24,7 +24,8 @@ from django_tables2 import SingleTableView, Column, MultiTableMixin
 
 from . import (__version__, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE,
                QUERY_FIELD, QUERY_FORMAT, QUERY_EXPAND, get_registry)
-from .forms import export_form_factory, get_field_search_form, UploadFileForm
+from .forms import (export_table_form_factory, get_field_search_form,
+                    UploadFileForm)
 from .load import Loader
 from .management.import_base import AbstractImportCommand
 from .models import Q, ChangeRecord, ImportFile, Snapshot
@@ -846,7 +847,7 @@ class ExportFormView(ExportBaseMixin, FormMixin, TableView):
     export_url_name = 'export'
 
     def get_form_class(self):
-        return export_form_factory(self)
+        return export_table_form_factory(self)
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
