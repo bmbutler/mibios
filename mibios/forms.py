@@ -124,6 +124,20 @@ class ExportFormatForm(forms.Form):
         self.fields['format'].choices = self.format_choices
         self.fields['format'].initial = self.default_format
 
+    def order_fields(self, field_order):
+        """
+        Order format field last unless specified otherwise
+
+        Without this format would always be first in the form.
+        """
+        super().order_fields(field_order)
+        if field_order and 'format' in field_order:
+            # order was given explicitly
+            return
+
+        if 'format' in self.fields:
+            self.fields['format'] = self.fields.pop('format')
+
     def add_prefix(self, field_name):
         """
         API abuse to correctly set the HTML input attribute
