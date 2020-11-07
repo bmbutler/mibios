@@ -1266,6 +1266,8 @@ class Model(models.Model):
         Might also be used as parsing tool to coerce a user-given input value
         to field-compatible values.
         """
+        if value is cls.NOT_A_VALUE:
+            value = None
         try:
             cls._meta.get_field('name')
         except FieldDoesNotExist:
@@ -1307,19 +1309,34 @@ class Model(models.Model):
             # is just pk
             return super().__str__()
 
+    NOT_A_VALUE = object()
+
     @classmethod
-    def resolve_natural_lookups(cls, **lookups):
+    def resolve_natural_lookups(cls, *accessors, **lookups):
         """
         Detect and convert natural object lookups
 
-        Convert "*__natural='foo'" and "*__model_name='foo'" into their
-        proper lookups
+        With the **lookup parameter given will convert "*__natural='foo'" and
+        "*__model_name='foo'" into their proper lookups.  With the *accessors
+        containing just lookup LHSs, a list of resolved accessors is returned.
         """
+        if accessors and lookups:
+            raise ValueError('Either *accessors or **lookup parameters can '
+                             'passed but not both')
+
+        lookups.update({i: cls.NOT_A_VALUE for i in accessors})
+
         ret = {}
         for lhs, rhs in lookups.items():
-            if not isinstance(rhs, (str, int)):
-                # any natural lookup should be str (or int for pk), if it's
-                # not, then the resulting error will be probably be misleading
+            if isinstance(rhs, (str, int)) or rhs is cls.NOT_A_VALUE:
+                # any natural lookup should be str (or int for pk)
+                # TODO: it might be useful to have natural=None cases
+                # also get resolved.
+                pass
+            else:
+                # if it's not, then the resulting error will be probably be
+                # misleading
+                # TODO: should something__natural=None return something=None?
                 ret[lhs] = rhs
                 continue
 
@@ -1359,7 +1376,10 @@ class Model(models.Model):
                         raise NaturalKeyLookupError(msg) from e
 
                     ret.update({lhs + k: v for k, v in real_lookups.items()})
-        return ret
+        if accessors:
+            return list(ret.keys())
+        else:
+            return ret
 
     @classmethod
     def str_blank(cls, *values):

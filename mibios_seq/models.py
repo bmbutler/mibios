@@ -93,7 +93,7 @@ class SequencingRun(Model):
 
     @classmethod
     def natural_lookup(cls, value):
-        if value is None:
+        if value is cls.NOT_A_VALUE:
             s, n = None, None
         else:
             s, n = value.split('-')
@@ -532,7 +532,7 @@ class OTU(Model):
         Raises ValueError if value does not end with a number.
         Raises KeyError if value has no non-numeric prefix.
         """
-        if value is None:
+        if value is cls.NOT_A_VALUE:
             return dict(prefix=None, number=None)
 
         places = 0
