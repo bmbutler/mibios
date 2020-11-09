@@ -10,10 +10,14 @@
 <h2>Choose export format for {{ view.data_name }} table {% if not view.curation %}[CURATION: OFF]{% endif %}</h2>
 <form action=
 {# FIXME: ugly? hack to get url reversal for average views #}
-    {% if avg_url_slug %}
-        "{% url view.export_url_name data_name=data_name avg_by=avg_url_slug %}"
+    {% if view.export_form_action_url %}
+        "{{ view.export_form_action_url }}"
     {% else %}
-        "{% url view.export_url_name data_name=data_name %}"
+        {% if avg_url_slug %}
+            "{% url view.export_url_name data_name=data_name avg_by=avg_url_slug %}"
+        {% else %}
+            "{% url view.export_url_name data_name=data_name %}"
+        {% endif %}
     {% endif %}
     method="get" enctype="multipart/form-data">
     {{ form.as_p }}
