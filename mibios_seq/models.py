@@ -287,7 +287,7 @@ class AbundanceQuerySet(QuerySet):
             # row id is sequencing record pk
             try:
                 group_id_vals = groupids(row_id)
-            except LookupError as e:
+            except LookupError:
                 group_id_vals = (f'sequencing id {row_id}', )
             group = map(rm_ids, group)
             if normalize is not None and normalize >= 1:
@@ -309,6 +309,10 @@ class AbundanceQuerySet(QuerySet):
         Returns an iterator over tuple rows, first row is the header.  This is
         intended to support data export.  Missing counts are inserted as zero,
         mirroring the skipping of zeros at import.
+
+        This method will happily return data from multiple analysis projects.
+        This makes little sense in the shared-data-export context and the
+        caller should ensure that the query set is properly filtered.
         """
         if mothur:
             raise ValueError('Mothur mode is not implement')

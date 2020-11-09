@@ -14,13 +14,19 @@ class ExportSharedForm(ExportFormatForm):
     group_column_initial = None
     projects = ()
 
-    mothur = forms.BooleanField(
+    project = forms.ChoiceField(
+        required=True,
+        help_text='Pick abundance data from this analysis project.',
+    )
+    normalize = forms.ChoiceField(
+        widget=forms.RadioSelect(attrs={'class': None}),
+        choices=((NORM_NONE, 'none'), (0, 'fractions'), (10000, 'to 10000')),
         required=False,
-        initial=False,
-        label='mothur compatible',
-        help_text='Will make a shared file exactly as Mothur would make it. '
-                  'The default is to make a tables without the "label" and '
-                  '"numOtus" columns',
+        initial=0,
+        help_text='Export data as absolute counts (none) or relative abundance'
+                  ', that is, either as decimal fractions between 0.0 and 1.0 '
+                  'or as normalized counts which has the absolute numbers '
+                  'scaled to a normal sample size of 10,000.',
     )
     group_cols = forms.ChoiceField(
         widget=forms.RadioSelect(attrs={'class': None}),
@@ -28,16 +34,13 @@ class ExportSharedForm(ExportFormatForm):
         label='group column(s) / row id',
         help_text='What to use as row identifiers',
     )
-    normalize = forms.ChoiceField(
-        widget=forms.RadioSelect(attrs={'class': None}),
-        choices=((NORM_NONE, 'none'), (0, 'fractions'), (10000, 'to 10000')),
+    mothur = forms.BooleanField(
         required=False,
-        initial=0,
-        help_text='normalize abundance',
-    )
-    project = forms.ChoiceField(
-        required=True,
-        help_text='analysis project',
+        initial=False,
+        label='mothur compatible',
+        help_text='Will make a shared file exactly as Mothur would make it. '
+                  'The default is to make a tables without the "label" and '
+                  '"numOtus" columns',
     )
 
     @classmethod
