@@ -168,7 +168,7 @@ class AbundanceQuerySet(QuerySet):
     @classmethod
     def _normalize(cls, group, size, debug=0):
         """
-        Scale counts to normal sample size
+        Scale absolute counts to normal sample size
         """
         group = list(group)
         debug <= 1 or print(f'group={group}')
@@ -221,32 +221,42 @@ class AbundanceQuerySet(QuerySet):
     def _unit_normalize(cls, group):
         """
         Normalize to unit interval, return fractions
+
+        This gets fractions from absolute counts, but is not needed if relative
+        abundance is sotred in the DB.
         """
         group = list(group)
         vals = [i[0] for i in group]
         total = sum(vals)
         return ((i / total, j, k) for i, j, k in group)
 
-    def _shared_file_items(self, otus, group):
+    def _shared_file_items(self, otus, group, normalize):
         """
         Generator over the items of a row in a shared file
 
+        This fills in zeros as needed.
+
         :param otus: iterable over all ASV pks of QuerySet in order
-        :param group: Data for one sample, row; an iterable over triplets
-                      (count, seq name, OTU pk)
+        :param group: Data for one sample, row; an iterable over tuple
+                      (abund, OTU pk)
         """
-        count, _, otu_pk = next(group)
+        if normalize == 0:
+            zero = 0.0
+        else:
+            zero = 0
+
+        abund, otu_pk = next(group)
         for i in otus:
             if otu_pk == i:
-                yield count
+                yield abund
                 try:
-                    count, _, otu_pk = next(group)
+                    abund, otu_pk = next(group)
                 except StopIteration:
                     pass
             else:
-                yield 0
+                yield zero
 
-    def _shared_file_rows(self, otus, normalize=None):
+    def _shared_file_rows(self, otus, normalize, groupids, mothur):
         """
         Generator of shared file rows
 
@@ -255,19 +265,45 @@ class AbundanceQuerySet(QuerySet):
         [0, 1] are returned.  If an integer above 0 is given, then the counts
         are normalized by 'discrete scaling' to the targeted sample size.
         """
+        if normalize is None:
+            abund_field = 'count'
+        else:
+            abund_field = 'relative'
+
         it = (
             self.order_by('sequencing', 'otu')
-            .values_list('count', 'sequencing__name', 'otu')
+            .values_list(abund_field, 'otu', 'sequencing')
             .iterator()
         )
-        for name, group in groupby(it, key=itemgetter(1)):
-            if normalize == 0:
-                group = self._unit_normalize(group)
-            elif normalize is not None:
-                group = self._normalize(group, size=normalize)
-            yield tuple(chain([name], self._shared_file_items(otus, group)))
 
-    def as_shared_values_list(self, normalize=None):
+        # Group data by what will be the rows of the shared file.  Map row
+        # ids/sequencing name to whatever grouids() says and process the
+        # rest, which are now tuples of abundance value and otu, in two
+        # steps: (1) possibly normalize the values and (2) fill in the
+        # zeros.  Then that gets packaged into a row, each of which is
+        # yielded back.
+        rm_ids = itemgetter(0, 1)
+        for row_id, group in groupby(it, key=itemgetter(2)):
+            # row id is sequencing record pk
+            try:
+                group_id_vals = groupids(row_id)
+            except LookupError as e:
+                log.debug(f'groupids LOOKUP BORK: {row_id=} {e=}')
+                group_id_vals = (f'sequencing id {row_id}', )
+            group = map(rm_ids, group)
+            if normalize is not None and normalize >= 1:
+                group = ((round(i[0] * normalize), i[1]) for i in group)
+
+            values = self._shared_file_items(otus, group, normalize)
+            yield tuple(chain(group_id_vals, values))
+
+    def as_shared_values_list(
+            self,
+            normalize=None,
+            groupids=lambda x: x,
+            group_cols_verbose=('Group', ),
+            mothur=False,
+    ):
         """
         Make mothur shared table for download
 
@@ -275,22 +311,33 @@ class AbundanceQuerySet(QuerySet):
         intended to support data export.  Missing counts are inserted as zero,
         mirroring the skipping of zeros at import.
         """
-        # get ASVs that actually occur in QuerySet:
+        if mothur:
+            raise ValueError('Mothur mode is not implement')
+
+        # get OTUs that actually occur in QuerySet:
         otu_pks = set(self.values_list('otu', flat=True).distinct().iterator())
-        # ASV order here must correspond to order in which count values are
+        # OTU order here must correspond to order in which count values are
         # generated later, in the _shared_file_rows() method.  It is assumed
-        # that the ASV model defines an appropriate order; ASV pk->name
+        # that the OTU model defines an appropriate order; OTU pk->name
         # mapping, use values for header, keys for zeros injection
         otus = OrderedDict((
             (i.pk, i.natural)
             for i in OTU.objects.iterator()
             if i.pk in otu_pks
         ))
-        header = ['Group'] + list(otus.values())
+
+        # Build header row:
+        if mothur:
+            header = ['label', 'Group', 'numOtus']
+        else:
+            header = list(group_cols_verbose)
+        header += list(otus.values())
 
         return chain([header], self._shared_file_rows(
             list(otus.keys()),
-            normalize=normalize,
+            normalize,
+            groupids,
+            mothur,
         ))
 
 
