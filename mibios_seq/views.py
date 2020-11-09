@@ -3,6 +3,7 @@ from django.http import Http404
 from django.utils.text import slugify
 from django.views.generic.edit import FormMixin
 
+from mibios.utils import getLogger
 from mibios.views import CSVRenderer, CSVRendererZipped
 from mibios.views import (ExportBaseMixin, ExportMixin, TableView,
                           TableViewPlugin)
