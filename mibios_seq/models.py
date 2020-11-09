@@ -288,7 +288,6 @@ class AbundanceQuerySet(QuerySet):
             try:
                 group_id_vals = groupids(row_id)
             except LookupError as e:
-                log.debug(f'groupids LOOKUP BORK: {row_id=} {e=}')
                 group_id_vals = (f'sequencing id {row_id}', )
             group = map(rm_ids, group)
             if normalize is not None and normalize >= 1:
