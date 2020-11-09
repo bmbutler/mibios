@@ -1,5 +1,3 @@
-{% if uniform_project %}
 <p>
-<a href="{% url 'mibios_seq:export_shared_form' %}{{ querystr }}">Export shared table data for analysis project {{ uniform_project }}</a>
+Export <a href="{% url 'mibios_seq:export_shared_form' %}{{ querystr }}">shared table data</a>
 </p>
-{% endif %}
