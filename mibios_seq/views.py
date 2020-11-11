@@ -1,13 +1,13 @@
 from django.http import Http404
 from django.http.request import QueryDict
 from django.utils.text import slugify
-from django.views.generic.edit import FormMixin
+from django.views.generic.edit import FormView
 
 from mibios import QUERY_AVG_BY
 from mibios.utils import getLogger
 from mibios.views import AverageMixin, CSVTabRenderer, CSVTabRendererZipped
-from mibios.views import (ExportBaseMixin, ExportMixin, TableView,
-                          TableViewPlugin)
+from mibios.views import (DatasetMixin, ExportBaseMixin, ExportMixin,
+                          TableView, TableViewPlugin)
 from mibios_seq import models
 
 from .forms import ExportSharedForm
@@ -71,18 +71,10 @@ class ExportSharedFormMixin:
         return ExportSharedForm.factory(self)
 
 
-class ExportSharedFormView(ExportSharedFormMixin, ExportBaseMixin, FormMixin,
-                           TableView):
+class ExportSharedFormView(ExportSharedFormMixin, ExportBaseMixin,
+                           DatasetMixin, FormView):
     template_name = 'mibios/export.html'
     export_form_action_url = '/abundance/export-shared/'
-
-    def get_queryset(self):
-        # no need for the data, makes us speedy
-        # FIXME: TableView should probably be split up more into a mixin that
-        # contains all the table stuff except the data and a view that adds
-        # just the table data, so we don't have to make the empty QuerySet
-        # here.
-        return self.model.objects.filter(pk=None)
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)

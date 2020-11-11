@@ -18,7 +18,7 @@ from django.utils.html import format_html
 from django.utils.text import slugify
 from django.views.decorators.cache import cache_page
 from django.views.generic.base import ContextMixin, TemplateView, View
-from django.views.generic.edit import FormMixin, FormView
+from django.views.generic.edit import FormView
 
 from django_tables2 import SingleTableView, Column, MultiTableMixin
 
@@ -111,7 +111,7 @@ class BaseMixin(BasicBaseMixin):
         return ctx
 
 
-class DatasetMixin():
+class DatasetMixin(BaseMixin):
     """
     Mixin for views that deal with one dataset/model
 
@@ -230,37 +230,6 @@ class DatasetMixin():
 
             if dataset.manager:
                 self.queryset = getattr(self.model, dataset.manager).all()
-
-
-class TableViewPlugin():
-    """
-    Parent class for per-model view plugins
-
-    The table view plugin mechanism allows to add per-model content to the
-    regular table display.  An implementation should declare a class in a
-    registered app's view module that inherits from TableViewPlugin and that
-    should set the model_class and template_name variables and override
-    get_context_data() as needed.  The template with the to-be-added content
-    needs to be provided at the app's usual template location.  The plugin's
-    content will be rendered just above the table.
-    """
-    model_class = None
-    template_name = None
-
-    def __init__(self, view):
-        self.view = view
-
-    def get_context_data(self, **ctx):
-        return ctx
-
-
-# @method_decorator(cache_page(None), name='dispatch')
-class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
-    template_name = 'mibios/table.html'
-
-    # Tunables adjusting display varying on number of unique values:
-    MEDIUM_UNIQUE_LIMIT = 10
-    HIGH_UNIQUE_LIMIT = 30
 
     def get(self, request, *args, **kwargs):
         log.debug(f'GET = {request.GET}')
@@ -471,6 +440,92 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
 
         return query_dict
 
+    @classmethod
+    def shorten_lookup(cls, txt):
+        """
+        Abbreviate a lookup string for display
+
+        Turns "foo__bar__field_name" into "f-n-field_name".  Simple field names
+        are left as-is.
+        """
+        *rels, field = txt.split('__')
+        if rels:
+            rels = '-'.join([j[0] for j in rels]) + '-'
+        else:
+            rels = ''
+        return rels + field
+
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        if self.model is None:
+            return ctx
+
+        ctx['model'] = self.model._meta.model_name
+        if self.curation:
+            ctx['url_data_name'] = self.data_name
+        else:
+            ctx['url_data_name'] = self.NO_CURATION_PREFIX + self.data_name
+        ctx['data_name'] = self.data_name
+        ctx['page_title'].append(self.data_name_verbose)
+        ctx['data_name_verbose'] = self.data_name_verbose
+
+        ctx['applied_filter'] = [
+            (k, v, self.to_query_string(without=[{k: v}], keep=True))
+            for k, v
+            in self.filter.items()
+        ]
+        ctx['applied_excludes_list'] = [
+            (i, self.to_query_string(without=[i], keep=True))
+            for i
+            in self.excludes
+        ]
+
+        # the original querystring:
+        query = self.request.GET.urlencode()
+        if query:
+            ctx['querystr'] = '?' + query
+            ctx['invquery'] = self.to_query_string(negate=True)
+        else:
+            ctx['querystr'] = ''
+
+        ctx['avg_by_data'] = {
+            '-'.join(i): [self.shorten_lookup(j) for j in i]
+            for i in self.model.average_by
+        }
+
+        return ctx
+
+
+class TableViewPlugin():
+    """
+    Parent class for per-model view plugins
+
+    The table view plugin mechanism allows to add per-model content to the
+    regular table display.  An implementation should declare a class in a
+    registered app's view module that inherits from TableViewPlugin and that
+    should set the model_class and template_name variables and override
+    get_context_data() as needed.  The template with the to-be-added content
+    needs to be provided at the app's usual template location.  The plugin's
+    content will be rendered just above the table.
+    """
+    model_class = None
+    template_name = None
+
+    def __init__(self, view):
+        self.view = view
+
+    def get_context_data(self, **ctx):
+        return ctx
+
+
+# @method_decorator(cache_page(None), name='dispatch')
+class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
+    template_name = 'mibios/table.html'
+
+    # Tunables adjusting display varying on number of unique values:
+    MEDIUM_UNIQUE_LIMIT = 10
+    HIGH_UNIQUE_LIMIT = 30
+
     def get_queryset(self):
         if hasattr(self, 'object_list'):
             return self.object_list
@@ -542,26 +597,6 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         ctx = super().get_context_data(**ctx)
         if self.model is None:
             return ctx
-
-        ctx['model'] = self.model._meta.model_name
-        if self.curation:
-            ctx['url_data_name'] = self.data_name
-        else:
-            ctx['url_data_name'] = self.NO_CURATION_PREFIX + self.data_name
-        ctx['data_name'] = self.data_name
-        ctx['page_title'].append(self.data_name_verbose)
-        ctx['data_name_verbose'] = self.data_name_verbose
-
-        ctx['applied_filter'] = [
-            (k, v, self.to_query_string(without=[{k: v}], keep=True))
-            for k, v
-            in self.filter.items()
-        ]
-        ctx['applied_excludes_list'] = [
-            (i, self.to_query_string(without=[i], keep=True))
-            for i
-            in self.excludes
-        ]
 
         ctx['field_search_form'] = None
         sort_by_field = self.get_sort_by_field()
@@ -635,19 +670,6 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
                 except SearchFieldLookupError:
                     pass
 
-        # the original querystring:
-        query = self.request.GET.urlencode()
-        if query:
-            ctx['querystr'] = '?' + query
-            ctx['invquery'] = self.to_query_string(negate=True)
-        else:
-            ctx['querystr'] = ''
-
-        ctx['avg_by_data'] = {
-            '-'.join(i): [self.shorten_lookup(j) for j in i]
-            for i in self.model.average_by
-        }
-
         # for curation switch:
         ctx['curation_switch_data'] = {}
         if self.user_is_curator:
@@ -707,21 +729,6 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             raise SearchFieldLookupError from e
 
         return [(field.name + '__' if field else '') + i for i in kw.keys()]
-
-    @classmethod
-    def shorten_lookup(cls, txt):
-        """
-        Abbreviate a lookup string for display
-
-        Turns "foo__bar__field_name" into "f-n-field_name".  Simple field names
-        are left as-is.
-        """
-        *rels, field = txt.split('__')
-        if rels:
-            rels = '-'.join([j[0] for j in rels]) + '-'
-        else:
-            rels = ''
-        return rels + field
 
 
 class CSVRenderer():
@@ -848,7 +855,7 @@ class ExportView(ExportMixin, TableView):
         return self.get_table().as_values()
 
 
-class ExportFormView(ExportBaseMixin, FormMixin, TableView):
+class ExportFormView(ExportBaseMixin, DatasetMixin, FormView):
     """
     Provide the export format selection form
 
@@ -869,7 +876,7 @@ class ExportFormView(ExportBaseMixin, FormMixin, TableView):
         return ctx
 
 
-class ImportView(BaseMixin, DatasetMixin, CuratorRequiredMixin, FormView):
+class ImportView(DatasetMixin, CuratorRequiredMixin, FormView):
     template_name = 'mibios/import.html'
     form_class = UploadFileForm
     log = getLogger('dataimport')
