@@ -87,6 +87,7 @@ class ExportSharedFormView(ExportSharedFormMixin, ExportBaseMixin, FormMixin,
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['export_form_action_url'] = self.export_form_action_url
+        ctx['export_data_name'] = '"shared" abundance'
         return ctx
 
 
