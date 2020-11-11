@@ -270,9 +270,16 @@ class AbundanceQuerySet(QuerySet):
         else:
             abund_field = 'relative'
 
+        if self._avg_by:
+            id_fields = [
+                i for i in self._avg_by
+                if i not in ['project', 'otu']
+            ]
+        else:
+            id_fields = ['sequencing']
         it = (
-            self.order_by('sequencing', 'otu')
-            .values_list(abund_field, 'otu', 'sequencing')
+            self.order_by(*id_fields, 'otu')
+            .values_list(abund_field, 'otu', *id_fields)
             .iterator()
         )
 
@@ -283,12 +290,12 @@ class AbundanceQuerySet(QuerySet):
         # zeros.  Then that gets packaged into a row, each of which is
         # yielded back.
         rm_ids = itemgetter(0, 1)
-        for row_id, group in groupby(it, key=itemgetter(2)):
-            # row id is sequencing record pk
+        for row_id, group in groupby(it, key=itemgetter(slice(2, None))):
+            # row_id is tuple of id_fields from above
             try:
-                group_id_vals = groupids(row_id)
+                group_id_vals = groupids(*row_id)
             except LookupError:
-                group_id_vals = (f'sequencing id {row_id}', )
+                group_id_vals = [f'{i}:{j}' for i, j in zip(id_fields, row_id)]
             group = map(rm_ids, group)
             if normalize is not None and normalize >= 1:
                 group = ((round(i[0] * normalize), i[1]) for i in group)

@@ -1,3 +1,9 @@
 <p>
-Export <a href="{% url 'mibios_seq:export_shared_form' %}{{ querystr }}">shared table data</a>
+Export
+{% if view.avg_by %}
+<a href="{% url 'mibios_seq:export_avg_shared_form' %}{{ querystr }}">
+{% else %}
+<a href="{% url 'mibios_seq:export_shared_form' %}{{ querystr }}">
+{% endif %}
+shared table data</a>
 </p>
