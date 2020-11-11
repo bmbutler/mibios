@@ -10,6 +10,7 @@ QUERY_NEGATE = 'inverse'
 QUERY_FIELD = 'col'
 QUERY_FORMAT = 'format'
 QUERY_EXPAND = 'expand'
+QUERY_AVG_BY = 'avg-by'
 
 
 _registry = None

@@ -23,7 +23,8 @@ from django.views.generic.edit import FormMixin, FormView
 from django_tables2 import SingleTableView, Column, MultiTableMixin
 
 from . import (__version__, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE,
-               QUERY_FIELD, QUERY_FORMAT, QUERY_EXPAND, get_registry)
+               QUERY_FIELD, QUERY_FORMAT, QUERY_EXPAND, QUERY_AVG_BY,
+               get_registry)
 from .forms import ExportForm, get_field_search_form, UploadFileForm
 from .load import Loader
 from .management.import_base import AbstractImportCommand
@@ -1223,7 +1224,16 @@ class AverageMixin():
     """
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)
-        avg_by = kwargs['avg_by'].split('-')
+        avg_by = []
+
+        if 'avg_by' in kwargs:
+            avg_by = kwargs['avg_by'].split('-')
+
+        if QUERY_AVG_BY in request.GET:
+            for i in request.GET.getlist(QUERY_AVG_BY):
+                if i not in avg_by:
+                    avg_by.append(i)
+
         if avg_by == ['']:
             # for testing?
             self.avg_by = []
@@ -1233,7 +1243,7 @@ class AverageMixin():
                     self.avg_by = avg_by
                     break
             else:
-                raise Http404
+                raise Http404(f'bad avg_by: {avg_by}')
 
     def get_table_class(self):
         """
