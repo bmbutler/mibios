@@ -747,7 +747,7 @@ class CSVTabRenderer(CSVRenderer):
     delimiter = '\t'
 
 
-class CSVRendererZipped():
+class CSVRendererZipped(CSVRenderer):
     description = 'comma-separated text file, zipped'
     content_type = 'application/zip'
 
@@ -760,7 +760,7 @@ class CSVRendererZipped():
         Render all rows to the response
         """
         buf = StringIO()
-        writer = csv.writer(buf, delimiter='\t', lineterminator='\n')
+        writer = csv.writer(buf, delimiter=self.delimiter, lineterminator='\n')
         for row in values:
             writer.writerow(row)
 
@@ -769,13 +769,19 @@ class CSVRendererZipped():
             f.writestr(self.filename, buf.read())
 
 
+class CSVTabRendererZipped(CSVRendererZipped):
+    description = '<tab>-separated text file, zipped'
+    delimiter = '\t'
+
+
 class ExportBaseMixin:
     # Supported export format registry
     # (name, file suffix, renderer class)
     FORMATS = (
         ('csv', '.csv', CSVRenderer),
         ('tab', '.csv', CSVTabRenderer),
-        ('csv/zipped', '.csv.zip', CSVRendererZipped),
+        ('comma/zipped', '.csv.zip', CSVRendererZipped),
+        ('tab/zipped', '.csv.zip', CSVTabRendererZipped),
     )
     DEFAULT_FORMAT = 'csv'
 

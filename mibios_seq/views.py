@@ -5,7 +5,7 @@ from django.views.generic.edit import FormMixin
 
 from mibios import QUERY_AVG_BY
 from mibios.utils import getLogger
-from mibios.views import AverageMixin, CSVRenderer, CSVRendererZipped
+from mibios.views import AverageMixin, CSVTabRenderer, CSVTabRendererZipped
 from mibios.views import (ExportBaseMixin, ExportMixin, TableView,
                           TableViewPlugin)
 from mibios_seq import models
@@ -43,8 +43,8 @@ class ExportSharedFormMixin:
     # Supported export format registry
     # (name, file suffix, http content type, renderer class)
     FORMATS = (
-        ('shared/zipped', '.shared.zip', CSVRendererZipped),
-        ('shared', '.shared', CSVRenderer),
+        ('shared/zipped', '.shared.zip', CSVTabRendererZipped),
+        ('shared', '.shared', CSVTabRenderer),
     )
     DEFAULT_FORMAT = 'shared/zipped'
 
