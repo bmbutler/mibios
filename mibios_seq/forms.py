@@ -20,7 +20,6 @@ class ExportSharedForm(ExportFormatForm):
     )
     normalize = forms.ChoiceField(
         widget=forms.RadioSelect(attrs={'class': None}),
-        choices=((NORM_NONE, 'none'), (0, 'fractions'), (10000, 'to 10000')),
         required=False,
         initial=0,
         help_text='Export data as absolute counts (none) or relative abundance'
@@ -55,6 +54,7 @@ class ExportSharedForm(ExportFormatForm):
         to modify the fields.
         """
         opts = OrderedDict()
+        opts['norm_choices'] = view.norm_choices
         opts['group_column_choices'] = view.group_col_choices
         opts['group_column_initial'] = view.group_col_choices[0][0]
         opts['projects'] = [
@@ -65,6 +65,7 @@ class ExportSharedForm(ExportFormatForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['normalize'].choices = self.norm_choices
         self.fields['group_cols'].choices = self.group_column_choices
         self.fields['group_cols'].initial = self.group_column_initial
         self.fields['project'].choices = self.projects

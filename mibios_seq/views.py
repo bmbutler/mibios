@@ -35,6 +35,12 @@ class ExportSharedFormMixin:
         # (('participant__name', 'week__number', 'participant and week'),
     }
 
+    norm_choices = (
+        (ExportSharedForm.NORM_NONE, 'none'),
+        (0, 'fractions'),
+        (10000, 'to 10000')
+    )
+
     @property
     def group_col_choices(self):
         """
