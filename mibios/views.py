@@ -758,7 +758,7 @@ class CSVRendererZipped():
         Render all rows to the response
         """
         buf = StringIO()
-        writer = csv.writer(buf, delimiter='\t')
+        writer = csv.writer(buf, delimiter='\t', lineterminator='\n')
         for row in values:
             writer.writerow(row)
 
