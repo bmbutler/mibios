@@ -247,6 +247,9 @@ class TableViewPlugin():
     model_class = None
     template_name = None
 
+    def __init__(self, view):
+        self.view = view
+
     def get_context_data(self, **ctx):
         return ctx
 
@@ -539,16 +542,6 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
         if self.model is None:
             return ctx
 
-        try:
-            plugin_class = \
-                get_registry().table_view_plugins[self.model._meta.model_name]
-        except KeyError:
-            ctx['table_view_plugin_template'] = None
-        else:
-            plugin = plugin_class()
-            ctx['table_view_plugin_template'] = plugin.template_name
-            ctx = plugin.get_context_data(**ctx)
-
         ctx['model'] = self.model._meta.model_name
         if self.curation:
             ctx['url_data_name'] = self.data_name
@@ -664,6 +657,18 @@ class TableView(BaseMixin, DatasetMixin, UserRequiredMixin, SingleTableView):
             else:
                 ctx['curation_switch_data']['data_name'] = self.data_name
                 ctx['curation_switch_data']['switch'] = 'on'
+
+        # Plugin: process the plugin last so that their get_context_data() gets
+        # a full view of the existing context:
+        try:
+            plugin_class = \
+                get_registry().table_view_plugins[self.model._meta.model_name]
+        except KeyError:
+            ctx['table_view_plugin_template'] = None
+        else:
+            plugin = plugin_class(view=self)
+            ctx['table_view_plugin_template'] = plugin.template_name
+            ctx = plugin.get_context_data(**ctx)
 
         return ctx
 
