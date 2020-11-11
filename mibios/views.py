@@ -736,7 +736,8 @@ class CSVRenderer():
         """
         Render all rows to the response
         """
-        writer = csv.writer(self.response, delimiter=self.delimiter)
+        writer = csv.writer(self.response, delimiter=self.delimiter,
+                            lineterminator='\n')
         for i in values:
             writer.writerow(i)
 
