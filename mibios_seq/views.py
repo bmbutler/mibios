@@ -74,17 +74,16 @@ class ExportSharedFormMixin:
 class ExportSharedFormView(ExportSharedFormMixin, ExportBaseMixin,
                            DatasetMixin, FormView):
     template_name = 'mibios/export.html'
-    export_form_action_url = '/abundance/export-shared/'
+    export_url_name = 'mibios_seq:export_shared'
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['export_form_action_url'] = self.export_form_action_url
         ctx['export_data_name'] = '"shared" abundance'
         return ctx
 
 
 class ExportAvgSharedFormView(AverageMixin, ExportSharedFormView):
-    export_form_action_url = '/abundance/avg/export-shared/'
+    export_url_name = 'mibios_seq:export_avg_shared'
 
     def get_form_class(self):
         if self.avg_by:
