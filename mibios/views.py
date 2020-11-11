@@ -1258,12 +1258,15 @@ class AverageMixin():
             else:
                 raise Http404(f'bad avg_by: {avg_by}')
 
+        # names for the fields that average() adds
+        self.fields = list(self.avg_by) + ['avg_group_count']
+        self.fields += [i.name for i in self.model.get_average_fields()]
+        self.col_names = [None] * len(self.fields)
+
     def get_table_class(self):
         """
         Generate django_tables2 table class
         """
-        self.fields = self.get_queryset()._avg_fields
-        self.col_names = [None] * len(self.fields)
         t = table_factory(view=self, count_columns=False)
         return t
 
@@ -1285,11 +1288,6 @@ class AverageExportView(AverageMixin, ExportView):
 
 class AverageExportFormView(AverageMixin, ExportFormView):
     export_url_name = 'average_export'
-
-    def get_form_class(self):
-        # Have to get correct fields for this
-        self.fields = self.get_queryset()._avg_fields
-        return super().get_form_class()
 
 
 class LogView(BaseMixin, CuratorRequiredMixin, TemplateView):
