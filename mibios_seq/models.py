@@ -41,7 +41,7 @@ class Sequencing(Model):
         (OTHER, OTHER),
     )
     name = models.CharField(max_length=100, unique=True)
-    sample = models.ForeignKey(Sample, on_delete=models.CASCADE,
+    sample = models.ForeignKey(Sample, on_delete=models.SET_NULL,
                                blank=True, null=True)
     control = models.CharField(max_length=50, choices=CONTROL_CHOICES,
                                blank=True)
