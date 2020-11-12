@@ -12,14 +12,14 @@
     {# FIXME: ugly? hack to get url reversal for different export views #}
     {# Need a url tag with programmable kwargs #}
     {% if view.export_url_name == 'average_export' %}
-        "{% url view.export_url_name data_name=data_name avg_by=avg_url_slug %}"
+        "{% url view.export_url_name data_name=url_data_name avg_by=avg_url_slug %}"
     {% elif view.export_url_name == 'mibios_seq:export_shared' %}
         "{% url view.export_url_name %}"
     {% elif view.export_url_name == 'mibios_seq:export_avg_shared' %}
         "{% url view.export_url_name %}"
     {% else %}
         {# should be redgular 'export' #}
-        "{% url view.export_url_name data_name=data_name %}"
+        "{% url view.export_url_name data_name=url_data_name %}"
     {% endif %}
     method="get" enctype="multipart/form-data">
     {{ form.as_p }}
