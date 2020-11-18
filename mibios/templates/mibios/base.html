@@ -32,12 +32,13 @@
 <br>
 <a href="{% url 'snapshot_list' %}">Archived database versions</a>
 {% endif %}
-{% if view.user_is_curator %}
-<br>
-Data curation: <a href="{% url 'admin:index' %}">admin interface</a> {% block curation_switch %}{% endblock %}
-{% endif %}
-<hr>
+<br/>
+Nav: [<a href="{{ view.request.META.SCRIPT_NAME }}/query/">query interface</a>]
 {% block nav %}{% endblock %}
+{% if view.user_is_curator %}[<a href="{% url 'admin:index' %}">admin interface</a>]{% endif %}
+<br/>
+{% if view.user_is_curator %}{% block curation_switch %}{% endblock %}{% endif %}
+<hr>
 
 {% block notifications %}{% if messages %}
 <ul class="messages">
