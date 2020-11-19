@@ -446,10 +446,15 @@ class Abundance(Model):
             fasta_result = None
         AbundanceImportFile.create_from_file(file=file, project=project)
         sequencings = Sequencing.objects.in_bulk(field_name='name')
+        if project.otu_type == AnalysisProject.ASV_TYPE:
+            f = dict(project=None)
+        else:
+            f = dict(project=project)
         otus = {
             (i.prefix, i.number): i
-            for i in OTU.objects.all().filter(project=project).iterator()
+            for i in OTU.objects.all().filter(**f).iterator()
         }
+        del f
 
         skipped, zeros = 0, 0
         objs = []
