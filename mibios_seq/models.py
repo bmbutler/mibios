@@ -55,6 +55,11 @@ class Sequencing(Model):
     plate = models.PositiveSmallIntegerField(blank=True, null=True)
     plate_position = models.CharField(max_length=10, blank=True)
     snumber = models.PositiveSmallIntegerField(blank=True, null=True)
+    otu = models.ManyToManyField(
+        'OTU',
+        through='Abundance',
+        editable=False,
+    )
 
     class Meta:
         unique_together = (
@@ -571,6 +576,8 @@ class AnalysisProject(Model):
 
     name = models.CharField(max_length=100, unique=True)
     otu = models.ManyToManyField('OTU', through=Abundance, editable=False)
+    sequencing = models.ManyToManyField(Sequencing, through=Abundance,
+                                        editable=False, related_name='project')
     otu_type = models.CharField(max_length=5, choices=OTU_TYPE_CHOICES,
                                 verbose_name='OTU type')
     description = models.TextField(blank=True)
