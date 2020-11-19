@@ -521,6 +521,45 @@ class Abundance(Model):
                 i.relative = i.count / total
             cls.objects.bulk_update(group, ('relative', ))
 
+    @classmethod
+    def compare_projects(cls, project_a, project_b):
+        """
+        Compare absolute counts between two ASV analysis projects
+        """
+        total = 0
+        skipped = 0
+        same = 0
+        diffs = {}
+        qs = cls.objects.filter(project__in=[project_a, project_b])
+        qs = qs.order_by('sequencing', 'otu', 'project')
+
+        def keyfun(obj):
+            return (obj.sequencing, obj.otu)
+
+        for (seq, otu), grp in groupby(qs, key=keyfun):
+            grp = list(grp)
+            if len(grp) == 1:
+                skipped += 1
+                continue
+            if len(grp) > 2:
+                raise RuntimeError('expected at most two in group')
+
+            total += 1
+            delta = grp[1].count - grp[0].count
+            if delta == 0:
+                same += 1
+                continue
+
+            pct = abs(delta) / max(grp[0].count, grp[1].count)
+            diffs[(seq, otu)] = (delta, pct)
+
+        return dict(
+            total=total,
+            skipped=skipped,
+            same=same,
+            diffs=diffs,
+        )
+
 
 class AnalysisProject(Model):
     ASV_TYPE = 'ASV'
