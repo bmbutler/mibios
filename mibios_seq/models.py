@@ -830,7 +830,8 @@ class Taxonomy(Model):
         file_rec = ImportFile.create_from_file(file=file)
         otus = {(i.prefix, i.number): i for i in OTU.objects.select_related()}
         is_header = True  # first line is header
-        updated, total = 0, 0
+        updated, total, seq_missing = 0, 0, 0
+        seqs = []
         for line in file_rec.file.open('r'):
             if is_header:
                 is_header = False
@@ -863,18 +864,21 @@ class Taxonomy(Model):
                     taxon.add_change_record(file=file_rec, line=total + 1)
                     taxon.save()
 
-                if otus[num].taxon == taxon:
-                    del otus[num]
+                seq = otus[(prefix, num)].sequence
+                if seq is None:
+                    seq_missing += 1
                 else:
-                    otus[num].taxon = taxon
-                    updated += 1
+                    if seq.taxon != taxon:
+                        seq.taxon = taxon
+                        updated += 1
+                seqs.append(seq)
             except Exception as e:
                 raise RuntimeError(
                     f'error loading file: {file} at line {total}: {row}'
                 ) from e
 
-        OTU.objects.bulk_update(otus.values(), ['taxon'])
-        return dict(total=total, update=updated)
+        Sequence.objects.bulk_update(seqs, ['taxon'])
+        return dict(total=total, update=updated, seq_missing=seq_missing)
 
 
 class AbundanceImportFile(ImportFile):
