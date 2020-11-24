@@ -535,31 +535,55 @@ class Abundance(Model):
         """
         Compare absolute counts between two ASV analysis projects
         """
+        if project_a == project_b:
+            raise ValueError('the two given projects must not be the same')
+
+        seqs_a = project_a.sequencing.distinct().values_list('pk', flat=True)
+        seqs_a = set(seqs_a.iterator())
+        seqs_b = project_b.sequencing.distinct().values_list('pk', flat=True)
+        seqs_b = set(seqs_b.iterator())
+
+        # rows are 4-tuples of int with 3 pks + count
+        qs = cls.objects.filter(project__in=[project_a, project_b])
+        qs = qs.order_by('sequencing', 'otu', 'project')
+        qs = qs.values_list('sequencing', 'otu', 'project', 'count')
+
+        def keyfun(row):
+            # group by sequencing and otu
+            return (row[0], row[1])
+
         total = 0
         skipped = 0
         same = 0
         diffs = {}
-        qs = cls.objects.filter(project__in=[project_a, project_b])
-        qs = qs.order_by('sequencing', 'otu', 'project')
-
-        def keyfun(obj):
-            return (obj.sequencing, obj.otu)
-
-        for (seq, otu), grp in groupby(qs, key=keyfun):
-            grp = list(grp)
-            if len(grp) == 1:
-                skipped += 1
-                continue
-            if len(grp) > 2:
-                raise RuntimeError('expected at most two in group')
-
+        for _, grp in groupby(qs.iterator(), key=keyfun):
             total += 1
-            delta = grp[1].count - grp[0].count
+            (seq, otu, proj, count), *more = grp
+            if more:
+                if len(more) > 1:
+                    raise RuntimeError('expected at most two in group')
+                # more has one element
+                count_b = more[0][3]
+                delta = count_b - count
+                max_count = max(count, count_b)
+            else:
+                if proj == project_a.pk and seq in seqs_b:
+                    # zero in project b
+                    delta = -count
+                elif proj == project_b.pk and seq in seqs_a:
+                    # zero in project a
+                    delta = count
+                else:
+                    # sequencing data was not analysed in other project
+                    skipped += 1
+                    continue
+                max_count = count
+
             if delta == 0:
                 same += 1
                 continue
 
-            pct = abs(delta) / max(grp[0].count, grp[1].count)
+            pct = abs(delta) / max_count
             diffs[(seq, otu)] = (delta, pct)
 
         return dict(
