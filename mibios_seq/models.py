@@ -616,6 +616,24 @@ class AnalysisProject(Model):
         return super().get_fields(with_m2m=False, **kwargs)
 
 
+class OTUQuerySet(QuerySet):
+    def to_fasta(self, save_as=None):
+        """
+        Convert OTU queryset into a fasta file
+        """
+        if not save_as:
+            return self._to_fasta()
+
+        with open(save_as, 'w') as f:
+            for i in self._to_fasta():
+                f.write(i)
+
+    def _to_fasta(self):
+        qs = self.select_related('sequence').iterator()
+        for i in qs:
+            yield f'>{i.natural}\n{i.sequence.seq}\n'
+
+
 class OTU(Model):
     NUM_WIDTH = 5
 
@@ -633,6 +651,9 @@ class OTU(Model):
     )
 
     hidden_fields = ['prefix', 'number']  # use name property instead
+
+    objects = Manager.from_queryset(OTUQuerySet)()
+    curated = CurationManager.from_queryset(OTUQuerySet)()
 
     class Meta:
         ordering = ('prefix', 'number',)
