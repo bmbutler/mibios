@@ -461,7 +461,7 @@ class Abundance(Model):
         }
         del f
 
-        skipped, zeros = 0, 0
+        skipped, zeros, otus_new = 0, 0, 0
         objs = []
         for (seqid, otu), count in sh.counts.stack().items():
             if count == 0:
@@ -486,9 +486,13 @@ class Abundance(Model):
             try:
                 otu_obj = otus[otu_key]
             except KeyError:
-                raise UserDataError(
-                    f'OTU unknown to analysis project: {otu}'
+                otu_obj = OTU.objects.create(
+                    prefix=otu_key[0],
+                    number=otu_key[1],
+                    project=project,
                 )
+                otus[otu_key] = otu_obj
+                otus_new += 1
 
             objs.append(cls(
                 count=count,
@@ -499,7 +503,7 @@ class Abundance(Model):
 
         cls.objects.bulk_create(objs)
         return dict(count=len(objs), zeros=zeros, skipped=skipped,
-                    fasta=fasta_result)
+                    fasta=fasta_result, otus_created=otus_new)
 
     @classmethod
     def compute_relative(cls, project=None):
