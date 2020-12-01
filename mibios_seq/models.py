@@ -276,51 +276,87 @@ class AbundanceQuerySet(QuerySet):
             abund_field = 'relative'
 
         if self._avg_by:
+            # id_fields are the avg_by fields without project and otu
+            # they'll be the row identifiers:
             id_fields = [
                 i for i in self._avg_by
                 if i not in ['project', 'otu']
             ]
+            # adjust lookups to be relative to Sequencing:
+            seq_id_fields = [i[len('sequencing__'):] for i in id_fields]
+            # get map: row id -> real avg group count:
+            qs = Sequencing.curated.average(*seq_id_fields, natural=False)
+            real_avg_grp_counts = {
+                tuple([i[j] for j in seq_id_fields]): i['avg_group_count']
+                for i in qs
+            }
+            del qs
         else:
             id_fields = ['sequencing']
+
+        if self._avg_by:
+            fields = [*id_fields, 'avg_group_count', abund_field, 'otu']
+        else:
+            fields = [*id_fields, abund_field, 'otu']
+
         it = (
             self.order_by(*id_fields, 'otu')
-            .values_list(abund_field, 'otu', *id_fields)
+            .values_list(*fields)
             .iterator()
         )
+        del fields
 
         # Group data by what will be the rows of the shared file.  Map row
-        # ids/sequencing name to whatever grouids() says and process the
+        # ids/sequencing names to whatever groupids() says and process the
         # rest, which are now tuples of abundance value and otu, in two
         # steps: (1) possibly normalize the values and (2) fill in the
         # zeros.  Then that gets packaged into a row, each of which is
         # yielded back.
-        rm_ids = itemgetter(0, 1)
-        for row_id, group in groupby(it, key=itemgetter(slice(2, None))):
+        key = itemgetter(slice(None, len(id_fields)))
+        for row_id, group in groupby(it, key=key):
             # row_id is tuple of id_fields from above
+            # a group is data for one row in shared file
             try:
                 group_id_vals = groupids(*row_id)
             except LookupError:
                 group_id_vals = [f'{i}:{j}' for i, j in zip(id_fields, row_id)]
-            group = map(rm_ids, group)
+
+            # pick only abund, otu pairs from data
+            if self._avg_by:
+                real_avg_g_ct = real_avg_grp_counts[row_id]
+                group = (
+                    # correct averages for zeros!
+                    (abund * (avg_g_ct / real_avg_g_ct), otu)
+                    for *_, avg_g_ct, abund, otu in group
+                )
+                other = (real_avg_g_ct,)
+            else:
+                # last two elements -> (abund, otu)
+                group = map(itemgetter(slice(-2, None)), group)
+                other = ()
+
             if normalize is not None and normalize >= 1:
-                group = ((round(i[0] * normalize), i[1]) for i in group)
+                group = (
+                    (round(abund * normalize), otu)
+                    for abund, otu in group
+                )
 
             values = self._shared_file_items(otus, group, normalize)
-            yield tuple(chain(group_id_vals, values))
+            yield tuple(chain(group_id_vals, other, values))
 
     def as_shared_values_list(
             self,
             normalize=None,
-            groupids=lambda x: x,
-            group_cols_verbose=('Group', ),
+            groupids=lambda *x: x,
+            group_cols_verbose=None,
             mothur=False,
     ):
         """
         Make mothur shared table for download
 
         Returns an iterator over tuple rows, first row is the header.  This is
-        intended to support data export.  Missing counts are inserted as zero,
-        mirroring the skipping of zeros at import.
+        intended to support data export.  Missing counts are inserted as zeros,
+        complementing the skipping of zeros at import.
 
         This method will happily return data from multiple analysis projects.
         This makes little sense in the shared-data-export context and the
@@ -328,6 +364,16 @@ class AbundanceQuerySet(QuerySet):
         """
         if mothur:
             raise ValueError('Mothur mode is not implement')
+
+        if group_cols_verbose is None:
+            if self._avg_by:
+                group_cols_verbose = [
+                    i.rpartition('__')[2]
+                    for i in self._avg_by
+                    if i not in ('project', 'otu')
+                ]
+            else:
+                group_cols_verbose = ('Group', )
 
         # get OTUs that actually occur in QuerySet:
         otu_pks = set(self.values_list('otu', flat=True).distinct().iterator())
@@ -346,6 +392,8 @@ class AbundanceQuerySet(QuerySet):
             header = ['label', 'Group', 'numOtus']
         else:
             header = list(group_cols_verbose)
+        if self._avg_by:
+            header.append('avg_group_count')
         header += list(otus.values())
 
         return chain([header], self._shared_file_rows(

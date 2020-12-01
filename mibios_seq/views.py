@@ -198,8 +198,6 @@ class ExportAvgSharedView(ExportAvgSharedFormView, ExportSharedView):
         )
 
     def get_values(self):
-        raise Http404  # average abundance are broken FIXME !!!
-        # FIXME: this is hackish, should give e.g. ['participant', 'week']
         # for two columns
         self.group_cols_verbose = [
             i.rpartition('__')[2]
