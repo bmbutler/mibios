@@ -49,8 +49,8 @@ class ExportSharedFormMixin:
     DEFAULT_FORMAT = 'shared/zipped'
 
     group_col_choice_map = {
-        'sequencing record': ('sequencing__name', ),
         'sample ID': ('sequencing__sample__fecalsample__natural', ),
+        'sequencing record': ('sequencing__name', ),
         # (('participant__name', 'week__number', 'participant and week'),
     }
 
