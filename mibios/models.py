@@ -364,9 +364,10 @@ class QuerySet(models.QuerySet):
         for i in self.model.get_average_fields():
             kwargs[i.name] = models.Avg(i.name)
 
-        self._avg_by = avg_by
-        self._avg_fields = list(avg_by) + list(kwargs)
-        qs = self.values(*avg_by)
+        qs = self._clone()
+        qs._avg_by = avg_by
+        qs._avg_fields = list(avg_by) + list(kwargs)
+        qs = qs.values(*avg_by)
         if natural:
             qs._iterable_class = natural_values_iterable_factory(
                 self.model,
