@@ -1052,9 +1052,9 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, MultiTableMixin,
             diffs.append(d)
 
         # combine into data
-        data = qs.values()
+        data = list(qs)
         for diff, row in zip(diffs, data):
-            row['changes'] = diff
+            row.changes = diff
         return data
 
     def get_context_data(self, **ctx):
