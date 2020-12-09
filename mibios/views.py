@@ -1035,7 +1035,6 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, MultiTableMixin,
             f['record_pk'] = self.record_pk
 
         extra = ChangeRecord.objects.exclude(pk__in=reg_pks).filter(**f)
-        list(extra)
         if extra.exists():
             tables.append(self.table_class(self._add_diffs(extra)))
         return tables
