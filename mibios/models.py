@@ -607,8 +607,10 @@ class ChangeRecord(models.Model):
         null=True, blank=True,
         help_text='The corresponding line in the input file',
     )
-    command_line = models.CharField(
-        max_length=200, blank=True, help_text='management command for import')
+    comment = models.CharField(
+        max_length=200, blank=True,
+        help_text='Additional info, comment, or management command for import',
+    )
     record_type = models.ForeignKey(
         ContentType, on_delete=models.SET_NULL, null=True, blank=True,
     )
@@ -1418,7 +1420,7 @@ class Model(models.Model):
         return reverse(name, kwargs=dict(object_id=self.pk))
 
     def add_change_record(self, is_created=None, is_deleted=False, file=None,
-                          line=None, user=None, cmdline=''):
+                          line=None, user=None, comment=''):
         """
         Create a change record attribute for this object
 
@@ -1431,7 +1433,7 @@ class Model(models.Model):
             user=user,
             file=file,
             line=line,
-            command_line=cmdline,
+            comment=comment,
             record=self,
             record_natural=self.natural,
             is_created=is_created or (self.id is None),

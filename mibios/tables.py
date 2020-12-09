@@ -392,7 +392,7 @@ class HistoryTable(tables.Table):
         model = ChangeRecord
         fields = (
             'timestamp', 'is_created', 'is_deleted', 'changes', 'user',
-            'file.file', 'line', 'command_line',
+            'file.file', 'line', 'comment',
         )
 
 
