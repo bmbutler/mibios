@@ -1021,7 +1021,7 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, MultiTableMixin,
         Get the regular history and a table of lost/missing
         """
         tables = []
-        regular = self.record.history.all()
+        regular = self.record.history.select_related('user', 'file')
         tables.append(self.table_class(self._add_diffs(regular)))
 
         # get lost or otherwise extra
