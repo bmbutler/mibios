@@ -1,4 +1,4 @@
-from mibios.dataset import registry
+from mibios import get_registry
 from mibios.load import Loader
 from mibios.management.import_base import AbstractImportCommand
 
@@ -15,7 +15,7 @@ class Command(AbstractImportCommand):
             required=True,
             help='Name of table, model, or data set for which to import data. '
                  'Available table names are: '
-                 + ', '.join(registry.get_names()),
+                 + ', '.join(get_registry().get_names()),
         )
 
     def load_file_kwargs(self, **options):
