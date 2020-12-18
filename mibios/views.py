@@ -1078,7 +1078,7 @@ class DeletedHistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
         super().setup(request, *args, **kwargs)
 
         try:
-            model = get_registry().models[kwargs['dataset']]
+            model = get_registry().models[kwargs['data_name']]
         except KeyError:
             raise Http404
 
