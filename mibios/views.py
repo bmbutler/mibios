@@ -1065,7 +1065,7 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, MultiTableMixin,
             # TODO: review this use-case and maybe get the key from table data
             natural_key = '???'
         ctx['natural_key'] = natural_key
-        ctx['page_title'].append('history of ' + natural_key)
+        ctx['page_title'].append(f'history of {natural_key}')
 
         return ctx
 
