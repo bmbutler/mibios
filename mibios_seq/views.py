@@ -159,7 +159,7 @@ class ExportSharedView(ExportSharedFormMixin, ExportMixin, TableView):
     def get_values(self):
         return (
             self.get_queryset()
-            .filter(project__name=self.project_name)
+            .filter_project(self.project_name)
             .as_shared_values_list(
                 self.normalize,
                 self._group_id_mapper,

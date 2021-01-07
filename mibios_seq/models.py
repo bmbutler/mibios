@@ -285,7 +285,7 @@ class AbundanceQuerySet(QuerySet):
         Normalize to unit interval, return fractions
 
         This gets fractions from absolute counts, but is not needed if relative
-        abundance is sotred in the DB.
+        abundance is sorted in the DB.
         """
         group = list(group)
         vals = [i[0] for i in group]
@@ -326,6 +326,9 @@ class AbundanceQuerySet(QuerySet):
         are returned.  If 0 then relative abundance, as fractional values in
         [0, 1] are returned.  If an integer above 0 is given, then the counts
         are normalized by 'discrete scaling' to the targeted sample size.
+
+        Assumes that filter_project() has been called if we are working with
+        averaged data.
         """
         if normalize is None:
             abund_field = 'count'
@@ -334,15 +337,27 @@ class AbundanceQuerySet(QuerySet):
 
         if self._avg_by:
             # id_fields are the avg_by fields without project and otu
-            # they'll be the row identifiers:
+            # they will be the row identifiers:
             id_fields = [
                 i for i in self._avg_by
                 if i not in ['project', 'otu']
             ]
             # adjust lookups to be relative to Sequencing:
             seq_id_fields = [i[len('sequencing__'):] for i in id_fields]
-            # get map: row id -> real avg group count:
-            qs = Sequencing.curated.average(*seq_id_fields, natural=False)
+            # get a map: row id -> real avg group count; this is a bit tricky
+            # because we may have good Sequencing records without abundance
+            # data (maybe filtered out by the analysis pipeline); the avg must
+            # be calculated based on the records with abundance data.  The
+            # solution with Exist sub-queries seems to be reasonable fast:
+            qs = Sequencing.curated.all()
+            qs = qs.annotate(has_counts=models.Exists(
+                Abundance.objects.filter(
+                    sequencing=models.OuterRef('pk'),
+                    project=self._project,
+                )
+            ))
+            qs = qs.filter(has_counts=True)
+            qs = qs.average(*seq_id_fields, natural=False)
             real_avg_grp_counts = {
                 tuple([i[j] for j in seq_id_fields]): i['avg_group_count']
                 for i in qs
@@ -415,10 +430,11 @@ class AbundanceQuerySet(QuerySet):
         intended to support data export.  Missing counts are inserted as zeros,
         complementing the skipping of zeros at import.
 
-        This method will happily return data from multiple analysis projects.
-        This makes little sense in the shared-data-export context and the
-        caller should ensure that the query set is properly filtered.
+        Will raise an exception when data come from multiple projects.
         """
+        log.debug(f'as_shared_values_list() args: normalize={normalize} '
+                  f'groupids={groupids} group_cols_verbose='
+                  f'{group_cols_verbose}')
         if mothur:
             raise ValueError('Mothur mode is not implement')
 
@@ -453,7 +469,13 @@ class AbundanceQuerySet(QuerySet):
             header.append('avg_group_count')
         header += list(otus.values())
 
-        return chain([header], self._shared_file_rows(
+        if self._avg_by:
+            # raises on data from multiple projects
+            qs = self.filter_project()
+        else:
+            qs = self
+
+        return chain([header], qs._shared_file_rows(
             list(otus.keys()),
             normalize,
             groupids,
