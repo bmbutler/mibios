@@ -333,7 +333,7 @@ class QuerySet(models.QuerySet):
         This overriding method checks _pre_annotation_clone for presence of a
         clone made before a count column annotation is made.  Running the count
         query without such annotations is faster.  The validity of the
-        resulting count depends on the stipped annotations not having any
+        resulting count depends on the stripped annotations not having any
         filter effect.  Also the clone needs to be reset when adding new
         filters.
 
@@ -364,10 +364,10 @@ class QuerySet(models.QuerySet):
         for i in self.model.get_average_fields():
             kwargs[i.name] = models.Avg(i.name)
 
-        qs = self._clone()
+        qs = self.values(*avg_by)
+
         qs._avg_by = avg_by
         qs._avg_fields = list(avg_by) + list(kwargs)
-        qs = qs.values(*avg_by)
         if natural:
             qs._iterable_class = natural_values_iterable_factory(
                 self.model,
