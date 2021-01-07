@@ -131,6 +131,63 @@ class Strain(Model):
 
 
 class AbundanceQuerySet(QuerySet):
+    _project = None
+
+    def _clone(self):
+        """
+        Extends non-public _clone() to keep track of extra state
+        """
+        c = super()._clone()
+        c._project = self._project
+        return c
+
+    def filter_project(self, project=None):
+        """
+        Ensure query set has only data for given project
+
+        This method can be used to replace calls like:
+
+            qs.filter(project=p)
+
+        but does a bit more, it memorized the project, so repeated calls don't
+        filter again and can be used to ensure and assert that only on
+        project's data is present in the data set without having to specify
+        which.
+
+        :param project: AnalysisProject instance or the name as str or None
+
+        If the given project is None, then the query set is checked if it
+        contains more than a single project's data, in which case a ValueError
+        is raised.  This emits up to two additional and light SQL queries.  The
+        method is idempotent in the sense that the returned query set remembers
+        the project (accessible via the _project member variable) and
+        subsequent calles just return a cloned instance.
+
+        Returns a new QuerySet instance.
+        """
+        if self._project is not None:
+            return self._clone()
+
+        if isinstance(project, str):
+            project = AnalysisProject.objects.get(name=project)
+        elif project is None:
+            project_pks = self.values_list('project', flat=True).distinct()
+            if len(project_pks) == 0:
+                # empty query set, leave project as None (what else can we do?)
+                pass
+            elif len(project_pks) == 1:
+                project = AnalysisProject.objects.get(pk=project_pks[0])
+            else:
+                raise ValueError(
+                    f'Abundance query set is related to {len(project_pks)} '
+                    f'projects, need to know on which to filter, but project '
+                    f'argument is None'
+                )
+
+        qs = self.filter(project=project)
+        qs._project = project
+        return qs
+
     def as_shared(self):
         """
         Make mothur-shared table
