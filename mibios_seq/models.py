@@ -299,14 +299,14 @@ class AbundanceQuerySet(QuerySet):
         total = sum(vals)
         return ((i / total, j, k) for i, j, k in group)
 
-    def _shared_file_items(self, otus, group, normalize):
+    def _zerofill_and_norm(self, otus, group, normalize):
         """
-        Generator over the items of a row in a shared file
+        Fill in zeros and normalize values for one row
 
-        This fills in zeros as needed.
+        This is a generator over the items of a row in a shared file
 
-        :param otus: iterable over all ASV pks of QuerySet in order
-        :param group: Data for one sample, row; an iterable over tuple
+        :param otus: iterable over all OTU pks of QuerySet in order
+        :param group: Data for one sample/row; an iterable over tuple
                       (abund, OTU pk)
         """
         if normalize == 0:
@@ -325,7 +325,7 @@ class AbundanceQuerySet(QuerySet):
             else:
                 yield zero
 
-    def _shared_file_rows(self, otus, normalize, groupids, mothur):
+    def _group_and_pivot(self, otus, normalize, id_fields):
         """
         Generator of shared file rows
 
@@ -343,19 +343,16 @@ class AbundanceQuerySet(QuerySet):
             abund_field = 'relative'
 
         if self._avg_by:
-            # id_fields are the avg_by fields without project and otu
-            # they will be the row identifiers:
-            id_fields = [
-                i for i in self._avg_by
-                if i not in ['project', 'otu']
-            ]
+            if not id_fields.startswith('sequencing__'):
+                raise ValueError('expect id_fields to be related via '
+                                 'Sequencing')
             # adjust lookups to be relative to Sequencing:
             seq_id_fields = [i[len('sequencing__'):] for i in id_fields]
             # get a map: row id -> real avg group count; this is a bit tricky
-            # because we may have good Sequencing records without abundance
-            # data (maybe filtered out by the analysis pipeline); the avg must
-            # be calculated based on the records with abundance data.  The
-            # solution with Exist sub-queries seems to be reasonable fast:
+            # because we may have otherwise good Sequencing records without
+            # abundance data (maybe filtered out by the analysis pipeline); the
+            # avg must be calculated based on the records with abundance data.
+            # The solution with Exist sub-queries seems to be reasonably fast:
             qs = Sequencing.curated.all()
             qs = qs.annotate(has_counts=models.Exists(
                 Abundance.objects.filter(
@@ -370,8 +367,6 @@ class AbundanceQuerySet(QuerySet):
                 for i in qs
             }
             del qs
-        else:
-            id_fields = ['sequencing']
 
         if self._avg_by:
             fields = [*id_fields, 'avg_group_count', abund_field, 'otu']
@@ -385,20 +380,16 @@ class AbundanceQuerySet(QuerySet):
         )
         del fields
 
-        # Group data by what will be the rows of the shared file.  Map row
-        # ids/sequencing names to whatever groupids() says and process the
-        # rest, which are now tuples of abundance value and otu, in two
-        # steps: (1) possibly normalize the values and (2) fill in the
-        # zeros.  Then that gets packaged into a row, each of which is
-        # yielded back.
+        # Group data by what will be the rows of the shared file.  The group-by
+        # key, the row id(s) (a tuple) will be the first element of the output
+        # row, the rest, which are now tuples of abundance value and otu, in
+        # two steps: (1) possibly normalize the values and (2) fill in the
+        # zeros.  Then that gets packaged into a row, each of which is yielded
+        # back.
         key = itemgetter(slice(None, len(id_fields)))
         for row_id, group in groupby(it, key=key):
             # row_id is tuple of id_fields from above
             # a group is data for one row in shared file
-            try:
-                group_id_vals = groupids(*row_id)
-            except LookupError:
-                group_id_vals = [f'{i}:{j}' for i, j in zip(id_fields, row_id)]
 
             # pick only abund, otu pairs from data
             if self._avg_by:
@@ -408,11 +399,11 @@ class AbundanceQuerySet(QuerySet):
                     (abund * (avg_g_ct / real_avg_g_ct), otu)
                     for *_, avg_g_ct, abund, otu in group
                 )
-                other = (real_avg_g_ct,)
+                grp_count = (real_avg_g_ct,)
             else:
                 # last two elements -> (abund, otu)
                 group = map(itemgetter(slice(-2, None)), group)
-                other = ()
+                grp_count = ()
 
             if normalize is not None and normalize >= 1:
                 group = (
@@ -420,18 +411,99 @@ class AbundanceQuerySet(QuerySet):
                     for abund, otu in group
                 )
 
-            values = self._shared_file_items(otus, group, normalize)
-            yield tuple(chain(group_id_vals, other, values))
+            values = self._zerofill_and_norm(otus, group, normalize)
+            yield (row_id, grp_count, values)
+
+    def _add_meta_data(self, shared_rows, meta_cols):
+        """
+        Replace row ids with natural keys and add extra meta-data columns
+
+        :param iter shared_row: iterator over rows, should yield tuple of row
+                                components, first component are the row ids, a
+                                tuple of usually one Sequencing primary key,
+                                or, for averaged rows, the pks of the models we
+                                averaged by.
+        :param list meta_cols: List of 2-tuples (Model, accessor) in the order
+                               the columns will appear in the shared table.
+                               For averaged data this must include the auto-
+                               matic averaged-by id columns.  The row ids must
+                               come first.  The accessors must end with a field
+                               (can be "natural").
+
+        Helper generator method for as_shared_values_list()
+        """
+        # get models for id/key columns, in same order.  Assumes those appear
+        # first in meta_cols and other extra column use same models, so this
+        # loop breaks at the first already seen model
+        models = []
+        for i, _ in meta_cols:
+            if i in models:
+                break
+            models.append(i)
+
+        # maps: one map per row_id column (or one per model)
+        maps = []
+        for m in models:
+            # get parameters for select_related()
+            related = []
+            for mi, ai in meta_cols:
+                if mi != m:
+                    # different model
+                    continue
+                ai = ai.split('__')
+                if len(ai) > 1:
+                    # rm field at end of accessor
+                    rel = '__'.join(ai[:-1])
+                    if rel not in related:
+                        related.append(rel)
+                else:
+                    # not a relation, just a local field
+                    pass
+            del mi, ai
+
+            # mask accessors with '' for other models to keep correct order and
+            # column positions, the getter will insert a None at those
+            # position, maps for other models may provide values
+            masked_cols = [j if i == m else '' for i, j in meta_cols]
+            if m == Sequencing:
+                qs = self._project.sequencing
+            else:
+                # s/objects/curated/ ?
+                qs = m.objects.all()
+            qs = qs.distinct().select_related(*related)
+            idmap = {i.pk: i.getter(*masked_cols) for i in qs.iterator()}
+            maps.append(idmap)
+        del m
+
+        for row_ids, grp_count, values in shared_rows:
+            # combine values from different maps into one row
+            meta_vals = [None] * len(meta_cols)
+            for rid, m in zip(row_ids, maps):
+                for i, j in enumerate(m[rid]):
+                    if j is not None:
+                        meta_vals[i] = j
+
+            yield tuple(chain(meta_vals, grp_count, values))
 
     def as_shared_values_list(
             self,
             normalize=None,
-            groupids=lambda *x: x,
-            group_cols_verbose=None,
+            meta_cols=(),
             mothur=False,
     ):
         """
-        Make mothur shared table for download
+        Make a "shared" table for download
+
+        :param tuple meta_cols: Field accessors for meta data column.  With
+        '__' separator.  However, must start with a model name of an id
+        column's model.  For non-averaged data that is always 'sequencing'.
+        For averaged data these are the model names of the averaged-by models
+        (besides "otu" and "project").  The last component must be a field
+        name.  'natural' is allowed.  For non-averaged data, the default, i.e.
+        when an empty list/tuple is given, is equivalent to using
+        'sequencing__natural' for non-averaged data.  For averaged data, the
+        averaged-by columns are always added and meta_cols is used for extra
+        columns.
 
         Returns an iterator over tuple rows, first row is the header.  This is
         intended to support data export.  Missing counts are inserted as zeros,
@@ -440,25 +512,65 @@ class AbundanceQuerySet(QuerySet):
         Will raise an exception when data come from multiple projects.
         """
         log.debug(f'as_shared_values_list() args: normalize={normalize} '
-                  f'groupids={groupids} group_cols_verbose='
-                  f'{group_cols_verbose}')
+                  f'meta_cols={meta_cols}')
         if mothur:
             raise ValueError('Mothur mode is not implement')
 
-        if group_cols_verbose is None:
-            if self._avg_by:
-                group_cols_verbose = [
-                    i.rpartition('__')[2]
-                    for i in self._avg_by
-                    if i not in ('project', 'otu')
-                ]
+        # ensure we have a project before continuing
+        if self._project is None:
+            # filter_project() raises on data from multiple projects
+            return self.filter_project().as_shared_values_list(
+                normalize=normalize,
+                meta_cols=meta_cols,
+                mothur=mothur,
+            )
+
+        if self._avg_by:
+            # id_fields are the avg_by fields without project and otu
+            # they will be the row identifiers:
+            id_fields = [
+                i for i in self._avg_by
+                if i not in ['project', 'otu']
+            ]
+            meta_models = [
+                Abundance.get_field(i).related_model
+                for i in id_fields
+            ]
+            # prepend id fields to meta_cols
+            meta_cols = \
+                [i._meta.model_name + '__natural' for i in meta_models] \
+                + list(meta_cols)
+        else:
+            id_fields = ['sequencing']
+            meta_models = [Sequencing]
+            if not meta_cols:
+                meta_cols = ['sequencing__name']
+
+        meta_cols1 = []
+        meta_cols_verbose = []
+        for a in meta_cols:
+            a = a.split('__')
+            for model in meta_models:
+                if a[0] == model._meta.model_name:
+                    break
             else:
-                group_cols_verbose = ('Group', )
+                raise ValueError(
+                    f'Meta column accessor {a} does not match any meta field '
+                    f'model in {meta_models}'
+                )
+            meta_cols1.append((model, '__'.join(a[1:])))
+            verb, last = a[-2:]
+            verb = verb.capitalize()
+            if last not in ('name', 'natural', 'id', 'pk'):
+                verb = verb + '.' + last
+            meta_cols_verbose.append(verb)
+        meta_cols = meta_cols1
+        del meta_cols1, verb, last, a
 
         # get OTUs that actually occur in QuerySet:
         otu_pks = set(self.values_list('otu', flat=True).distinct().iterator())
         # OTU order here must correspond to order in which count values are
-        # generated later, in the _shared_file_rows() method.  It is assumed
+        # generated later, in the _group_and_pivot() method.  It is assumed
         # that the OTU model defines an appropriate order; OTU pk->name
         # mapping, use values for header, keys for zeros injection
         otus = OrderedDict((
@@ -476,18 +588,33 @@ class AbundanceQuerySet(QuerySet):
             header.append('avg_group_count')
         header += list(otus.values())
 
-        if self._avg_by:
-            # raises on data from multiple projects
-            qs = self.filter_project()
-        else:
-            qs = self
 
-        return chain([header], qs._shared_file_rows(
+        tail = self._group_and_pivot(
             list(otus.keys()),
             normalize,
-            groupids,
-            mothur,
-        ))
+            id_fields,
+        )
+        tail = self._add_meta_data(tail, meta_cols)
+        return chain([header], tail)
+
+    def as_shared_dataframe(
+            self,
+            normalize=0,
+            meta_cols=(),
+    ):
+        """
+        Get "shared" table as pandas data frame
+
+        This is a wrapper around as_shared_values_list()
+
+        Will raise an exception when data come from multiple projects.
+        """
+        it = self.as_shared_values_list(
+            normalize=normalize,
+            meta_col=meta_cols
+        )
+        cols = next(it)
+        return DataFrame(it, columns=cols)
 
 
 class Abundance(Model):
