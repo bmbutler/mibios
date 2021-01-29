@@ -583,7 +583,7 @@ class AbundanceQuerySet(QuerySet):
         if mothur:
             header = ['label', 'Group', 'numOtus']
         else:
-            header = list(group_cols_verbose)
+            header = list(meta_cols_verbose)
         if self._avg_by:
             header.append('avg_group_count')
         header += list(otus.values())
