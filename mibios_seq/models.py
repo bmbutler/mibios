@@ -149,10 +149,11 @@ class AbundanceQuerySet(QuerySet):
 
             qs.filter(project=p)
 
-        but does a bit more, it memorized the project, so repeated calls don't
-        filter again and can be used to ensure and assert that only on
-        project's data is present in the data set without having to specify
-        which.
+        but does a bit more, it memorized the project, so repeated calls (with
+        the sample project) don't filter again and can be used to ensure and
+        assert that only on project's data is present in the data set without
+        having to specify which.  Calling the method again but with a different
+        project argument raises a ValueError.
 
         :param project: AnalysisProject instance or the name as str or None
 
@@ -166,12 +167,18 @@ class AbundanceQuerySet(QuerySet):
         Returns a new QuerySet instance.
         """
         if self._project is not None:
+            if project is not None and project != self._project:
+                raise ValueError(
+                    'AbundanceQuerySet is already filtered by another project')
             return self._clone()
 
         if isinstance(project, str):
             project = AnalysisProject.objects.get(name=project)
         elif project is None:
-            project_pks = self.values_list('project', flat=True).distinct()
+            project_pks = (self
+                           .order_by('project')
+                           .values_list('project', flat=True)
+                           .distinct())
             if len(project_pks) == 0:
                 # empty query set, leave project as None (what else can we do?)
                 pass
