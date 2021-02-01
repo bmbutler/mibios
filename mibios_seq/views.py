@@ -48,10 +48,9 @@ class ExportSharedFormMixin:
     )
     DEFAULT_FORMAT = 'shared/zipped'
 
-    group_col_choice_map = {
-        'sample ID': ('sequencing__sample__fecalsample__natural', ),
-        'sequencing record': ('sequencing__name', ),
-        # (('participant__name', 'week__number', 'participant and week'),
+    meta_col_choice_map = {
+        # TODO: implement auto-detection
+        'sequencing record ID': 'sequencing__name',
     }
 
     norm_choices = (
@@ -61,11 +60,11 @@ class ExportSharedFormMixin:
     )
 
     @property
-    def group_col_choices(self):
+    def meta_col_choices(self):
         """
-        Supply the choices for the group_col form field
+        Supply the choices for the meta_col form field
         """
-        return [(slugify(i), i) for i in self.group_col_choice_map.keys()]
+        return [(slugify(i), i) for i in self.meta_col_choice_map.keys()]
 
     def get_form_class(self):
         return ExportSharedForm.factory(self)
@@ -87,16 +86,20 @@ class ExportAvgSharedFormView(AverageMixin, ExportSharedFormView):
 
     def get_form_class(self):
         if self.avg_by:
-            # override group col choices: group is avg_by but without project
-            # and otu since those are always averaged by.  What we want is e.g.
+            # override meta col choices: meta is avg_by but without project
+            # nor otu since those are always averaged by.  What we want is e.g.
             # just participant and week:
-            bys = [i for i in self.avg_by if i not in ['project', 'otu']]
-            # combine last lookup components for label (will become the shared
-            # file group column header):
-            label = '_'.join([i.rpartition('__')[2] for i in bys])
-            self.group_col_choice_map = {label: bys}
+            # TODO: auto-detect other relations
+            self.meta_col_choice_map = dict()
+            for i in self.avg_by:
+                if i in ['project', 'otu']:
+                    continue
+                model_name = i.split('__')[-1]
+                self.meta_col_choice_map[model_name.capitalize()] = \
+                    model_name + '__natural'
 
             # override norm choices: rm "none"
+            # as there's no such thing as average absolute counts
             self.norm_choices = tuple(self.norm_choices[1:])
 
         return super().get_form_class()
@@ -117,44 +120,28 @@ class ExportSharedView(ExportSharedFormMixin, ExportMixin, TableView):
         return slugify(' '.join(parts))
 
     def get(self, request, *args, **kwargs):
-        form = self.get_form_class()(data=dict(request.GET.items()))
+        form = self.get_form_class()(data=request.GET)
+        self.form = form
         if not form.is_valid():
             log.debug(f'export shared form invalid:\n{form.errors}')
             raise Http404(form.errors)
 
+        log.debug(f'shared export form valid: {form.cleaned_data}')
         self.project_name = form.cleaned_data['project']
         self.normalize = form.cleaned_data['normalize']
-        for k, v in self.group_col_choice_map.items():
-            if slugify(k) == form.cleaned_data['group_cols']:
-                self.group_id_accessors = \
-                        self.model.resolve_natural_lookups(*v)
-                self.group_cols_verbose = (k, )
-                break
+        self.meta_col_accessors = []
+        for i in form.cleaned_data['meta_cols']:
+            for k, v in self.meta_col_choice_map.items():
+                if i == slugify(k):
+                    self.meta_col_accessors.append(v)
+                    break
+            else:
+                raise ValueError(
+                    'failed to map form-chosen column {i} to accessor'
+                )
 
         self.mothur = form.cleaned_data['mothur']
         return super().get(request, *args, **kwargs)
-
-    def _group_id_mapper(self, sequencing_id):
-        """
-        Helper to map sequencing ids to group column values
-
-        Method returns a tuple of identifying values.
-        """
-        # FIXME: this is all a bit hhcd/Fecalsample specific
-        # FIXME: can this be unified/generalized with the avg version?
-        if self._group_id_maps is None:
-            a = [i[len('sequencing__'):] for i in self.group_id_accessors]
-            m = {}
-            # TODO: obey curation status
-            qs = models.Sequencing.objects.values_list('pk', 'name', *a)
-            for pk, name, *vals in qs:
-                if None in vals:
-                    m[pk] = name
-                else:
-                    m[pk] = '_'.join((str(i) for i in vals))
-            self._group_id_maps = [m]
-
-        return (self._group_id_maps[0][sequencing_id], )
 
     def get_values(self):
         return (
@@ -162,8 +149,7 @@ class ExportSharedView(ExportSharedFormMixin, ExportMixin, TableView):
             .filter_project(self.project_name)
             .as_shared_values_list(
                 self.normalize,
-                self._group_id_mapper,
-                self.group_cols_verbose,
+                meta_cols=self.meta_col_accessors,
                 mothur=self.mothur,
             )
         )
@@ -173,35 +159,3 @@ class ExportAvgSharedView(ExportAvgSharedFormView, ExportSharedView):
     def get_filename(self):
         return super().get_filename() + '-avg'
 
-    def _group_id_mapper(self, *row_ids):
-        """
-        Helper to map pk to natural key
-
-        Method returns a tuple of identifying values.
-        """
-        if self._group_id_maps is None:
-            self._group_id_maps = []
-            for a in self.avg_by:
-                if a in ['project', 'otu']:
-                    continue
-                f = self.model.get_field(a)
-                m = {}
-                # TODO: obey curation status
-                for i in f.related_model.objects.all():
-                    m[i.pk] = i.natural
-
-                self._group_id_maps.append(m)
-
-        return (
-            j[i]
-            for i, j in zip(row_ids, self._group_id_maps)
-        )
-
-    def get_values(self):
-        # for two columns
-        self.group_cols_verbose = [
-            i.rpartition('__')[2]
-            for i in self.avg_by
-            if i not in ['project', 'otu']
-        ]
-        return super().get_values()

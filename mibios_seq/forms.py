@@ -10,9 +10,6 @@ from .models import AnalysisProject
 
 class ExportSharedForm(ExportFormatForm):
     NORM_NONE = 'none'
-    group_column_choices = []
-    group_column_initial = None
-    projects = ()
 
     project = forms.ChoiceField(
         required=True,
@@ -27,11 +24,11 @@ class ExportSharedForm(ExportFormatForm):
                   'or as normalized counts which has the absolute numbers '
                   'scaled to a normal sample size of 10,000.',
     )
-    group_cols = forms.ChoiceField(
-        widget=forms.RadioSelect(attrs={'class': None}),
-        required=True,
-        label='group column(s) / row id',
-        help_text='What to use as row identifiers',
+    meta_cols = forms.MultipleChoiceField(
+        widget=forms.CheckboxSelectMultiple(attrs={'class': None}),
+        required=False,
+        label='group column(s) / row id / extra meta data',
+        help_text='What to use as row identifiers and meta data',
     )
     mothur = forms.BooleanField(
         required=False,
@@ -55,8 +52,8 @@ class ExportSharedForm(ExportFormatForm):
         """
         opts = OrderedDict()
         opts['norm_choices'] = view.norm_choices
-        opts['group_column_choices'] = view.group_col_choices
-        opts['group_column_initial'] = view.group_col_choices[0][0]
+        opts['meta_col_choices'] = view.meta_col_choices
+        opts['meta_col_initial'] = view.meta_col_choices[0][0]
         opts['projects'] = [
             (i, i) for i in
             AnalysisProject.objects.all().values_list('name', flat=True)
@@ -65,9 +62,10 @@ class ExportSharedForm(ExportFormatForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
         self.fields['normalize'].choices = self.norm_choices
-        self.fields['group_cols'].choices = self.group_column_choices
-        self.fields['group_cols'].initial = self.group_column_initial
+        self.fields['meta_cols'].choices = self.meta_col_choices
+        self.fields['meta_cols'].initial = self.meta_col_initial
         self.fields['project'].choices = self.projects
         self.fields['project'].initial = self.projects[-1][0]  # most recent
 

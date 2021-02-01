@@ -1520,6 +1520,33 @@ class Model(models.Model):
         else:
             return val
 
+    def getter(self, *accessors, raise_on_error=False):
+        """
+        Return possibly related field values
+
+        :param str accessors: Accessors with __ lookup divider.
+        :param bool raise_on_error: If True and a related field is
+                                    inaccessible because e.g. the related
+                                    object is None, then raise an
+                                    AttributeError.  If False, will return None
+                                    in these cases
+
+        Comparable to operator.attrgetter(), but returns a tuple of the same
+        length as accessors.
+        """
+        vals = []
+        for a in accessors:
+            obj = self
+            for i in a.split('__'):
+                try:
+                    obj = getattr(obj, i)
+                except AttributeError:
+                    if raise_on_error:
+                        raise
+                    obj = None
+            vals.append(obj)
+        return tuple(vals)
+
 
 class ParentModel(Model):
     """

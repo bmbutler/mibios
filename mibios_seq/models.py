@@ -291,6 +291,8 @@ class AbundanceQuerySet(QuerySet):
         """
         Normalize to unit interval, return fractions
 
+        Deprecated
+
         This gets fractions from absolute counts, but is not needed if relative
         abundance is sorted in the DB.
         """
