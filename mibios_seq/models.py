@@ -343,9 +343,10 @@ class AbundanceQuerySet(QuerySet):
             abund_field = 'relative'
 
         if self._avg_by:
-            if not id_fields.startswith('sequencing__'):
-                raise ValueError('expect id_fields to be related via '
-                                 'Sequencing')
+            for i in id_fields:
+                if not i.startswith('sequencing__'):
+                    raise ValueError('expectiing id_fields to be related via '
+                                     'Sequencing')
             # adjust lookups to be relative to Sequencing:
             seq_id_fields = [i[len('sequencing__'):] for i in id_fields]
             # get a map: row id -> real avg group count; this is a bit tricky
