@@ -99,24 +99,30 @@ class ExportFormatForm(forms.Form):
         action get a new query string attached, made entirely up from the
         form's input elements.
         """
+        base = base or (cls, )
         query_dict = view.to_query_dict(fields=view.fields, keep=True)
         opts['format_choices'] = [
             (i[0], i[2].description)
             for i in view.FORMATS
         ]
         opts['default_format'] = view.DEFAULT_FORMAT
+
         # add hidden fields:
         for k, v in query_dict.lists():
             if k in [QUERY_FIELD, QUERY_FORMAT]:
                 # should be provided by dedicated field
                 continue
+
+            if k in cls.base_fields.keys():
+                # is already a field declared by class
+                continue
+
             opts[k] = forms.CharField(
                 widget=forms.MultipleHiddenInput(),
                 initial=v
             )
 
         name = name or 'Auto' + cls.__name__
-        base = base or (cls, )
         return type(name, base, opts)
 
     def __init__(self, *args, **kwargs):
