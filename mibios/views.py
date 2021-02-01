@@ -391,6 +391,11 @@ class DatasetMixin(BaseMixin):
         # (3) keep others
         if keep:
             for k, vs in self.request.GET.lists():
+                if any((
+                    k.startswith(i) for i in
+                    [QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE, QUERY_FIELD]
+                )):
+                    continue
                 if k not in qdict:
                     qdict.setlist(k, vs)
 
