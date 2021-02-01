@@ -428,8 +428,9 @@ class AbundanceQuerySet(QuerySet):
                                the columns will appear in the shared table.
                                For averaged data this must include the auto-
                                matic averaged-by id columns.  The row ids must
-                               come first.  The accessors must end with a field
-                               (can be "natural").
+                               come first and have the *correct* order.  The
+                               accessors must end with a field (which can be
+                               "natural").
 
         Helper generator method for as_shared_values_list()
         """
@@ -537,13 +538,20 @@ class AbundanceQuerySet(QuerySet):
                 Abundance.get_field(i).related_model
                 for i in id_fields
             ]
-            # prepend id fields to meta_cols
-            meta_cols = \
-                [i._meta.model_name + '__natural' for i in meta_models] \
-                + list(meta_cols)
+            # Default accessors are derived from the id fields. For simplicity
+            # these get hard-coded here to go first in the meta-cols in the
+            # same order as id_fields
+            # TODO: make adding the default in caller-supplied meta_col matter
+            # somehow
+            defaults = [
+                i._meta.model_name + '__natural'
+                for i in meta_models
+            ]
+            meta_cols = defaults + [i for i in meta_cols if i not in defaults]
         else:
             id_fields = ['sequencing']
             meta_models = [Sequencing]
+            # setting default here
             if not meta_cols:
                 meta_cols = ['sequencing__name']
 
@@ -589,6 +597,8 @@ class AbundanceQuerySet(QuerySet):
             header.append('avg_group_count')
         header += list(otus.values())
 
+        log.debug(f'shared export prep: id_fields={id_fields} meta={meta_cols}'
+                  f' verbose={meta_cols_verbose}')
 
         tail = self._group_and_pivot(
             list(otus.keys()),
