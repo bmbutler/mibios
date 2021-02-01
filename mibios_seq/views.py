@@ -49,8 +49,13 @@ class ExportSharedFormMixin:
     DEFAULT_FORMAT = 'shared/zipped'
 
     meta_col_choice_map = {
+        # FIXME: this is hhcd-specific
         # TODO: implement auto-detection
+        'sample ID': 'sequencing__sample__fecalsample__natural',
         'sequencing record ID': 'sequencing__name',
+        'participant': 'sequencing__sample__fecalsample__participant__name',
+        'supplement': ('sequencing__sample__fecalsample__participant'
+                       '__supplement__natural'),
     }
 
     norm_choices = (
@@ -98,6 +103,10 @@ class ExportAvgSharedFormView(AverageMixin, ExportSharedFormView):
                 self.meta_col_choice_map[model_name.capitalize()] = \
                     model_name + '__natural'
 
+            self.meta_col_choice_map['Semester'] = \
+                'participant__semester__natural'
+            self.meta_col_choice_map['Supplement'] = \
+                'participant__supplement__natural'
             # override norm choices: rm "none"
             # as there's no such thing as average absolute counts
             self.norm_choices = tuple(self.norm_choices[1:])
