@@ -42,14 +42,14 @@
     applied filters (click to remove):
     {% if applied_filter %}
 	with:
-	{% for lookup, value, remove_query in applied_filter %}
+	{% for lookup, value, query_without in applied_filter %}
             {# we need a '?' here if removing the current filter results in an otherwise empty querystring, else the browser will see href="" and put in the current URL with current querystring, with '?' the browser links to the current URL with empty querystring (ezcpet for the '?') #}
-            <a href="{{ remove_query|default:'?' }}">{{ lookup }}={{ value }}</a>
+            <a href="{{ query_without|default:'?' }}">{{ lookup }}={{ value }}</a>
 	{% endfor %}
     {% endif %}
-    {% for applied_exclude, remove_query in applied_excludes_list %}
+    {% for applied_exclude, query_without in applied_excludes_list %}
 	without:
-	<a href="{{ remove_query }}">
+	<a href="{{ query_without }}">
 	{% for lookup, value in applied_exclude.items %}
 	    {{ lookup }}={{ value }}
 	{% endfor %}

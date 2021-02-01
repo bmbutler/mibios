@@ -338,18 +338,26 @@ class DatasetMixin(BaseMixin):
                   fields, expand)
         return filter, excludes, negate, fields, expand
 
-    def to_query_dict(self, filter={}, excludes=[], negate=False, without=[],
-                      fields=[], keep=False):
+    def to_query_dict(
+            self,
+            filter={},
+            excludes=[],
+            negate=False,
+            without_filter={},
+            without_excludes=[],
+            fields=[],
+            keep=False,
+        ):
         """
         Compile a query dict from current state
 
         If negate is True, then negate the current negation state.
-        Extra filters or excludes can be amended.
+        Extra filters or excludes can be amended.  The withouts take precedence
+        over extras.
 
-        :param without list: list of dicts (with kwargs of elements of
-                             self.filter) and/or lists (elements of
-                             self.excludes) which will be omitted from
-                             the query string.
+        :param dict without_filter: key/value pairs from self.filter to remove
+        :param list without_excludes: list of dicts, that is, elements of
+                                      self.excludes to remove from querydict
         :param list fields: List of fields to request. If an empty list, the
                             default, is passed, then nothing will be added to
                             the query string, with the intended meaning to then
@@ -363,16 +371,12 @@ class DatasetMixin(BaseMixin):
         f = {**self.filter, **filter}
         elist = self.excludes + excludes
 
-        for i in without:
-            if isinstance(i, dict):
-                for k, v in i.items():
-                    if k in f and f[k] == v:
-                        del f[k]
-            elif isinstance(i, list):
-                elist = [j for j in elist if i not in elist]
-            else:
-                raise TypeError('{} in without is neither a dict nor a list'
-                                .format(i))
+        for k, v in without_filter.items():
+            if k in f and f[k] == v:
+                del f[k]
+
+        for i in without_excludes:
+            elist = [j for j in elist if i != j]
 
         if f or elist:
             if negate:
@@ -475,12 +479,12 @@ class DatasetMixin(BaseMixin):
         ctx['data_name_verbose'] = self.data_name_verbose
 
         ctx['applied_filter'] = [
-            (k, v, self.to_query_string(without=[{k: v}], keep=True))
+            (k, v, self.to_query_string(without_filter={k: v}, keep=True))
             for k, v
             in self.filter.items()
         ]
         ctx['applied_excludes_list'] = [
-            (i, self.to_query_string(without=[i], keep=True))
+            (i, self.to_query_string(without_excludes=[i], keep=True))
             for i
             in self.excludes
         ]
