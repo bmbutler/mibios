@@ -44,6 +44,8 @@ data_name_urls = [
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', views.FrontPageView.as_view(), name='top'),
+    path('history/', views.CompactHistoryView.as_view(),
+         name='compact_history'),
     # path('test/', TestView.as_view(), name='test'),
     path('archive/', include(archive_urls)),
     path('api/', include(rest_router.urls)),

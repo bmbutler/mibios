@@ -745,6 +745,98 @@ class ChangeRecord(models.Model):
                 diff[k] = (old_v, v)
         return diff
 
+    @classmethod
+    def summary(cls):
+        """
+        Generate a compact history table
+
+        Starts with mose recent change.
+        """
+        qs = (
+                ChangeRecord
+                .objects
+                .values('user', 'file', 'comment', 'record_type')
+                .annotate(
+                    imin=models.Min('id'),
+                    imax=models.Max('id'),
+                    ts=models.Min('timestamp'),
+                    count=models.Count('id'),
+                )
+                .order_by('-imin')
+            )
+        users = User.objects.in_bulk()
+        rec_types = ContentType.objects.in_bulk()
+        files = ImportFile.objects.in_bulk()
+        return (
+            (
+                (i['imin'], i['imax']),
+                i['ts'],
+                i['count'],
+                rec_types.get(i['record_type'], '??'),
+                i['comment'],
+                files.get(i['file'], '-'),
+                users.get(i['user'], 'admin'),
+            )
+            for i in qs.iterator()
+        )
+
+    @classmethod
+    def summary_shorter(cls, limit=None):
+        """
+        A more concise change summary
+
+        Collapses summary rows that differ by less than <...> and comments
+
+        :param int limit: Limit to at most this many compacted rows
+        """
+        comment = '(see details)'
+        keys = ['ids', 'ts', 'count', 'rec_t', 'comment', 'file', 'user']
+        buf = None
+        nrows = 0
+        # iterate from last to first change set:
+        for row in cls.summary():
+            n = dict(zip(keys, row))
+
+            if buf is None:
+                buf = dict(zip(keys, row))
+                continue
+
+            combine = (
+                0 <= (buf['ts'] - n['ts']).seconds < 30
+                and n['rec_t'] == buf['rec_t']
+                and n['file'] == buf['file']
+                and n['user'] == buf['user']
+            )
+            if combine:
+                print('+')
+                buf['ids'] = (n['ids'][0], buf['ids'][1])  # update int start
+                buf['ts'] = n['ts']  # use earlier ts
+                buf['count'] += n['count']
+                buf['comment'] = comment
+            else:
+                print('')
+                yield tuple(buf.values())
+                nrows += 1
+                if limit and nrows >= limit:
+                    buf = None  # don't yield buf after break
+                    break
+                buf = n
+
+        if buf is not None:
+            yield tuple(buf.values())
+
+    @classmethod
+    def summary_dict(cls, **kwargs):
+        """
+        Compact history tables with rows as dicts
+
+        This is for django_tables2.Table consumption
+        """
+        keys = ['details', 'timestamp', 'count', 'record_type', 'comment',
+                'file', 'user']
+
+        return [dict(zip(keys, i)) for i in cls.summary_shorter(**kwargs)]
+
 
 def _default_snapshot_name():
     try:

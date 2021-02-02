@@ -413,6 +413,21 @@ class DeletedHistoryTable(tables.Table):
         fields = ('timestamp', 'user', 'record_natural',)
 
 
+class CompactHistoryTable(HistoryTable):
+    """
+    Table to show Changerecord.summary() data
+    """
+    details = tables.Column()
+    changes = None
+    count = tables.Column()
+    record_type = tables.Column()
+
+    class Meta:
+        fields = ('details', 'timestamp', 'count', 'record_type',
+                  'comment', 'file.file', 'user')
+        exclude = ('line', 'is_deleted', 'is_created')
+
+
 class SnapshotListTable(tables.Table):
     """
     Table of database snapshots

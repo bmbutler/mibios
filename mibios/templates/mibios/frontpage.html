@@ -13,18 +13,11 @@
 {{ counts|prettyformat }}
 </p>
 
-<h3>most recent change:</h3>
+<h3>recent changes</h3>
 <p>
-{% if latest %}
-    On {{ latest.timestamp|date:"DATE_FORMAT" }} at {{ latest.timestamp|time }}
-    {% if latest.is_created %}
-	added
-	{% elif latest.is_deleted %}
-	deleted
-	{% else %}
-	changed
-    {% endif %}
-    by {{ latest.user|default:"admin" }}: {{ latest.record_type }} {{ latest.record_natural }}
+{% if have_changes %}
+{% render_table table %}
+<a href="{% url 'compact_history' %}">Complete history</a>
 {% else %}
 no change history
 {% endif %}

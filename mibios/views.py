@@ -20,7 +20,8 @@ from django.views.decorators.cache import cache_page
 from django.views.generic.base import ContextMixin, TemplateView, View
 from django.views.generic.edit import FormView
 
-from django_tables2 import SingleTableView, Column, MultiTableMixin
+from django_tables2 import (SingleTableMixin, SingleTableView, Column,
+                            MultiTableMixin)
 
 from . import (__version__, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE,
                QUERY_FIELD, QUERY_FORMAT, QUERY_EXPAND, QUERY_AVG_BY,
@@ -30,6 +31,7 @@ from .load import Loader
 from .management.import_base import AbstractImportCommand
 from .models import Q, ChangeRecord, ImportFile, Snapshot
 from .tables import (DeletedHistoryTable, HistoryTable, NONE_LOOKUP,
+                     CompactHistoryTable,
                      SnapshotListTable, SnapshotTableColumn, Table,
                      table_factory, ORDER_BY_FIELD)
 from .utils import getLogger
@@ -1118,9 +1120,23 @@ class DeletedHistoryView(BaseMixin, CuratorRequiredMixin, SingleTableView):
         return ctx
 
 
+class CompactHistoryView(BaseMixin, UserRequiredMixin, SingleTableMixin,
+                         TemplateView):
+    table_class = CompactHistoryTable
+    template_name = 'mibios/compact_history.html'
+
+    def get_table_data(self):
+        return ChangeRecord.summary_dict()
+
+
 # @method_decorator(cache_page(None), name='dispatch')
-class FrontPageView(BaseMixin, UserRequiredMixin, TemplateView):
+class FrontPageView(BaseMixin, UserRequiredMixin, SingleTableMixin,
+                    TemplateView):
     template_name = 'mibios/frontpage.html'
+    table_class = CompactHistoryTable
+
+    def get_table_data(self):
+        return ChangeRecord.summary_dict(limit=5)
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
@@ -1135,11 +1151,7 @@ class FrontPageView(BaseMixin, UserRequiredMixin, TemplateView):
             if count:
                 ctx['counts'][i._meta.verbose_name_plural.capitalize()] = count
 
-        try:
-            ctx['latest'] = ChangeRecord.objects.latest()
-        except ChangeRecord.DoesNotExist:
-            ctx['latest'] = None
-
+        ctx['have_changes'] = ChangeRecord.objects.exists()
         ctx['admins'] = settings.ADMINS
         return ctx
 
