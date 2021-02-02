@@ -1,0 +1,16 @@
+{% extends "mibios/base.html" %}
+{% load render_table from django_tables2 %}
+{% load static %}
+
+{% block link %}
+<link rel="stylesheet" href="{% static 'mibios/css/bootstrap.min.css' %}" />
+{% endblock %}
+
+{% block content %}
+<h2>History</h2>
+<p>Click on details to see individual changes</p>
+
+{% render_table table %}
+
+{% endblock %}
+
