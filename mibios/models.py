@@ -1132,13 +1132,25 @@ class Model(models.Model):
             return True
 
     @classmethod
-    def get_fields(cls, skip_auto=False, with_m2m=False, with_hidden=False):
+    def get_fields(
+        cls,
+        skip_auto=False,
+        with_m2m=False,
+        with_hidden=False,
+        **filters,
+    ):
         """
         Get fields to be displayed in table (in order) and used for import
 
         Should be overwritten by models as needed to include e.g. m2m fields
         Many-to-many fields are by default excluded because of the difficulties
         of meaningfully displaying them
+
+        :param bool filters: Filter by boolean field attributes.  Only return
+                             fields for which the given attribute evaluates to
+                             True or False respectively.  Beware interactions
+                             with the other parameters and other built-in
+                             filtering.
         """
         # exclude a field if test comes back True
         tests = [
@@ -1154,6 +1166,12 @@ class Model(models.Model):
 
         if not with_hidden:
             tests.append(lambda x: x.name in cls.hidden_fields)
+
+        for k, v in filters.items():
+            if not hasattr(cls, k):
+                raise AttributeError('Only field attributes can be put in '
+                                     'filters parameter')
+            tests.append(lambda x: bool(getattr(x, k) == bool(v)))
 
         fields = []
         for i in cls._meta.get_fields():
