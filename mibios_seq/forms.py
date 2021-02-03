@@ -76,10 +76,10 @@ class ExportSharedForm(ExportFormatForm):
 
         try:
             val = int(val)
-            if val < 0:
+            if val < -1:
                 raise ValueError
         except (ValueError, TypeError):
-            msg = f'must be a positive integer or "{self.NORM_NONE}"'
+            msg = f'must be an integer >= -1 or "{self.NORM_NONE}"'
             raise ValidationError(msg)
 
         return val

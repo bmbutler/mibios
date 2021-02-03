@@ -311,7 +311,7 @@ class AbundanceQuerySet(QuerySet):
         :param group: Data for one sample/row; an iterable over tuple
                       (abund, OTU pk)
         """
-        if normalize == 0:
+        if normalize == -1 or normalize == 0:
             zero = 0.0
         else:
             zero = 0
@@ -331,10 +331,15 @@ class AbundanceQuerySet(QuerySet):
         """
         Generator of shared file rows
 
-        :param int normalize: Normalization mode.  If None then absolute counts
-        are returned.  If 0 then relative abundance, as fractional values in
-        [0, 1] are returned.  If an integer above 0 is given, then the counts
-        are normalized by 'discrete scaling' to the targeted sample size.
+        :param int normalize: Normalization mode:
+            None -- absolute counts are returned
+            -1   -- relative abundance in %
+            0    -- relative abundance, as fractional values in
+                    [0, 1] are returned.
+            >= 1 -- then the counts are normalized by 'discrete scaling' to
+                    the targeted sample size.  Note: values close to 1 are
+                    useless, they result in relatively large quantization
+                    errors.
 
         Assumes that filter_project() has been called if we are working with
         averaged data.
@@ -408,11 +413,20 @@ class AbundanceQuerySet(QuerySet):
                 group = map(itemgetter(slice(-2, None)), group)
                 grp_count = ()
 
-            if normalize is not None and normalize >= 1:
-                group = (
-                    (round(abund * normalize), otu)
-                    for abund, otu in group
-                )
+            if normalize is not None:
+                if normalize == -1:
+                    group = (
+                        (abund * 100.0, otu)
+                        for abund, otu in group
+                    )
+                elif normalize >= 1:
+                    group = (
+                        (round(abund * normalize), otu)
+                        for abund, otu in group
+                    )
+                else:
+                    # normalize == 0 -- keep values
+                    pass
 
             values = self._zerofill_and_norm(otus, group, normalize)
             yield (row_id, grp_count, values)

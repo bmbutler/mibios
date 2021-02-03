@@ -60,6 +60,7 @@ class ExportSharedFormMixin:
 
     norm_choices = (
         (ExportSharedForm.NORM_NONE, 'none'),
+        (-1, 'percentage'),
         (0, 'fractions'),
         (10000, 'to 10000')
     )
@@ -121,6 +122,8 @@ class ExportSharedView(ExportSharedFormMixin, ExportMixin, TableView):
         parts = [self.project_name]
         if self.normalize is None:
             norm = 'abs'
+        elif self.normalize == -1:
+            norm = 'relpct'
         elif self.normalize == 0:
             norm = 'rel'
         else:
