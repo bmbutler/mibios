@@ -1,0 +1,18 @@
+{% extends "mibios/base.html" %}
+{% load render_table from django_tables2 %}
+{% load static %}
+
+{% block link %}
+<link rel="stylesheet" href="{% static 'mibios/css/bootstrap.min.css' %}" />
+{% endblock %}
+
+{% block content %}
+<h2>Pick fields/columns to show in {{ export_data_name|default:view.data_name }} table {% if not view.curation %}[CURATION: OFF]{% endif %}</h2>
+<form action="{% url 'table' data_name=url_data_name %}"
+    method="get" enctype="multipart/form-data">
+    <p><input type="submit" value="Submit">
+    {{ form.as_p }}
+    <p><input type="submit" value="Submit">
+</form>
+{% endblock %}
+

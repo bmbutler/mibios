@@ -31,6 +31,8 @@ data_name_urls = [
          name='export_form'),
     path('export/', views.ExportView.as_view(),
          name='export'),
+    path('show-hide-form/', views.ShowHideFormView.as_view(),
+         name='show_hide_form'),
     path('mean/<str:avg_by>/export-form/',
          views.AverageExportFormView.as_view(), name='average_export_form'),
     path('mean/<str:avg_by>/export/',

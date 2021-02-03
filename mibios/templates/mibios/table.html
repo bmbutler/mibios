@@ -104,10 +104,11 @@
 {% endif %}
 
 {% if view.avg_by %}
-    <a href="{% url 'average_export_form' data_name=url_data_name avg_by=avg_url_slug %}{{ querystr }}">export</a>
+    [<a href="{% url 'average_export_form' data_name=url_data_name avg_by=avg_url_slug %}{{ querystr }}">export</a>]
 {% else %}
-    <a href="{% url 'import' data_name=data_name %}">import</a>
-    <a href="{% url 'export_form' data_name=url_data_name %}{{ querystr }}">export</a>
+    [<a href="{% url 'show_hide_form' data_name=url_data_name %}{{ querystr }}">show/hide columns</a>]
+    [<a href="{% url 'import' data_name=data_name %}">import</a>]
+    [<a href="{% url 'export_form' data_name=url_data_name %}{{ querystr }}">export</a>]
 {% endif %}
 
 {% if table_view_plugin_template %}{% include table_view_plugin_template %}{% endif %}

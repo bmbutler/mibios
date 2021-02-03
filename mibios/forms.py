@@ -2,7 +2,7 @@ from collections import OrderedDict
 
 from django import forms
 
-from . import QUERY_FILTER, QUERY_FIELD, QUERY_FORMAT
+from . import QUERY_FILTER, QUERY_SHOW, QUERY_FORMAT
 
 
 class UploadFileForm(forms.Form):
@@ -109,7 +109,7 @@ class ExportFormatForm(forms.Form):
 
         # add hidden fields:
         for k, v in query_dict.lists():
-            if k in [QUERY_FIELD, QUERY_FORMAT]:
+            if k in [QUERY_FORMAT]:
                 # should be provided by dedicated field
                 continue
 
@@ -176,7 +176,7 @@ class ExportForm(ExportFormatForm):
 
         """
         query_dict = view.to_query_dict(fields=view.fields, keep=True)
-        fields = query_dict.getlist(QUERY_FIELD)
+        fields = query_dict.getlist(QUERY_SHOW)
 
         initial_fields = list(fields)
         # prefer name over id
@@ -213,5 +213,43 @@ class ExportForm(ExportFormatForm):
         API abuse to correctly set the HTML input attribute
         """
         if field_name == 'exported_fields':
-            field_name = QUERY_FIELD
+            field_name = QUERY_SHOW
         return super().add_prefix(field_name)
+
+
+class ShowHideForm(forms.Form):
+    show = forms.MultipleChoiceField(
+        widget=forms.CheckboxSelectMultiple(attrs={'class': None}),
+        # choices set by constructor
+        label='show these fields/columns',
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['show'].choices = self.choices
+
+    @classmethod
+    def factory(cls, view):
+        """
+        Build form listing fields depending on the current view
+        """
+        choices = []
+        for i in view.model.get_related_accessors():
+            if i == 'natural':
+                continue
+            if i.endswith('__natural'):
+                # DatasetMixin expects the foreign key relation
+                i = i[:-len('__natural')]
+            path = i.split('__')
+            try:
+                path[-1] = view.model.get_field(i).verbose_name
+            except Exception:
+                # e.g. caused by OneToOneRel not having a verbose_name
+                pass
+            verbose_path = ' > '.join(path)
+            choices.append((i, verbose_path))
+
+        opts = dict(
+            choices=tuple(choices),
+        )
+        return type('AutoShowHideForm', (cls,), opts)

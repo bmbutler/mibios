@@ -24,9 +24,10 @@ from django_tables2 import (SingleTableMixin, SingleTableView, Column,
                             MultiTableMixin)
 
 from . import (__version__, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE,
-               QUERY_FIELD, QUERY_FORMAT, QUERY_EXPAND, QUERY_AVG_BY,
+               QUERY_SHOW, QUERY_FORMAT, QUERY_AVG_BY,
                get_registry)
-from .forms import ExportForm, get_field_search_form, UploadFileForm
+from .forms import (ExportForm, get_field_search_form, UploadFileForm,
+                    ShowHideForm)
 from .load import Loader
 from .management.import_base import AbstractImportCommand
 from .models import Q, ChangeRecord, ImportFile, Snapshot
@@ -238,57 +239,36 @@ class DatasetMixin(BaseMixin):
         self.update_state(*self.compile_state_params())
         return super().get(request, *args, **kwargs)
 
-    def update_state(self, filter, excludes, negate, fields_selected, expand):
+    def update_state(self, filter, excludes, negate, show):
         """
         Update state from info compiled from GET query string
 
         Is called once from get()
+
+        :param list fields: Names of fields to show.  If this is None the
+                            fields of the models are shown by default
         """
         self.filter.update(**filter)
         self.excludes += excludes
         self.negate = negate
 
-        for accessor in sorted(expand, key=lambda x: len(x)):
-            # order: process short field names first,i.e. deeper relations last
-            try:
-                rel_model = self.model.get_field(accessor).related_model
-            except Exception as e:
-                # accessor does not point to a field
-                raise Http404(e) from e
-
-            if rel_model is None:
-                raise Http404('is not a relation: {}'.format(accessor))
-
-            rel_fields = (
-                rel_model
-                .get_fields(skip_auto=True, with_hidden=self.show_hidden)
-                .names
-            )
-            rel_fields = [
-                accessor + '__' + i
-                for i in rel_fields
-            ]
-
-            try:
-                # place expansion right of relation
-                idx = self.fields.index(accessor) + 1
-            except ValueError:
-                # not in field selection, append to end
-                idx = len(self.fields)
-
-            self.fields[idx:idx] = rel_fields
-            self.col_names[idx:idx] = rel_fields
-
-        if fields_selected:
-            # column/field selection was supplied, have to update
-            # but keep order, keep sync with verbose column names
-            fields, col_names = [], []
-            for i, j in zip(self.fields, self.col_names):
-                if i in fields_selected:
-                    fields.append(i)
-                    col_names.append(j)
-            self.fields = fields
-            self.col_names = col_names
+        if show:
+            defaults = list(self.fields)
+            self.fields = show
+            self.col_names = []
+            for i in show:
+                try:
+                    f = self.model.get_field(i)
+                except Exception as e:
+                    # defaults may have special fields e.g. from AverageMixin
+                    if i in defaults:
+                        # TODO: use value from old self.col_names
+                        verbose_name = None
+                    else:
+                        raise Http404(f'unknown field name: {i}') from e
+                else:
+                    verbose_name = f.verbose_name
+                self.col_names.append(verbose_name)
 
     def compile_state_params(self):
         """
@@ -302,8 +282,7 @@ class DatasetMixin(BaseMixin):
         filter = {}
         excludes = {}
         negate = False
-        fields = []
-        expand = []
+        show = []
 
         for qkey, val_list in self.request.GET.lists():
             if qkey.startswith(QUERY_FILTER + '-'):
@@ -326,19 +305,16 @@ class DatasetMixin(BaseMixin):
                 val = val_list[-1]
                 if val:
                     negate = True
-            elif qkey == QUERY_FIELD:
-                fields += val_list
-            elif qkey == QUERY_EXPAND:
-                expand += val_list
+            elif qkey == QUERY_SHOW:
+                show += val_list
             else:
                 # unrelated item
                 pass
 
         # convert excludes into list, forget the index
         excludes = [i for i in excludes.values()]
-        log.debug('DECODED FROM QUERYSTRING:', filter, excludes, negate,
-                  fields, expand)
-        return filter, excludes, negate, fields, expand
+        log.debug('DECODED FROM QUERYSTRING:', filter, excludes, negate, show)
+        return filter, excludes, negate, show
 
     def to_query_dict(
             self,
@@ -349,7 +325,7 @@ class DatasetMixin(BaseMixin):
             without_excludes=[],
             fields=[],
             keep=False,
-        ):
+    ):
         """
         Compile a query dict from current state
 
@@ -399,7 +375,7 @@ class DatasetMixin(BaseMixin):
             for k, vs in self.request.GET.lists():
                 if any((
                     k.startswith(i) for i in
-                    [QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE, QUERY_FIELD]
+                    [QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE, QUERY_SHOW]
                 )):
                     continue
                 if k not in qdict:
@@ -447,7 +423,7 @@ class DatasetMixin(BaseMixin):
             query_dict[QUERY_NEGATE] = negate
 
         if fields:
-            query_dict.setlist(QUERY_FIELD, fields)
+            query_dict.setlist(QUERY_SHOW, fields)
 
         return query_dict
 
@@ -614,6 +590,7 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
         if sort_by_field is None:
             ctx['sort_by_stats'] = {}
         else:
+            # prepare all things needed for the selected/sorted column:
             add_search_form = False
             ctx['sort_by_field'] = sort_by_field
             qs = self.get_queryset()
@@ -680,6 +657,7 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
                         get_field_search_form(*self.get_search_field())()
                 except SearchFieldLookupError:
                     pass
+            # END sort-column stuff
 
         # for curation switch:
         ctx['curation_switch_data'] = {}
@@ -976,6 +954,14 @@ class ImportView(DatasetMixin, CuratorRequiredMixin, FormView):
         else:
             ctx['dataset_doc'] = dataset.get_doc()
         return ctx
+
+
+class ShowHideFormView(DatasetMixin, FormView):
+    template_name = 'mibios/show_hide_form.html'
+
+    def get_form_class(self):
+        self.initial = {'show': tuple(self.fields)}
+        return ShowHideForm.factory(self)
 
 
 class HistoryView(BaseMixin, CuratorRequiredMixin, MultiTableMixin,
