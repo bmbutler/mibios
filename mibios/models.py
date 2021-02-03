@@ -1204,6 +1204,40 @@ class Model(models.Model):
         ]
 
     @classmethod
+    def get_related_accessors(cls):
+        """
+        Discover simple local and forward-looking remotely related fields
+
+        This includes one-to-one and excludes many-to-many and one-to-many
+        (reversed foreign keys) relations.  Cycles get broken at the first
+        repetition of model and field name combination.
+        """
+        work = [('', cls, [])]
+        ret = []
+        while work:
+            path, model, seen = work.pop()
+            fields_s = model.get_fields(skip_auto=True)
+            if 'name' not in fields_s.names:
+                # having both name and natural is redundant
+                ret.append(path + ('__' if path else '') + 'natural')
+            for i in fields_s.fields:
+                new_path = path + ('__' if path else '') + i.name
+                if i.many_to_one or i.one_to_one:
+                    # foreign key rel
+                    this = (i.related_model, i.name)
+                    if this in seen:
+                        # break cycle
+                        continue
+                    else:
+                        work.append(
+                            (new_path, i.related_model, seen + [this])
+                        )
+                else:
+                    ret.append(new_path)
+
+        return ret
+
+    @classmethod
     def get_field(cls, accessor):
         """
         Retrieve a field object following relations
