@@ -22,7 +22,8 @@
         "{% url view.export_url_name data_name=url_data_name %}"
     {% endif %}
     method="get" enctype="multipart/form-data">
+    <p><input type="submit" value="Download">
     {{ form.as_p }}
-    <input type="submit" value="Download">
+    <p><input type="submit" value="Download">
 </form>
 {% endblock %}
