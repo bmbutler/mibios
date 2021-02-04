@@ -54,8 +54,13 @@ class ExportSharedFormMixin:
         'sample ID': 'sequencing__sample__fecalsample__natural',
         'sequencing record ID': 'sequencing__name',
         'participant': 'sequencing__sample__fecalsample__participant__name',
-        'supplement': ('sequencing__sample__fecalsample__participant'
-                       '__supplement__natural'),
+        'participant compliance': 'sequencing__sample__fecalsample'
+                                  '__participant__quantity_compliant',
+        'supplement': 'sequencing__sample__fecalsample__participant'
+                      '__supplement__natural',
+        'supplement composition':
+            'sequencing__sample__fecalsample__participant__supplement'
+            '__composition',
     }
 
     norm_choices = (
