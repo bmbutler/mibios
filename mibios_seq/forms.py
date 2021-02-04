@@ -65,6 +65,7 @@ class ExportSharedForm(ExportFormatForm):
         ]
         if not view.avg_by:
             opts['min_avg_group_size'] = None
+        opts['mothur'] = None  # disabled, mothur support is not implemented
         return super().factory(view, 'Auto' + cls.__name__, (cls, ), opts=opts)
 
     def __init__(self, *args, **kwargs):

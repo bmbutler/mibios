@@ -157,7 +157,7 @@ class ExportSharedView(ExportSharedFormMixin, ExportMixin, TableView):
                     'failed to map form-chosen column {i} to accessor'
                 )
 
-        self.mothur = form.cleaned_data['mothur']
+        self.mothur = form.cleaned_data.get('mothur', False)
         self.min_avg_group_size = \
             form.cleaned_data.get('min_avg_group_size', 1)
         return super().get(request, *args, **kwargs)
