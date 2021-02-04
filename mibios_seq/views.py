@@ -115,8 +115,12 @@ class ExportAvgSharedFormView(AverageMixin, ExportSharedFormView):
 
             self.meta_col_choice_map['Semester'] = \
                 'participant__semester__natural'
+            self.meta_col_choice_map['participant compiance'] = \
+                'participant__quantity_compliant'
             self.meta_col_choice_map['Supplement'] = \
                 'participant__supplement__natural'
+            self.meta_col_choice_map['Supplement composition'] = \
+                'participant__supplement__composition'
             # override norm choices: rm "none"
             # as there's no such thing as average absolute counts
             self.norm_choices = tuple(self.norm_choices[1:])
