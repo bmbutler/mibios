@@ -327,7 +327,7 @@ class AbundanceQuerySet(QuerySet):
             else:
                 yield zero
 
-    def _group_and_pivot(self, otus, normalize, id_fields):
+    def _group_and_pivot(self, otus, normalize, id_fields, min_avg_group_size):
         """
         Generator of shared file rows
 
@@ -402,6 +402,9 @@ class AbundanceQuerySet(QuerySet):
             # pick only abund, otu pairs from data
             if self._avg_by:
                 real_avg_g_ct = real_avg_grp_counts[row_id]
+                if real_avg_g_ct < min_avg_group_size:
+                    # skip this row
+                    continue
                 group = (
                     # correct averages for zeros!
                     (abund * (avg_g_ct / real_avg_g_ct), otu)
@@ -508,6 +511,7 @@ class AbundanceQuerySet(QuerySet):
             normalize=None,
             meta_cols=(),
             mothur=False,
+            min_avg_group_size=1,
     ):
         """
         Make a "shared" table for download
@@ -522,6 +526,11 @@ class AbundanceQuerySet(QuerySet):
         'sequencing__natural' for non-averaged data.  For averaged data, the
         averaged-by columns are always added and meta_cols is used for extra
         columns.
+
+        :param int min_avg_group_size:
+            Minimum group size when averaging.  This should be 1, the default,
+            or larger.  When it is larger than 1, then rows resulting from
+            averaging values less then the given number of samples are skipped.
 
         Returns an iterator over tuple rows, first row is the header.  This is
         intended to support data export.  Missing counts are inserted as zeros,
@@ -620,6 +629,7 @@ class AbundanceQuerySet(QuerySet):
             list(otus.keys()),
             normalize,
             id_fields,
+            min_avg_group_size,
         )
         tail = self._add_meta_data(tail, meta_cols)
         return chain([header], tail)

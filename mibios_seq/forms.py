@@ -24,6 +24,11 @@ class ExportSharedForm(ExportFormatForm):
                   'or as normalized counts which has the absolute numbers '
                   'scaled to a normal sample size of 10,000.',
     )
+    min_avg_group_size = forms.IntegerField(
+        initial=1,
+        min_value=1,
+        help_text='Only export averages taken from this many or more samples',
+    )
     meta_cols = forms.MultipleChoiceField(
         widget=forms.CheckboxSelectMultiple(attrs={'class': None}),
         required=False,
@@ -58,6 +63,8 @@ class ExportSharedForm(ExportFormatForm):
             (i, i) for i in
             AnalysisProject.objects.all().values_list('name', flat=True)
         ]
+        if not view.avg_by:
+            opts['min_avg_group_size'] = None
         return super().factory(view, 'Auto' + cls.__name__, (cls, ), opts=opts)
 
     def __init__(self, *args, **kwargs):

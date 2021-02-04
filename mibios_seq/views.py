@@ -92,6 +92,10 @@ class ExportAvgSharedFormView(AverageMixin, ExportSharedFormView):
 
     def get_form_class(self):
         if self.avg_by:
+            # FIXME: the way we modularize the averaged vs. non-averaged
+            # function need re-design, part is conditional, e.g. here, and part
+            # is by using class inheritance, it's messy
+
             # override meta col choices: meta is avg_by but without project
             # nor otu since those are always averaged by.  What we want is e.g.
             # just participant and week:
@@ -132,13 +136,14 @@ class ExportSharedView(ExportSharedFormMixin, ExportMixin, TableView):
         return slugify(' '.join(parts))
 
     def get(self, request, *args, **kwargs):
-        form = self.get_form_class()(data=request.GET)
-        self.form = form
+        form = self.get_form_class()(data=self.request.GET)
         if not form.is_valid():
             log.debug(f'export shared form invalid:\n{form.errors}')
             raise Http404(form.errors)
 
+        self.form = form
         log.debug(f'shared export form valid: {form.cleaned_data}')
+
         self.project_name = form.cleaned_data['project']
         self.normalize = form.cleaned_data['normalize']
         self.meta_col_accessors = []
@@ -153,6 +158,8 @@ class ExportSharedView(ExportSharedFormMixin, ExportMixin, TableView):
                 )
 
         self.mothur = form.cleaned_data['mothur']
+        self.min_avg_group_size = \
+            form.cleaned_data.get('min_avg_group_size', 1)
         return super().get(request, *args, **kwargs)
 
     def get_values(self):
@@ -163,6 +170,7 @@ class ExportSharedView(ExportSharedFormMixin, ExportMixin, TableView):
                 self.normalize,
                 meta_cols=self.meta_col_accessors,
                 mothur=self.mothur,
+                min_avg_group_size=self.min_avg_group_size,
             )
         )
 
