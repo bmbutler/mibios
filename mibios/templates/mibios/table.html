@@ -97,7 +97,7 @@
 
 {% if field_search_form %}
     <form action="{% url 'table' data_name=url_data_name %}{{ querystr }}" method="get">
-        {{ field_search_form }}
+        {% for i in field_search_form %}{{ i.label_tag }}{{ i}}{% endfor %}
         <input type="submit" value="Search">
     </form>
     <br>
