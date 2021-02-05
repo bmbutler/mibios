@@ -155,7 +155,7 @@ class CountColumn(tables.Column):
             log.debug(f'sum for count column {bound_column.accessor} missing')
             total = 'NA'
 
-        return format_html('all: <a href={}>{}</a>', self.footer_url, total)
+        return format_html('all: <a href="{}">{}</a>', self.footer_url, total)
 
 
 class AvgGroupCountColumn(CountColumn):
@@ -177,7 +177,7 @@ class AvgGroupCountColumn(CountColumn):
         total = 0
         for row in table.data:
             total += bound_column.accessor.resolve(row)
-        return format_html('all: <a href={}>{}</a>', self.footer_url, total)
+        return format_html('all: <a href="{}">{}</a>', self.footer_url, total)
 
 
 class ManyToManyColumn(tables.ManyToManyColumn):
