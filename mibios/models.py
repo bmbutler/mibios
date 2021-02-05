@@ -808,13 +808,11 @@ class ChangeRecord(models.Model):
                 and n['user'] == buf['user']
             )
             if combine:
-                print('+')
                 buf['ids'] = (n['ids'][0], buf['ids'][1])  # update int start
                 buf['ts'] = n['ts']  # use earlier ts
                 buf['count'] += n['count']
                 buf['comment'] = comment
             else:
-                print('')
                 yield tuple(buf.values())
                 nrows += 1
                 if limit and nrows >= limit:
