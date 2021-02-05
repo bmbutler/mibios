@@ -9,19 +9,15 @@
 {% block content %}
 
 <h3>number of records:</h3>
-<p>
 {{ counts|prettyformat }}
-</p>
 
 <h3>recent changes</h3>
-<p>
 {% if have_changes %}
 {% render_table table %}
-<a href="{% url 'compact_history' %}">Complete history</a>
+<p><a href="{% url 'compact_history' %}">Complete history</a></p>
 {% else %}
-no change history
+<p>no change history</p>
 {% endif %}
-</p>
 <p>For comments, questions, help, requests for user accounts please contact the site maintainer:
 {% for i in admins %}
 {{ i|last|urlize }} ({{ i|first }})
