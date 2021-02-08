@@ -598,7 +598,7 @@ class ChangeRecord(models.Model):
     """
     Model representing a changelog entry
     """
-    timestamp = models.DateTimeField(auto_now_add=True)
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
     user = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True
     )
@@ -616,7 +616,8 @@ class ChangeRecord(models.Model):
     )
     record_pk = models.PositiveIntegerField(null=True, blank=True)
     record = GenericForeignKey('record_type', 'record_pk')
-    record_natural = models.CharField(max_length=300, blank=True)
+    record_natural = models.CharField(max_length=300, blank=True,
+                                      db_index=True)
     fields = models.TextField(blank=True)
     is_created = models.BooleanField(default=False, verbose_name='new record')
     is_deleted = models.BooleanField(default=False)
@@ -624,6 +625,9 @@ class ChangeRecord(models.Model):
     class Meta:
         get_latest_by = 'timestamp'
         ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=('record_type', 'record_pk')),
+        ]
 
     def __str__(self):
         user = ' ' + self.user.username if self.user else ''
