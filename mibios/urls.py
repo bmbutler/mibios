@@ -1,6 +1,6 @@
 from django.conf import settings
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
 from rest_framework import routers
 
 from . import views, get_registry
@@ -48,6 +48,12 @@ urlpatterns = [
     path('', views.FrontPageView.as_view(), name='top'),
     path('history/', views.CompactHistoryView.as_view(),
          name='compact_history'),
+    re_path(
+        # e.g.: /history/1234-2345/
+        r'^history/(?P<first>[0-9]+)[-](?P<last>[0-9]+)/',
+        views.DetailedHistoryView.as_view(),
+        name='detailed_history',
+    ),
     # path('test/', TestView.as_view(), name='test'),
     path('archive/', include(archive_urls)),
     path('api/', include(rest_router.urls)),

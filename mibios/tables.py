@@ -188,6 +188,18 @@ class ManyToManyColumn(tables.ManyToManyColumn):
         super().__init__(*args, **kwargs)
 
 
+class DiffColumn(tables.TemplateColumn):
+    """
+    Column to display diff dictionary for changes/history tables
+    """
+    def __init__(self, *args, **kwargs):
+        code = """
+        {% load static mibios_extras %}
+        {{ value|prettychanges }}
+        """
+        super().__init__(*args, template_code=code, **kwargs)
+
+
 class Table(tables.Table):
     @cached_property
     def rev_rel_counts_totals(self):
@@ -383,16 +395,15 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
 
 
 class HistoryTable(tables.Table):
-    changes = tables.TemplateColumn("""
-        {% load static mibios_extras %}
-        {{ value|prettychanges }}
-    """)
+    changes = DiffColumn()
+    record_pk = tables.Column(verbose_name='PK')
+    user = tables.Column(default='admin')
 
     class Meta:
         model = ChangeRecord
         fields = (
-            'timestamp', 'is_created', 'is_deleted', 'changes', 'user',
-            'file.file', 'line', 'comment',
+            'timestamp', 'is_created', 'is_deleted', 'record_pk', 'changes',
+            'user', 'file.file', 'line', 'comment',
         )
 
 
@@ -413,19 +424,54 @@ class DeletedHistoryTable(tables.Table):
         fields = ('timestamp', 'user', 'record_natural',)
 
 
+def linkify_details(value):
+    """
+    Helper for CompactHistoryTable
+
+    Linkify via callable because we must unplack the detail tuple, can't
+    declare reverse (kw)args directly.
+    """
+    # FIXME: this should really be part of the class definition, but how?
+    # @staticmethod doesn't work with the column declaration magic
+    first, last = value
+    return reverse('detailed_history', kwargs=dict(first=first, last=last))
+
+
 class CompactHistoryTable(HistoryTable):
     """
     Table to show Changerecord.summary() data
     """
-    details = tables.Column()
-    changes = None
+    details = tables.Column(linkify=linkify_details)
     count = tables.Column()
     record_type = tables.Column()
 
     class Meta:
         fields = ('details', 'timestamp', 'count', 'record_type',
                   'comment', 'file.file', 'user')
-        exclude = ('line', 'is_deleted', 'is_created')
+        exclude = ('line', 'is_deleted', 'is_created', 'changes', 'record_pk')
+
+    def render_details(self):
+        return 'list'
+
+
+class DetailedHistoryTable(HistoryTable):
+    """
+    Table to display details from compact history table
+    """
+    record_type = tables.Column()
+    is_created = tables.BooleanColumn(verbose_name='New?')
+    is_deleted = tables.BooleanColumn(verbose_name='Removed?')
+    record_natural = tables.Column(verbose_name='Name')
+    changes = DiffColumn(accessor=tables.A('diff'))
+
+    class Meta:
+        model = ChangeRecord
+        fields = (
+            'timestamp', 'record_type', 'is_created', 'is_deleted',
+            'record_natural', 'changes', 'user', 'file.file', 'line',
+            'comment',
+        )
+        exclude = ('record_pk',)
 
 
 class SnapshotListTable(tables.Table):

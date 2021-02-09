@@ -595,6 +595,31 @@ class ImportFile(models.Model):
     get_log_url.short_description = 'Import log'
 
 
+class ChangeRecordQuerySet(QuerySet):
+    def with_old_fields(self):
+        """
+        Add fields from previous change record
+
+        This annotates each instance with an "old_fields" text field that is
+        populated from the record's preceding change's "fields" field.
+        ChangeRecord.diff() can use this to make the diff.
+        """
+        clone = self._chain()
+        # older: sub query to get previous changes for object
+        older = ChangeRecord.objects.filter(
+            record_type=models.OuterRef('record_type'),
+            record_pk=models.OuterRef('record_pk'),
+            timestamp__lte=models.OuterRef('timestamp'),
+        ).order_by('-timestamp')
+        # older includes the changes itself, sp ick the second change in order
+        old_fields = models.Subquery(
+            older.values('fields')[1:2],
+            output_field=models.TextField(blank=True)
+        )
+        clone = clone.annotate(old_fields=old_fields)
+        return clone
+
+
 class ChangeRecord(models.Model):
     """
     Model representing a changelog entry
@@ -629,6 +654,8 @@ class ChangeRecord(models.Model):
         indexes = [
             models.Index(fields=('record_type', 'record_pk')),
         ]
+
+    objects = Manager.from_queryset(ChangeRecordQuerySet)()
 
     def __str__(self):
         user = ' ' + self.user.username if self.user else ''
@@ -692,13 +719,25 @@ class ChangeRecord(models.Model):
         self.record.history.add(self)
         del self.record.change
 
-    def fields_as_dict(self):
+    def fields_as_dict(self, json_serial=None):
         """
         Return serialized object as dict
-        """
-        return json.loads(self.fields)[0]
 
-    def predecessor(self, constant_pk=False):
+        :param str json_serial:
+            Alternative json serialization string.  The default is to use the
+            instance's "fields" attribute.
+
+        Extract the fields as a dict, primary key is included as "pk".
+        """
+        if json_serial is None:
+            json_serial = self.fields
+        serial = json.loads(json_serial)[0]
+        fields = serial['fields']
+        if 'pk' not in fields:
+            fields['pk'] = serial['pk']
+        return fields
+
+    def get_predecessor(self, constant_pk=True):
         """
         Return previous change of object.
 
@@ -707,41 +746,61 @@ class ChangeRecord(models.Model):
         :param bool constant_pk: If True, then the precessor is guarrantied to
                                  have the same primary key, but may have a
                                  different natural key.  The default behavior
-                                 is to pick the precessor with the same natural
-                                 key, allowing a change in pk.
+                                 is to pick the precessor with the same primary
+                                 key, allowing for changes of the natural key.
         """
-        f = dict(record_type=self.record_type, timestamp__lt=self.timestamp)
+        f = dict(record_type=self.record_type, timestamp__lte=self.timestamp)
         if constant_pk:
             f['record_pk'] = self.record_pk
         else:
             f['record_natural'] = self.record_natural
 
+        qs = ChangeRecord.objects.filter(**f).order_by('-timestamp')
         try:
-            return ChangeRecord.objects.filter(**f).latest()
+            return (qs[1:2]).get()
         except ChangeRecord.DoesNotExist:
             return None
 
-    def diff(self, to=None):
+    def diff_to(self, other=None):
+        """
+        Return diff comparing fields to given other change record
+        """
+        if other is None:
+            other = self.get_predecessor()
+
+        if other is None:
+            # no predecessor
+            fields = {}
+        else:
+            fields = other.fields_as_dict()
+            if 'name' not in fields:
+                fields['name'] = other.record_natural
+        return self.diff(fields)
+
+    def diff(self, theirs=None):
         """
         Get the difference in field values introduced by this change
+
+        :param dict theirs: Compare against these fields.  The default is
+                                to use the fields in the old_fields instance
+                                attribute.
 
         Fields that were dropped from the tables between the changes will not
         be listed.
         """
-        if to is None:
-            to = self.predecessor()
+        if theirs is None:
+            if hasattr(self, 'old_fields'):
+                if self.old_fields is None:
+                    theirs = {}
+                else:
+                    theirs = self.fields_as_dict(self.old_fields)
+            else:
+                return self.diff_to(other=None)
 
-        # get dict of fields, inlc. pk, same with theirs below:
         ours = self.fields_as_dict()
-        ours['fields']['pk'] = ours['pk']
-        ours = ours['fields']
 
-        if to is None:
-            theirs = {}
-        else:
-            theirs = to.fields_as_dict()
-            theirs['fields']['pk'] = theirs['pk']
-            theirs = theirs['fields']
+        if 'name' in theirs and 'name' not in ours:
+            ours['name'] = self.record_natural
 
         diff = {}
         for k, v in ours.items():
@@ -833,12 +892,28 @@ class ChangeRecord(models.Model):
         """
         Compact history tables with rows as dicts
 
-        This is for django_tables2.Table consumption
+        This is to support CompactHistoryView with django_tables2.Table
+        consumption.
         """
         keys = ['details', 'timestamp', 'count', 'record_type', 'comment',
                 'file', 'user']
 
         return [dict(zip(keys, i)) for i in cls.summary_shorter(**kwargs)]
+
+    @classmethod
+    def get_details(cls, first, last):
+        """
+        Get queryset for DetailedHistoryView
+
+        :param int first: lowest primary key of range of changes to show
+        :param int last: highest primary key of range of changes to show
+
+        Returns all change records in given range with old field annotation.
+        """
+        return (cls.objects
+                .filter(pk__gte=first, pk__lte=last)
+                .select_related('user', 'record_type', 'file')
+                .with_old_fields())
 
 
 def _default_snapshot_name():

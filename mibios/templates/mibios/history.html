@@ -10,7 +10,12 @@
 <h2>History of {{ view.model_name }}: {% if view.record %}<a href="{{ view.record.get_absolute_url }}">{{ natural_key }}</a>{% else %}{{ natural_key }}{% endif %}</h2>
 
 {% for table in tables %}
-{% render_table table %}
+    {# expecting one or two tables here #}
+    {% if forloop.counter0 == 1 %}
+        {# heading for second table of disassociated changes #}
+        <h3>Related history</h3>
+    {% endif%}
+    {% render_table table %}
 {% endfor %}
 
 {% endblock %}

@@ -32,7 +32,7 @@ from .load import Loader
 from .management.import_base import AbstractImportCommand
 from .models import Q, ChangeRecord, ImportFile, Snapshot
 from .tables import (DeletedHistoryTable, HistoryTable, NONE_LOOKUP,
-                     CompactHistoryTable,
+                     CompactHistoryTable, DetailedHistoryTable,
                      SnapshotListTable, SnapshotTableColumn, Table,
                      table_factory, ORDER_BY_FIELD)
 from .utils import getLogger
@@ -966,6 +966,9 @@ class ShowHideFormView(DatasetMixin, FormView):
 
 class HistoryView(BaseMixin, CuratorRequiredMixin, MultiTableMixin,
                   TemplateView):
+    """
+    Show table with history of a single record
+    """
     table_class = HistoryTable
     record = None
     template_name = 'mibios/history.html'
@@ -1039,13 +1042,16 @@ class HistoryView(BaseMixin, CuratorRequiredMixin, MultiTableMixin,
     def _add_diffs(self, qs):
         """
         Add differences to history queryset
+
+        :param qs: iterable of ChangeRecord instances.  All changes must belong
+                   to the same record and be in order.
         """
         # diffs for each and precessor, compare itertools pairwise recipe:
         a, b = tee(qs)
         next(b, None)  # shift forward, diff to last/None will give all fields
         diffs = []
         for i, j in zip_longest(a, b):
-            d = i.diff(to=j)
+            d = i.diff_to(j)
             diffs.append(d)
 
         # combine into data
@@ -1113,6 +1119,20 @@ class CompactHistoryView(BaseMixin, UserRequiredMixin, SingleTableMixin,
 
     def get_table_data(self):
         return ChangeRecord.summary_dict()
+
+
+class DetailedHistoryView(BaseMixin, UserRequiredMixin, SingleTableMixin,
+                          TemplateView):
+    table_class = DetailedHistoryTable
+    template_name = 'mibios/detailed_history.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        self.first = kwargs['first']
+        self.last = kwargs['last']
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_table_data(self):
+        return ChangeRecord.get_details(self.first, self.last)
 
 
 # @method_decorator(cache_page(None), name='dispatch')
