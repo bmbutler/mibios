@@ -1189,7 +1189,7 @@ class Model(models.Model):
             dtype = pandas.Int64Dtype()
         elif isinstance(field, models.BooleanField):
             dtype = bool
-        elif isinstance(field, models.DecimalField):
+        elif isinstance(field, (models.DecimalField, models.FloatField)):
             dtype = float
         else:
             raise ValueError('Field type not supported: {}: {}'
