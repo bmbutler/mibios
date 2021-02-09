@@ -222,7 +222,8 @@ class QuerySet(models.QuerySet):
         Handle natural lookups for filtering operations
         """
         self._pre_annotation_clone = None
-        kwargs = self.model.resolve_natural_lookups(**kwargs)
+        if hasattr(self.model, 'resolve_natural_lookups'):
+            kwargs = self.model.resolve_natural_lookups(**kwargs)
         return super()._filter_or_exclude(negate, *args, **kwargs)
 
     def _values(self, *fields, **expressions):
