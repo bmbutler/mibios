@@ -902,7 +902,7 @@ class AnalysisProject(Model):
 
     name = models.CharField(max_length=100, unique=True)
     otu = models.ManyToManyField('OTU', through=Abundance, editable=False)
-    sequencing = models.ManyToManyField(Sequencing, through=Abundance,
+    sequencing = models.ManyToManyField(Sequencing,
                                         editable=False, related_name='project')
     otu_type = models.CharField(max_length=5, choices=OTU_TYPE_CHOICES,
                                 verbose_name='OTU type')
