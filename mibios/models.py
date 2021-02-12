@@ -479,18 +479,37 @@ class CurationBaseManager(BaseManager):
 
         return qs
 
-    def get_curation_filter(self):
+    def get_curation_filter(self, prefix=None):
         """
         Return the curation filter/exclude as Q object
 
+        :param str prefix:
+            Accessor prefix.  Use this when the target model is related to one
+            with a CurationManager but does not have one itself.  Then the
+            prefix is the accessor to the related model without the foreign
+            field itself, e.g. to effectively curation-filter
+            mibios_seq.Abundance, which does not have a CurationManager, we
+            need to filter on curated Sequencing:
+
+            f = Sequencing.get_curation_filter(prefix='abundance')
+            OTU.objects.annotate(sum=Sum('abundance__count', filter=f))
+
+            Then the sum is only taken over curated sequencings.
+
         A Q return value can be used for the filter keyword in calls to
         Aggregate() and friends, e.g. Count().  A None return value can be used
-        to determine that no such filter needs tpo be applied.
+        to determine that no such filter needs to be applied.
 
-        The model name will be added to the lookup lhs.
+        The model name (and prefix if any) will be added to the lookup lhs.
         """
         self.ensure_filter_setup()
-        prefix = self.model._meta.model_name + '__'
+        if prefix:
+            if not prefix.endswith('__'):
+                prefix += '__'
+        else:
+            prefix = ''
+
+        prefix += self.model._meta.model_name + '__'
         f = {prefix + k: v for k, v in self.filter.items()}
         e = [
             ~Q(**{prefix + k: v for k, v in i.items()})
