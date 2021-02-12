@@ -1,0 +1,57 @@
+"""
+Example settings for a mibios instance
+
+Copy this file as settings.py into the instance's base directory.  The settings
+below that, in the original example file, are not commented out, show the
+default and need most likely be adjusted to make the site run.  Other,
+out-commented example settings show the defaults for a production site and are
+settings that are suggested to be modified for a different environment (e.g. in
+development).  There are many more settings in the mibio9s.ops.settings module
+and / or django.conf.settings that can be overwritten here.
+"""
+from mibios.ops.settings import *
+
+# Set to True for development but never in production deployment
+# DEBUG = False
+
+# Set this to False when running the runserver command on localhost
+# SECURE_SSL_REDIRECT = True
+
+# Add additional apps here:
+# INSTALLED_APPS.append('django_extensions')
+INSTALLED_APPS.append('mibios_seqapps.AppConfig')
+
+# User switch magic: needs the remote user injection middleware and set
+# ASSUME_IDENTIY = ('alice', 'bob') so when user bob logs in through the web
+# server the middleware will make it look as if alice is authenticated.  In
+# development, e.g. when using the shell or runserver commands let
+# ASSUME_IDENTITY = ('', 'bob') assume bob's identity.
+#
+# MIDDLEWARE = ['mibios.ops.utils.RemoteUserInjection'] + MIDDLEWARE
+# ASSUME_IDENTITY = ('', 'bob')
+
+# List of contacts for site adminitrators
+# ADMINS = [(<your name>, <email@address>)]
+
+# For production, set STATIC_ROOT to the directory containing static files,
+# relative to your instance's base directory
+# STATIC_ROOT = 'static'
+
+# URL for static files
+# STATIC_URL = '/static/'
+
+# Direcorty relative to the base where download files get stored
+# MEDIA_ROOT = ''
+# MEDIA_ROOT = './media_root'
+
+# URL path for downloads
+# MEDIA_URL = '/download/'
+
+# Location of SQLite3 database file
+# DATABASES['default']['NAME'] = 'file:db.sqlite3?mode=rw'
+# DATABASES['default']['NAME'] = './db.sqlite3'
+
+# Allowed host settings:
+# ALLOWED_HOSTS += ['my.server.domain.name']
+# ALLOWED_HOSTS = ['my.server.domain.name']
+# ALLOWED_HOSTS = ['localhost']

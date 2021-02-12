@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/2.2/ref/settings/
 """
 
+from os import environ
 from pathlib import Path
 
 from . import get_secret_key
@@ -22,10 +23,18 @@ BASE_DIR = Path(__file__).absolute().parent.parent.parent
 # See https://docs.djangoproject.com/en/2.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = get_secret_key(Path('./secret.key'))
+SECRET_KEY = get_secret_key(BASE_DIR / 'secret.key')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
+
+# SECURE_HSTS_SECONDS = ??  (TODO)
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_SSL_REDIRECT = True  # set to False for runserver command
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+X_FRAME_OPTIONS = 'DENY'
 
 ALLOWED_HOSTS = ['localhost']
 
@@ -85,10 +94,13 @@ WSGI_APPLICATION = 'mibios.ops.wsgi.application'
 # Name of snapshot directory
 SNAPSHOT_DIR = BASE_DIR / 'snapshots'
 
+db_path = str(BASE_DIR / 'db.sqlite3')
+db_mode = 'ro' if environ.get('MIBIOS_DB_RO') else 'rw'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': str(BASE_DIR / 'db.sqlite3'),
+        'NAME': f'file:{db_path}?mode={db_mode}',
+        'OPTIONS': {'uri': True},
     }
 }
 
