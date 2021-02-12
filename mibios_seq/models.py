@@ -1093,6 +1093,46 @@ class OTU(Model):
         return dict(total=total, new=added, updated=updated,
                     skipped=skipped)
 
+    @classmethod
+    def summary(cls, project=None):
+        """
+        Get OTU abundance/prevalence stats + taxonomy
+
+        :param project:
+            Restrict analysis to given project.  Can be an instance of
+            AnalysisProject or the project name as str.
+        """
+        if isinstance(project, str):
+            project = AnalysisProject.objects.get(name=project)
+
+        se_qs = Sequencing.curated.all().filter(project=project)
+
+        # filtering on the project: ASVs don't have a project but Sequencings
+        # and Abundances always do
+        if project.otu_type == AnalysisProject.ASV_TYPE:
+            f = dict(project=None)
+        else:
+            f = dict(project=project)
+        prevalence = models.Count(
+            'sequencing',
+            distinct=True,
+            filter=models.Q(sequencing__in=se_qs),
+        )
+        sum_abund = models.Sum(
+            'abundance__count',
+            filter=models.Q(abundance__sequencing__in=se_qs),
+        )
+
+        qs = (cls.objects
+              .filter(**f)
+              .select_related('sequence__taxon')
+              .annotate(
+                  prevalence=prevalence,
+                  total_abundance=sum_abund,
+              ))
+
+        return qs
+
 
 class Taxonomy(Model):
     taxid = models.PositiveIntegerField(
