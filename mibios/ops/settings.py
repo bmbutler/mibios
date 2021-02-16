@@ -16,9 +16,6 @@ from pathlib import Path
 from . import get_secret_key
 
 
-BASE_DIR = Path(__file__).absolute().parent.parent.parent
-
-
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/2.2/howto/deployment/checklist/
 
@@ -92,14 +89,14 @@ WSGI_APPLICATION = 'mibios.ops.wsgi.application'
 # https://docs.djangoproject.com/en/2.2/ref/settings/#databases
 
 # Name of snapshot directory
-SNAPSHOT_DIR = BASE_DIR / 'snapshots'
+SNAPSHOT_DIR = Path('snapshots')
 
-db_path = str(BASE_DIR / 'db.sqlite3')
+db_file = 'db.sqlite3'
 db_mode = 'ro' if environ.get('MIBIOS_DB_RO') else 'rw'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': f'file:{db_path}?mode={db_mode}',
+        'NAME': f'file:{db_file}?mode={db_mode}',
         'OPTIONS': {'uri': True},
     }
 }
@@ -206,8 +203,6 @@ LOGGING = {
         },
     },
 }
-
-UPLOAD_DIR = BASE_DIR / 'uploads'
 
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
