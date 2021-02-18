@@ -54,9 +54,16 @@ def get_secret_key(keyfile):
     If file does not exist, generate a key randomly and store it in the file
     first.
     """
-    if not keyfile.exists():
-        keyfile.touch(mode=0o600, exist_ok=False)
-        keyfile.write_text(get_random_secret_key())
-        keyfile.chmod(0o400)
+    try:
+        if not keyfile.exists():
+            keyfile.touch(mode=0o600, exist_ok=False)
+            keyfile.write_text(get_random_secret_key())
+            keyfile.chmod(0o400)
 
-    return keyfile.read_text()
+        return keyfile.read_text()
+    except Exception as e:
+        # file permissions?
+        # TODO: explore consequences of non-permanent keys
+        print(f'WARNING: failed accessing secret key file {keyfile}: {e} -- '
+              'will be using a temporary key')
+        return get_random_secret_key()
