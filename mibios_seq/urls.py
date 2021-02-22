@@ -29,4 +29,14 @@ urlpatterns = [
         views.ExportAvgSharedView.as_view(data_name=_abundance),
         name='export_avg_shared',
     ),
+    path(
+        'sequence/fasta-export/',
+        views.ExportSequenceFastaView.as_view(data_name='sequence'),
+        name='export_seq_fasta',
+    ),
+    path(
+        'otu/fasta-export/',
+        views.ExportOTUFastaView.as_view(data_name='otu'),
+        name='export_otu_fasta',
+    ),
 ]

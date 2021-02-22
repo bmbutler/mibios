@@ -777,6 +777,26 @@ class CSVTabRendererZipped(CSVRendererZipped):
     delimiter = '\t'
 
 
+class TextRendererZipped():
+    description = 'zipped text file'
+    content_type = 'application/zip'
+
+    def __init__(self, response, filename):
+        self.response = response
+        self.filename = filename[:-len('.zip')]
+
+    def render(self, values):
+        """
+        Render all rows to the response
+
+        :param values: An iterator over str lines ending with a newline.
+        """
+        with ZipFile(self.response, 'w', ZIP_DEFLATED) as z:
+            with z.open(self.filename, 'w') as f:
+                for line in values:
+                    f.write(line.encode())
+
+
 class ExportBaseMixin:
     # Supported export format registry
     # (name, file suffix, renderer class)

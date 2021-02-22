@@ -124,6 +124,32 @@ class Sequence(Model):
     def __str__(self):
         return self.seq[:20] + '...'
 
+    def fasta(self, name=None, with_taxon=True, wrap=False):
+        """
+        Return sequence as fasta-formatted, newline terminated str
+
+        :param str name: Alternative name for sequence, e.g. OTU name, uses
+                         primary key by default
+        :param bool with_taxon: add taxon to header
+        :param bool wrap: Wrap sequence to 60 characters per line
+        """
+        if name is None:
+            name = f'{self._meta.model_name}:{self.pk}'
+
+        if with_taxon and self.taxon is not None:
+            taxon = f' taxid:{self.taxon.taxid} {self.taxon.name}'
+        else:
+            taxon = ''
+
+        slines = [self.seq]
+        if wrap:
+            MAX_LEN = 60
+            while len(slines[-1]) > MAX_LEN:
+                slines[-1:] = [slines[-1][:MAX_LEN], slines[-1][MAX_LEN:]]
+        slines = '\n'.join(slines)
+
+        return f'>{name}{taxon}\n{slines}\n'
+
 
 class Strain(Model):
     sequence = models.ForeignKey(Sequence, on_delete=models.SET_NULL,
@@ -934,18 +960,30 @@ class OTUQuerySet(QuerySet):
     def to_fasta(self, save_as=None):
         """
         Convert OTU queryset into a fasta file
+
+        :param str save_as: Output file name.  If this is not provided an
+                            iterator over the output lines is returned.
         """
+        it = self._to_fasta()
         if not save_as:
-            return self._to_fasta()
+            return it
 
         with open(save_as, 'w') as f:
-            for i in self._to_fasta():
+            for i in it:
                 f.write(i)
 
     def _to_fasta(self):
-        qs = self.select_related('sequence').iterator()
-        for i in qs:
-            yield f'>{i.natural}\n{i.sequence.seq}\n'
+        qs = self.select_related('sequence__taxon', 'project')
+
+        missing = 0
+        for i in qs.iterator():
+            if i.sequence is None:
+                missing += 1
+            else:
+                yield i.sequence.fasta(name=i.natural)
+
+        if missing:
+            log.debug(f'to_fasta(): skipped {missing} OTUs missing a sequence')
 
 
 class OTU(Model):

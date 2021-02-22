@@ -5,7 +5,8 @@ from django.views.generic.edit import FormView
 
 from mibios import QUERY_AVG_BY
 from mibios.utils import getLogger
-from mibios.views import AverageMixin, CSVTabRenderer, CSVTabRendererZipped
+from mibios.views import (AverageMixin, CSVTabRenderer, CSVTabRendererZipped,
+                          TextRendererZipped)
 from mibios.views import (DatasetMixin, ExportBaseMixin, ExportView,
                           TableViewPlugin)
 from mibios_seq import models
@@ -37,6 +38,16 @@ class AbundancePlugin(TableViewPlugin):
             q += qavg.urlencode()
             ctx['querystr'] = q
         return ctx
+
+
+class FastaPlugin(TableViewPlugin):
+    model_class = models.Sequence
+    template_name = 'mibios_seq/sequence_fasta_plugin.html'
+
+
+class OTUFastaPlugin(TableViewPlugin):
+    model_class = models.OTU
+    template_name = 'mibios_seq/otu_fasta_plugin.html'
 
 
 class ExportSharedFormMixin:
@@ -188,3 +199,25 @@ class ExportAvgSharedView(ExportAvgSharedFormView, ExportSharedView):
     def get_filename(self):
         return super().get_filename() + '-avg'
 
+
+class ExportSequenceFastaView(ExportView):
+    FORMATS = (
+        ('fasta/zipped', '.fa.zip', TextRendererZipped),
+    )
+    DEFAULT_FORMAT = 'fasta/zipped'
+
+    def get_filename(self):
+        return super().get_filename()
+
+    def get_values(self):
+        return (i.fasta() for i in self.get_queryset())
+
+
+class ExportOTUFastaView(ExportView):
+    FORMATS = (
+        ('fasta/zipped', '.fa.zip', TextRendererZipped),
+    )
+    DEFAULT_FORMAT = 'fasta/zipped'
+
+    def get_values(self):
+        return self.get_queryset().to_fasta()
