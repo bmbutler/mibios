@@ -913,6 +913,22 @@ class AnalysisProject(Model):
         # Prevent numbers from being displayed, too much data
         return super().get_fields(with_m2m=False, **kwargs)
 
+    def get_otus(self):
+        """
+        Returns QuerySet with the project's OTUs
+
+        This is a convenience method to smooth over the complication that ASVs
+        don't have a project attached but belong to all ASV_TYPE projects.
+
+        In case ot non-ASV projects this is much more efficient that calling
+        the projects otu attribute.
+        """
+        if self.otu_type == self.ASV_TYPE:
+            f = {'abundance__project': self}
+        else:
+            f = {'project': self}
+        return OTU.objects.filter(**f).distinct()
+
 
 class OTUQuerySet(QuerySet):
     def to_fasta(self, save_as=None):
