@@ -6,8 +6,8 @@ from django.views.generic.edit import FormView
 from mibios import QUERY_AVG_BY
 from mibios.utils import getLogger
 from mibios.views import AverageMixin, CSVTabRenderer, CSVTabRendererZipped
-from mibios.views import (DatasetMixin, ExportBaseMixin, ExportMixin,
-                          TableView, TableViewPlugin)
+from mibios.views import (DatasetMixin, ExportBaseMixin, ExportView,
+                          TableViewPlugin)
 from mibios_seq import models
 
 from .forms import ExportSharedForm
@@ -128,7 +128,7 @@ class ExportAvgSharedFormView(AverageMixin, ExportSharedFormView):
         return super().get_form_class()
 
 
-class ExportSharedView(ExportSharedFormMixin, ExportMixin, TableView):
+class ExportSharedView(ExportSharedFormMixin, ExportView):
     _group_id_maps = None
 
     def get_filename(self):
