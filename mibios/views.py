@@ -508,6 +508,7 @@ class TableViewPlugin():
 # @method_decorator(cache_page(None), name='dispatch')
 class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
     template_name = 'mibios/table.html'
+    compute_counts = True
 
     # Tunables adjusting display varying on number of unique values:
     MEDIUM_UNIQUE_LIMIT = 10
@@ -553,7 +554,7 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
         # each counted multiply times (for each rev rel count))
         if getattr(self, 'avg_by', None):
             qs = qs.average(*self.avg_by)
-        else:
+        elif self.compute_counts:
             qs = qs.annotate_rev_rel_counts()
         return qs
 
@@ -804,12 +805,15 @@ class ExportMixin(ExportBaseMixin):
     """
     Export table data as file download
 
+    A mixin for TableView
+
     Requires kwargs['format'] to be set by url conf.
 
     Implementing views need to provide a get_values() method that provides the
     data to be exported as an iterable over rows (which are lists of values).
     The first row should contain the column headers.
     """
+    compute_counts = False
 
     def get_filename(self):
         """
