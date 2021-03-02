@@ -534,17 +534,18 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
         related_fields = []
         for i in self.fields:
             try:
-                i = self.model.get_field(i)
+                f = self.model.get_field(i)
             except LookupError:
                 continue
-            if i.is_relation and not i.many_to_many:
-                related_fields.append(i.name)
-                for j in i.related_model.resolve_natural_lookups('natural'):
+            if f.is_relation and not f.many_to_many:
+                related_fields.append(i)
+                for j in f.related_model.resolve_natural_lookups('natural'):
                     if '__' in j:
                         # need following relation for natural key
                         related_fields.append(
-                            i.name + '__' + j.rpartition('__')[0]
+                            i + '__' + j.rpartition('__')[0]
                         )
+            del f
 
         log.debug('get_queryset:', f'{q}', f'{related_fields}')
 
