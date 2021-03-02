@@ -5,6 +5,7 @@ from operator import attrgetter, itemgetter
 from Bio import SeqIO
 from django.db import models
 from django.db.transaction import atomic
+from pandas import DataFrame
 
 from omics.shared import MothurShared
 from mibios.dataset import UserDataError
