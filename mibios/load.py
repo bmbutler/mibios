@@ -249,7 +249,7 @@ class Loader():
             file=self.file_record,
             line=self.linenum,
             user=self.user,
-            cmdline=' '.join(sys.argv) if self.user is None else '',
+            comment=' '.join(sys.argv) if self.user is None else '',
         )
         need_to_save = False
         if is_new:
