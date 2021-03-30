@@ -1161,10 +1161,11 @@ class Model(models.Model):
     """
 
     """
-    String value, indicating missing data to be used externally.  Internally,
+    List of str, indicating missing data as used externally.  Internally,
     None or the empty string remains in use for missing data.
+    The first element is used for export.
     """
-    MISSING_DATA = '-'
+    MISSING_DATA = ['-']
 
     # replace the default auto field that Django adds
     id = AutoField(primary_key=True)
@@ -1636,7 +1637,7 @@ class Model(models.Model):
         ret = []
         for i in values:
             if i in ['', None]:
-                ret.append(cls.MISSING_DATA)
+                ret.append(cls.MISSING_DATA[0])
             else:
                 ret.append(str(i))
         return ret[0] if len(ret) == 1 else tuple(ret)
@@ -1649,7 +1650,7 @@ class Model(models.Model):
         """
         ret = []
         for i in values:
-            if i == cls.MISSING_DATA:
+            if i in cls.MISSING_DATA:
                 ret.append('')
             else:
                 ret.append(i)
