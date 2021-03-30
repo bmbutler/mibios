@@ -11,7 +11,7 @@ from django.db import transaction, IntegrityError
 
 from . import get_registry
 from .dataset import PARSE_BLANK, UserDataError
-from .models import ImportFile, Model, NaturalKeyLookupError
+from .models import ImportFile, NaturalKeyLookupError
 from .utils import DeepRecord, getLogger
 
 
@@ -311,7 +311,7 @@ class Loader():
                     return True
             elif value == i:
                 return True
-        if Model.decode_blank(value) == '':
+        if self.model.decode_blank(value) == '':
             return True
         return False
 
