@@ -1103,8 +1103,16 @@ class OTU(Model):
                 skipped += 1
                 continue
 
-            seq, new_seq = Sequence.objects.get_or_create(seq=i.seq)
-            if new_seq:
+            try:
+                seq = Sequence.objects.get(seq=i.seq)
+            except Sequence.DoesNotExist:
+                seq = Sequence(seq=i.seq)
+                seq.full_clean()
+                seq.add_change_record(
+                    file=file_rec,
+                    line=total + 1,
+                )
+                seq.save()
                 seq_added += 1
 
             if project and project.otu_type == project.ASV_TYPE:
