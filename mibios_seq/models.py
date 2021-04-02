@@ -1208,20 +1208,29 @@ class Taxonomy(Model):
 
     @classmethod
     @atomic
-    def from_blast_top1(cls, file):
+    def from_blast_top1(cls, file, project):
         """
         Import from blast-result-top-1 format file
 
         The supported file format is a tab-delimited text file with header row,
-        column 1 are ASV accessions, columns 5 and 6 are NCBI taxids and names,
-        and if there are ties then column 7 are the least-common NCBI taxids
-        and column 8 are the corresponding taxon names
+        column 1 are ASV/OTU accessions, columns 5 and 6 are NCBI taxids and
+        names, and if there are ties then column 7 are the least-common NCBI
+        taxids and column 8 are the corresponding taxon names
 
-        The taxonomy for existing ASV records is imported, everything else is
-        ignored.
+        The taxonomy for existing ASV/OTU records is imported, everything else
+        is ignored.
+
+        :param project: AnalysisProject, use None for ASVs.
+
+        OTU records must have a sequence to be associated with a taxon, if it
+        has no sequence record the taxonomy record will still get added to the
+        database.
         """
         file_rec = ImportFile.create_from_file(file=file)
-        otus = {(i.prefix, i.number): i for i in OTU.objects.select_related()}
+        otus = {
+            (i.prefix, i.number): i
+            for i in OTU.objects.filter(project=project)
+        }
         is_header = True  # first line is header
         updated, total, seq_missing = 0, 0, 0
         seqs = []
@@ -1233,20 +1242,20 @@ class Taxonomy(Model):
             try:
                 total += 1
                 row = line.rstrip('\n').split('\t')
-                asv, taxid, name, lctaxid, lcname = row[0], *row[4:]
+                otu, taxid, name, lctaxid, lcname = row[0], *row[4:]
 
                 if lcname and lcname:
                     name = lcname
                     taxid = lctaxid
 
                 taxid = int(taxid)
-                match = OTU.natural_lookup(asv)
+                match = OTU.natural_lookup(otu)
                 prefix = match['prefix']
                 num = match['number']
                 del match
 
                 if (prefix, num) not in otus:
-                    # ASV not in database
+                    # ASV/OTU not in database
                     continue
 
                 try:
