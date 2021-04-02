@@ -1677,7 +1677,7 @@ class Model(models.Model):
             line=line,
             comment=comment,
             record=self,
-            record_natural=self.natural,
+            record_natural=self.natural,  # None for new but not yet saved objs
             is_created=is_created or (self.id is None),
             is_deleted=is_deleted,
         )
@@ -1692,6 +1692,12 @@ class Model(models.Model):
 
         if not hasattr(self, 'change'):
             self.add_change_record(is_created=is_created)
+        if self.change.record_natural is None:
+            # natural may still be None if record is new and change was created
+            # manually and the model uses the fallback to pk for natural
+            # property but now after save() we have a valid pk
+            self.change.record_natural = self.natural
+
         # set record (again) as super().save() resets this to None for unknown
         # reasons:
         self.change.record = self
