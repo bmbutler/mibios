@@ -1055,7 +1055,7 @@ class OTU(Model):
 
     @classmethod
     @atomic
-    def from_fasta(cls, file, project=None):
+    def from_fasta(cls, file, project=None, comment=''):
         """
         Import from given fasta file
 
@@ -1068,7 +1068,7 @@ class OTU(Model):
 
         try:
             file_rec.file.open('r')
-            return cls._from_fasta(file_rec, project)
+            return cls._from_fasta(file_rec, project, comment)
         except Exception:
             try:
                 file_rec.file.close()
@@ -1080,7 +1080,7 @@ class OTU(Model):
             file_rec.file.close()
 
     @classmethod
-    def _from_fasta(cls, file_rec, project):
+    def _from_fasta(cls, file_rec, project, comment):
         added, updated, skipped, total = 0, 0, 0, 0
         seq_added = 0
 
@@ -1111,6 +1111,7 @@ class OTU(Model):
                 seq.add_change_record(
                     file=file_rec,
                     line=total + 1,
+                    comment=comment,
                 )
                 seq.save()
                 seq_added += 1
@@ -1148,7 +1149,11 @@ class OTU(Model):
                               f'{total + 1}: {i}: {e}')
                     raise
 
-                obj.add_change_record(file=file_rec, line=total + 1)
+                obj.add_change_record(
+                    file=file_rec,
+                    line=total + 1,
+                    comment=comment,
+                )
                 obj.save()
 
             total += 1
@@ -1216,7 +1221,7 @@ class Taxonomy(Model):
 
     @classmethod
     @atomic
-    def from_blast_top1(cls, file, project):
+    def from_blast_top1(cls, file, project, comment=''):
         """
         Import from blast-result-top-1 format file
 
@@ -1229,6 +1234,7 @@ class Taxonomy(Model):
         is ignored.
 
         :param project: AnalysisProject, use None for ASVs.
+        :param str comment: Comment to add to change records
 
         OTU records must have a sequence to be associated with a taxon, if it
         has no sequence record the taxonomy record will still get added to the
@@ -1271,7 +1277,11 @@ class Taxonomy(Model):
                 except cls.DoesNotExist:
                     taxon = cls(taxid=taxid, name=name)
                     taxon.full_clean()
-                    taxon.add_change_record(file=file_rec, line=total + 1)
+                    taxon.add_change_record(
+                        file=file_rec,
+                        line=total + 1,
+                        comment=comment,
+                    )
                     taxon.save()
 
                 seq = otus[(prefix, num)].sequence
