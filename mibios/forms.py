@@ -3,6 +3,10 @@ from collections import OrderedDict
 from django import forms
 
 from . import QUERY_FILTER, QUERY_SHOW, QUERY_FORMAT
+from .utils import getLogger
+
+
+log = getLogger(__name__)
 
 
 class UploadFileForm(forms.Form):
