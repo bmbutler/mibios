@@ -167,7 +167,7 @@ class ExportForm(ExportFormatForm):
     field_choices = ()
     initial_fields = ()
 
-    exported_fields = forms.MultipleChoiceField(
+    show = forms.MultipleChoiceField(
         widget=forms.CheckboxSelectMultiple(attrs={'class': None}),
         # choices/initial set by constructor
         label='fields to be exported',
@@ -207,18 +207,10 @@ class ExportForm(ExportFormatForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['exported_fields'].choices = self.field_choices
-        self.fields['exported_fields'].initial = self.initial_fields
+        self.fields['show'].choices = self.field_choices
+        self.fields['show'].initial = self.initial_fields
         # order field choices before format choices:
-        self.order_fields(('exported_fields', 'format'))
-
-    def add_prefix(self, field_name):
-        """
-        API abuse to correctly set the HTML input attribute
-        """
-        if field_name == 'exported_fields':
-            field_name = QUERY_SHOW
-        return super().add_prefix(field_name)
+        self.order_fields(('show', 'format'))
 
 
 class ShowHideForm(forms.Form):
