@@ -182,17 +182,17 @@ class DatasetMixin(BaseMixin):
             try:
                 self.model = get_registry().models[self.data_name]
             except KeyError:
-                raise Http404
+                raise Http404('unknown table/data name')
             else:
                 # setup for normal model
                 self.queryset = None
                 self.data_name_verbose = self.model._meta.verbose_name
                 # set default fields - just the "simple" ones
-                no_name_field = True
+                has_name_field = False
                 fields = self.model.get_fields(with_hidden=self.show_hidden)
                 for name, verbose_name in zip(fields.names, fields.verbose):
                     if name == 'name':
-                        no_name_field = False
+                        has_name_field = True
                     self.fields.append(name)
                     if name == verbose_name:
                         # None: will be capitalized by django-tables2
@@ -202,16 +202,21 @@ class DatasetMixin(BaseMixin):
                         self.col_names.append(verbose_name)
                 del name, verbose_name, fields
 
-                if no_name_field and hasattr(self.model, 'name'):
+                if hasattr(self.model, 'name'):
                     try:
-                        # insert column for natural name after id
-                        nameidx = self.fields.index('id') + 1
+                        id_pos = self.fields.index('id')
                     except ValueError:
-                        # or else left-most
-                        nameidx = 0
-                    self.fields.insert(nameidx, 'name')
-                    self.col_names.insert(nameidx, None)
-                    del nameidx
+                        id_pos = 0
+                    else:
+                        # hide internal IDs if we have some "name"
+                        # (but not natural, TODO: review this design decision)
+                        self.fields.pop(id_pos)
+                        self.col_names.pop(id_pos)
+                    if not has_name_field:
+                        # replace id column with name property
+                        self.fields.insert(id_pos, 'name')
+                        self.col_names.insert(id_pos, None)
+                    del id_pos
         else:
             # setup for special dataset
             self.data_name_verbose = self.data_name
@@ -267,6 +272,8 @@ class DatasetMixin(BaseMixin):
                     if i in defaults:
                         # TODO: use value from old self.col_names
                         verbose_name = None
+                    elif i == 'natural':
+                        verbose_name = self.model._meta.model_name
                     else:
                         raise Http404(f'unknown field name: {i}') from e
                 else:

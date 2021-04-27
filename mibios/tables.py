@@ -345,7 +345,6 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
             # make one of id or name columns have an edit link / hide id if
             # name is present
             col_kw['linkify'] = 'name' not in field_names
-            col_kw['visible'] = 'name' not in field_names
 
         # m2m fields
         elif field is not None and field.many_to_many:

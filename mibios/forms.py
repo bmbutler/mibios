@@ -227,18 +227,31 @@ class ShowHideForm(forms.Form):
     @classmethod
     def factory(cls, view):
         """
-        Build form listing fields depending on the current view
+        Build form listing all forward related fields
         """
         choices = []
         for i in view.model.get_related_accessors():
-            if i == 'natural':
-                continue
             if i.endswith('__natural'):
                 # DatasetMixin expects the foreign key relation
                 i = i[:-len('__natural')]
             path = i.split('__')
             try:
                 path[-1] = view.model.get_field(i).verbose_name
+            except LookupError:
+                # natural or name property
+                if i in ['natural', 'name']:
+                    try:
+                        view.model.get_field('name')
+                    except LookupError:
+                        if hasattr(view.model, 'name'):
+                            i = 'name'
+
+                        path = [view.model._meta.model_name]
+                    else:
+                        # name field supercedes natural
+                        continue
+                else:
+                    raise
             except Exception:
                 # e.g. caused by OneToOneRel not having a verbose_name
                 pass
