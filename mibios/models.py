@@ -1374,7 +1374,7 @@ class Model(models.Model):
         try:
             field = cls._meta.get_field(first)
         except FieldDoesNotExist as e:
-            raise LookupError from e
+            raise LookupError(e) from e
 
         if rest:
             if field.related_model is None:
