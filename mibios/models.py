@@ -1310,30 +1310,57 @@ class Model(models.Model):
         (reversed foreign keys) relations.  Cycles get broken at the first
         repetition of model and field name combination.
         """
-        work = [('', cls, [])]
-        ret = []
-        while work:
-            path, model, seen = work.pop()
-            fields_s = model.get_fields(skip_auto=True)
+        data = [('', cls, [])]
+        while True:
+            for pos, item in enumerate(data):
+                if type(item) == tuple:
+                    # get first tuple item
+                    break
+            else:
+                # all done
+                break
+
+            path, model, seen = data.pop(pos)
+            if path:
+                pref = path + '__'
+            else:
+                pref = ''
+
+            fields_s = model.get_fields(skip_auto=False)
+
+            if pref:
+                # Add item for model itself:
+                # this is either pref without __ suffix or natural
+                # TODO: str.removesuffix() available with Python 3.9
+                data.insert(pos, pref[:-2])
+                pos += 1
+
             if 'name' not in fields_s.names:
-                # having both name and natural is redundant
-                ret.append(path + ('__' if path else '') + 'natural')
+                if hasattr(model, 'name'):
+                    # add item for name property
+                    data.insert(pos, pref + 'name')
+                    pos += 1
+                elif not pref:
+                    # for top-level and no name add natural
+                    data.insert(pos, 'natural')
+                    pos += 1
+
             for i in fields_s.fields:
-                new_path = path + ('__' if path else '') + i.name
+                new_path = pref + i.name
                 if i.many_to_one or i.one_to_one:
                     # foreign key rel
                     this = (i.related_model, i.name)
                     if this in seen:
-                        # break cycle
+                        # avoid cycle
                         continue
                     else:
-                        work.append(
-                            (new_path, i.related_model, seen + [this])
-                        )
+                        new_item = (new_path, i.related_model, seen + [this])
                 else:
-                    ret.append(new_path)
+                    new_item = new_path
+                data.insert(pos, new_item)
+                pos += 1
 
-        return ret
+        return data
 
     @classmethod
     def get_field(cls, accessor):
