@@ -121,22 +121,25 @@ class DatasetMixin(BaseMixin):
     The url to which the inheriting view responds must supply a 'data_name'
     kwarg that identifies the dataset or model.
     """
-    # set by setup():
-    model = None
-    data_name = None
-    avg_by = None
-    fields = None
-    col_names = None
-    filter = None
-    excludes = None
-    negate = None
-    dataset_filter = None
-    dataset_excludes = None
-
-    show_hidden = False
-    curation = True
-
     NO_CURATION_PREFIX = 'not-curated-'
+
+    # define in class to allow this being passed in as_view()
+    data_name = None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # variables set by setup():
+        self.model = None
+        self.avg_by = None  # AverageMixin only
+        self.fields = None
+        self.col_names = None
+        self.filter = None
+        self.excludes = None
+        self.negate = None
+        self.dataset_filter = None
+        self.dataset_excludes = None
+        self.show_hidden = False
+        self.curation = True
 
     def setup(self, request, *args, data_name=None, **kwargs):
         """
