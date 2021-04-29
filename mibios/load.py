@@ -239,7 +239,7 @@ class Loader():
 
     def account(self, obj, is_new, from_row=None, is_primary_obj=False):
         """
-        Account for object creation, change
+        Accounting for object creation, change
 
         Enforce object overwrite as needed.
         Update state with object
@@ -352,31 +352,33 @@ class Loader():
                       ''.format(self.linenum, msg, self.row)
                 raise type(e)(msg) from e
 
-            # manage repeated warnings
             err_name = type(e).__name__
+            self.warnings.append(
+                'skipping row: at line {}: {} ({})'
+                ''.format(self.linenum, msg, err_name)
+            )
+
+            # manage repeated warnings
             if self.last_warning is None:
-                self.last_warning = \
-                        (err_name, msg, self.linenum, self.linenum)
+                repeats = 0
             else:
-                last_err, last_msg, first_line, last_line = \
-                        self.last_warning
+                last_err, last_msg, last_line, repeats = self.last_warning
                 if msg == last_msg and last_line + 1 == self.linenum:
-                    # same warning as last line
-                    self.last_warning = \
-                            (last_err, msg, first_line, self.linenum)
-                else:
-                    # emit old warning
+                    # same warning as for previous line
+                    self.warnings.pop(-1)  # rm repeated warning
+                    repeats += 1
+                    if repeats > 1:
+                        # rm repeater line
+                        self.warnings.pop(-1)
                     self.warnings.append(
-                        'skipping row: at line {}: {} ({})'
-                        ''.format(first_line, last_msg, last_err)
+                        '    (and for next {} lines)'.format(repeats)
                     )
-                    if last_line != first_line:
-                        self.warnings.append(
-                            '    (and for next {} lines)'
-                            ''.format(last_line - first_line)
-                        )
-                    self.last_warning = \
-                        (err_name, msg, self.linenum, self.linenum)
+                else:
+                    # warning was new
+                    repeats = 0
+
+            self.last_warning = (err_name, msg, self.linenum, repeats)
+
             # reset stats:
             self.new = new_
             self.added = added_
