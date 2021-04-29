@@ -823,9 +823,13 @@ class ChangeRecord(models.Model):
 
         diff = {}
         for k, v in ours.items():
-            old_v = theirs.get(k, None)
-            if v != old_v:
-                diff[k] = (old_v, v)
+            try:
+                old_v = theirs[k]
+            except KeyError:
+                diff[k] = (v,)
+            else:
+                if v != old_v:
+                    diff[k] = (old_v, v)
         return diff
 
     @classmethod

@@ -41,15 +41,21 @@ def changes_to_html(value):
         return object_to_html(value)
 
     templ = '<li>{}: {} -> {}</li>'
+    NEW_FIELD = mark_safe('&lang;new field&rang;')
     BLANK = mark_safe('&lang;blank&rang;')
     NONE = mark_safe('&lang;none&rang;')
 
     row_args = []
-    for k, (old, new) in value.items():
-        if old == '':
-            old = BLANK
-        elif old is None:
-            old = NONE
+    for k, (*old, new) in value.items():
+        if old:
+            old = old[0]
+            if old == '':
+                old = BLANK
+            elif old is None:
+                old = NONE
+        else:
+            # only single item in value value
+            old = NEW_FIELD
         if new == '':
             new = BLANK
         elif new is None:
