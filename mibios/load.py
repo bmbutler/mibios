@@ -341,8 +341,13 @@ class Loader():
             # some user errors in the data come up as IntegrityErrors, e.g.
             # violations of UNIQUE, IntegrityError should not be caught
             # inside an atomic() (cf. Django docs)
-            if isinstance(e, ValidationError):
+            if hasattr(e, 'message_dict'):
+                # ValidationError from full_clean()
+                # TODO: format msg dict?
                 msg = str(e.message_dict)
+            elif hasattr(e, 'messages'):
+                # other Validation Error (e.g. to_python())
+                msg = ' '.join(e.messages)
             else:
                 msg = str(e)
 
@@ -527,15 +532,17 @@ class Loader():
                     if _v is not None
                 }
 
-                # ensure correct blank values
+                # convert str field values to correct python type:
+                # (a bit) link Field.to_python()
+                # We do this here outside of the usual Model.full_clean() to
+                # get the correct values to compare them with existing objects
+                # in account() below.
                 data1 = {}
+                field = None
                 for _k, _v in data.items():
+                    field = model._meta.get_field(_k)
                     if _v is None:
-                        try:
-                            field = model._meta.get_field(_k)
-                        except FieldDoesNotExist:
-                            # TODO: issue a warning?  Can this even happen?
-                            continue
+                        # ensure correct blank values
                         if field.null:
                             data1[_k] = None
                         elif field.blank:
@@ -544,9 +551,14 @@ class Loader():
                             # rm the field, will get default value for new objs
                             # TODO: issue a warning
                             continue
+                    elif isinstance(_v, str):
+                        # may raise ValidationError
+                        data1[_k] = field.to_python(_v)
                     else:
+                        # non-str values are coerced already
                         data1[_k] = _v
                 data = data1
+                del data1, field
 
                 # if we don't have unique ids, use the "data" instead
                 if not id_arg:
