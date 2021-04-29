@@ -938,6 +938,41 @@ class ChangeRecord(models.Model):
                 .select_related('user', 'record_type', 'file')
                 .with_old_fields())
 
+    def format(self):
+        """
+        Pretty-print object
+
+        Returns a formatted string.
+        """
+        if self.is_created:
+            mode = 'new'
+        elif self.is_deleted:
+            mode = 'deleted'
+        else:
+            mode = 'modified'
+        out = (
+            f'Change {self.pk}: {self.timestamp} ({self.user})\n'
+            f'file: {self.file} line: {self.line}\n'
+            f'comment: {self.comment}\n'
+            f'{mode} record: {self.record} ({self.record_natural}) type: '
+            f'{self.record_type} pk: {self.record_pk}\n'
+            f'fields:\n'
+        )
+        fields = self.fields_as_dict()
+        col_width = max((len(i) for i in fields.keys())) + 1
+
+        if mode == 'modified':
+            diff = self.diff()
+            fields = {
+                k: f'{diff[k][0]} => {v}' if k in diff else v
+                for k, v in fields.items()
+            }
+
+        for k, v in fields.items():
+            out += f'{k.rjust(col_width)}: {v}\n'
+
+        return out
+
 
 def _default_snapshot_name():
     try:
