@@ -1305,10 +1305,10 @@ class Model(models.Model):
             tests.append(lambda x: x.name in cls.hidden_fields)
 
         for k, v in filters.items():
-            if not hasattr(cls, k):
+            if not hasattr(models.Field, k):
                 raise AttributeError('Only field attributes can be put in '
                                      'filters parameter')
-            tests.append(lambda x: bool(getattr(x, k) == bool(v)))
+            tests.append(lambda x: bool(getattr(x, k, None)) != bool(v))
 
         fields = []
         for i in cls._meta.get_fields():
