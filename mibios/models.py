@@ -185,7 +185,13 @@ class QuerySet(models.QuerySet):
                     # prevents 'None' string to enter df str columns
                     # (but not for foreign key columns)
                     col_dat = ('' if j is None else j for j in col_dat)
-                kwargs['dtype'] = dtype
+                if dtype == bool:
+                    # don't pass dtype to Series, this would make Nones be
+                    # identified as False in the Series, but without dtype
+                    # Series will auto-detect the type and store Nones as NaNs
+                    pass
+                else:
+                    kwargs['dtype'] = dtype
 
             df[i] = pandas.Series(col_dat, **kwargs)
 
