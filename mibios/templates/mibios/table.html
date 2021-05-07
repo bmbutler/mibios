@@ -73,7 +73,7 @@
 		{% if view.negate %}
 		    {{ value|default:table.default }}({{ count }})
 		{% else %}
-		    <a href="{{ query }}">{{ value|default:table.default }}</a>({{ count }})
+                    <a href="{{ query }}">{{ value|default_if_none:table.default }}</a>({{ count }})
 		{% endif %}
 	    {% endfor %}
 	    <br>
