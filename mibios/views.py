@@ -100,18 +100,26 @@ class BaseMixin(BasicBaseMixin):
         ctx = super().get_context_data(**ctx)
         ctx['model_names'] = OrderedDict()
         ctx['data_names'] = OrderedDict()
-        for app_name, app_conf in get_registry().apps.items():
+
+        for app_name, app_conf in reversed(get_registry().apps.items()):
+            if app_conf.name == 'mibios':
+                verbose_name = 'auxiliary'
+            else:
+                verbose_name = app_conf.verbose_name
+
             model_names = sorted((
                 (i._meta.model_name, i._meta.verbose_name_plural)
                 for i in get_registry().get_models(app=app_conf.name)
             ))
             if model_names:
-                ctx['model_names'][app_conf.verbose_name] = model_names
+                ctx['model_names'][verbose_name] = model_names
+
             data_names = sorted(
                 get_registry().get_dataset_names(app=app_conf.name)
             )
             if data_names:
                 ctx['data_names'][app_conf.verbose_name] = data_names
+
         ctx['snapshots_exist'] = Snapshot.objects.exists()
         return ctx
 
