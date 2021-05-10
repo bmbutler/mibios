@@ -1,6 +1,7 @@
 from importlib import import_module
 
 from django import apps
+from django.conf import settings
 from django.contrib.admin.apps import AdminConfig as UpstreamAdminConfig
 from django.utils.module_loading import import_string
 
@@ -20,8 +21,19 @@ class MibiosConfig(apps.AppConfig):
 
         # set up registry
         registry = Registry()
-        registry.name = self.name
-        registry.verbose_name = self.verbose_name
+
+        try:
+            registry.name = settings.SITE_NAME
+        except AttributeError:
+            registry.name = self.name
+        try:
+            registry.verbose_name = settings.SITE_NAME_VERBOSE
+        except AttributeError:
+            try:
+                registry.verbose_name = settings.SITE_NAME
+            except AttributeError:
+                registry.verbose_name = self.verbose_name
+
         import_module('mibios')._registry = registry
 
         # register models here, since django has found them already

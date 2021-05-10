@@ -98,10 +98,11 @@ class BaseMixin(BasicBaseMixin):
     """
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
+        reg = get_registry()
         ctx['model_names'] = OrderedDict()
         ctx['data_names'] = OrderedDict()
 
-        for app_name, app_conf in reversed(get_registry().apps.items()):
+        for app_name, app_conf in reversed(reg.apps.items()):
             if app_conf.name == 'mibios':
                 verbose_name = 'auxiliary'
             else:
@@ -109,7 +110,7 @@ class BaseMixin(BasicBaseMixin):
 
             model_names = sorted((
                 (i._meta.model_name, i._meta.verbose_name_plural)
-                for i in get_registry().get_models(app=app_conf.name)
+                for i in reg.get_models(app=app_conf.name)
             ))
             if model_names:
                 ctx['model_names'][verbose_name] = model_names
@@ -121,6 +122,7 @@ class BaseMixin(BasicBaseMixin):
                 ctx['data_names'][app_conf.verbose_name] = data_names
 
         ctx['snapshots_exist'] = Snapshot.objects.exists()
+        ctx['site_name'] = reg.verbose_name
         return ctx
 
 
