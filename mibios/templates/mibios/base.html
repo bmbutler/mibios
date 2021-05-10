@@ -1,46 +1,75 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <title>{% block title %}{{ page_title | join:" | " | default:'mibios' }}{% endblock %}</title>
-    {% block link %}{% endblock %}
-</head>
-<body>
 
+<head>
+<meta charset="UTF-8" />
+<title>{% block title %}{{ page_title | join:" | " | default:'mibios' }}{% endblock %}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+{% block link %}
+<link rel="stylesheet" href="{% static 'mibios/css/bootstrap.min.css' %}" />
+<link rel="stylesheet" href="{% static 'mibios/css/mkdocs-base.css' %}" />
+<script src="{% static 'mibios/js/jquery.min.js' %}" defer></script>
+<script src="{% static 'mibios/js/bootstrap.min.js' %}" defer></script>
+{% endblock %}
+</head>
+
+<body>
 <!-- version info:
 {% for k, v in version_info.items %}{{ k }}: {{ v|default:'(not available)' }}
 {% endfor %}-->
 
-{% if model_names %}
-    {% for app, names in model_names %}
-        {% if not forloop.first %}<br>{% endif %}
-        {{ app }} tables:
-        {% for name, plural in names %}
-            [<a href="{% url 'table' name %}">{{ plural }}</a>]
-        {% endfor %}
-    {% endfor %}
-{% endif %}
-{% if data_names and view.user_is_curator %}
-    {% for app, names in data_names %}
-            <br>
-            {{ app }} specials:
-            {% for i in names %}
-                [<a href="{% url 'table' i %}">{{ i }}</a>]
-            {% endfor %}
-    {% endfor %}
-{% endif %}
-{% if snapshots_exist %}
-<br>
-<a href="{% url 'snapshot_list' %}">Archived database versions</a>
-{% endif %}
-<br/>
-Nav:
-[<a href="{{ view.request.META.SCRIPT_NAME }}/">home</a>]
-[<a href="{{ view.request.META.SCRIPT_NAME }}/query/">query interface</a>]
-{% block nav %}{% endblock %}
-{% if view.user_is_curator %}[<a href="{% url 'admin:index' %}">admin interface</a>]{% endif %}
-<br/>
-{% if view.user_is_curator %}{% block curation_switch %}{% endblock %}{% endif %}
-<hr>
+{% block nav %}
+<div class="navbar fixed-top navbar-expand-lg navbar-dark bg-primary">
+    <div class="container">
+        {% block site_name %}
+        <a class="navbar-brand" href="{{ view.request.META.SCRIPT_NAME }}">{{ site_name|default:"mibios" }}</a>
+        {% endblock %}
+
+        <ul class="nav navbar-nav">
+            <li class="nav-item"><a class="nav-link" href="{{ view.request.META.SCRIPT_NAME }}/">home</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ view.request.META.SCRIPT_NAME }}/query/">query interface</a></li>
+        </u>
+        <ul class="nav navbar-nav">
+            {% if model_names %}
+                {% for app, model_list in model_names.items %}
+                <li class="dropdown">
+                    <a href="#" class="nav-link dropdown-toggle" data-toggle="dropdown">{{ app }} tables <b class="caret"></b></a>
+                    <ul class="dropdown-menu">
+                        {% for name, plural in model_list %}
+                        <li><a href="{% url 'table' name %}" class="dropdown-item">{{ plural }}</a></li>
+                        {% endfor %}
+                    </ul>
+                </li>
+                {% endfor %}
+            {% endif %}
+            {% if data_names and view.user_is_curator %}
+                {% for app, special_list in data_names.items %}
+                    <li class="dropdown">
+                        <a href="#" class="nav-link dropdown-toggle" data-toggle="dropdown">{{ app }} special <b class="caret"></b></a>
+                        <ul class="dropdown-menu">
+                        {% for i in special_list %}
+                            <li><a href="{% url 'table' i %}" class="dropdown-item">{{ i }}</a></li>
+                        {% endfor %}
+                        </ul>
+                    </li>
+                {% endfor %}
+            {% endif %}
+        </ul>
+
+        <ul class="nav navbar-nav ml-auto">
+            {% if snapshots_exist %}
+                <li class="nav-item"><a class="nav-link" href="{% url 'snapshot_list' %}">Archived database versions</a></li>
+            {% endif %}
+
+            {% if view.user_is_curator %}
+                <li class="nav-item"><a class="nav-link" href="{% url 'admin:index' %}">admin interface</a></li>
+                <li class="nav-item">{% block curation_switch %}{% endblock %}</li>
+            {% endif %}
+        </ul>
+    </div>
+</div>
+{% endblock %}
 
 {% block notifications %}{% if messages %}
 <ul class="messages">
@@ -53,4 +82,3 @@ Nav:
 {% block content %}{% endblock %}
 </body>
 </html>
-

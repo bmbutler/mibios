@@ -1,10 +1,4 @@
 {% extends "mibios/base.html" %}
-{% load render_table from django_tables2 %}
-{% load static %}
-
-{% block link %}
-<link rel="stylesheet" href="{% static 'mibios/css/bootstrap.min.css' %}" />
-{% endblock %}
 
 {% block content %}
 <h2>Choose export format for {{ export_data_name|default:view.data_name }} table {% if not view.curation %}[CURATION: OFF]{% endif %}</h2>

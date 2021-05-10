@@ -1,10 +1,4 @@
 {% extends "mibios/base.html" %}
-{% load render_table from django_tables2 %}
-{% load static %}
-
-{% block link %}
-<link rel="stylesheet" href="{% static 'mibios/css/bootstrap.min.css' %}" />
-{% endblock %}
 
 {% block content %}
 <h2>Upload a file with {{ view.data_name }} data</h2>

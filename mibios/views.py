@@ -1,3 +1,4 @@
+from collections import OrderedDict
 import csv
 from itertools import tee, zip_longest
 from io import StringIO
@@ -97,19 +98,20 @@ class BaseMixin(BasicBaseMixin):
     """
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['model_names'] = []
-        for conf in get_registry().apps.values():
-            names = sorted((
+        ctx['model_names'] = OrderedDict()
+        ctx['data_names'] = OrderedDict()
+        for app_name, app_conf in get_registry().apps.items():
+            model_names = sorted((
                 (i._meta.model_name, i._meta.verbose_name_plural)
-                for i in get_registry().get_models(app=conf.name)
+                for i in get_registry().get_models(app=app_conf.name)
             ))
-            if names:
-                ctx['model_names'].append((conf.verbose_name, names))
-        ctx['data_names'] = []
-        for conf in get_registry().apps.values():
-            names = sorted(get_registry().get_dataset_names(app=conf.name))
-            if names:
-                ctx['data_names'].append((conf.verbose_name, names))
+            if model_names:
+                ctx['model_names'][app_conf.verbose_name] = model_names
+            data_names = sorted(
+                get_registry().get_dataset_names(app=app_conf.name)
+            )
+            if data_names:
+                ctx['data_names'][app_conf.verbose_name] = data_names
         ctx['snapshots_exist'] = Snapshot.objects.exists()
         return ctx
 
