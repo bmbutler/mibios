@@ -3,7 +3,16 @@
 
 {% block curation_switch %}
 {% if curation_switch_data %}
-<a href="{% url 'table' data_name=curation_switch_data.data_name %}{{ querystr }}">turn {{ curation_switch_data.switch }} curation</a>
+<li class="nav-item"><span class="navbar-text">Curation:</span></li>
+<li class="nav-item"><div class="btn-group">
+    {% if curation_switch_data.switch == 'off' %}
+        <button type="button" class="btn btn-dark active disabled">on</button>
+    {% endif %}
+    <a class="btn btn-dark" role="button" href="{% url 'table' data_name=curation_switch_data.data_name %}{{ querystr }}">{{ curation_switch_data.switch }}</a>
+    {% if curation_switch_data.switch == 'on' %}
+        <button type="button" class="btn btn-dark active disabled">off</button>
+    {% endif %}
+</div></li>
 {% endif %}
 {% endblock %}
 

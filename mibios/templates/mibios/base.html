@@ -64,7 +64,7 @@
 
             {% if view.user_is_curator %}
                 <li class="nav-item"><a class="nav-link" href="{% url 'admin:index' %}">admin interface</a></li>
-                <li class="nav-item">{% block curation_switch %}{% endblock %}</li>
+                {% block curation_switch %}{% endblock %}
             {% endif %}
         </ul>
     </div>
