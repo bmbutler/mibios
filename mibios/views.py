@@ -102,7 +102,7 @@ class BaseMixin(BasicBaseMixin):
         ctx['model_names'] = OrderedDict()
         ctx['data_names'] = OrderedDict()
 
-        for app_name, app_conf in reversed(reg.apps.items()):
+        for app_name, app_conf in reversed(list(reg.apps.items())):
             if app_conf.name == 'mibios':
                 verbose_name = 'auxiliary'
             else:
