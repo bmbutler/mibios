@@ -21,7 +21,7 @@
 
 {% block nav %}
 <div class="navbar fixed-top navbar-expand-lg navbar-dark bg-primary">
-    <div class="container">
+    <div class="container-fluid">
         {% block site_name %}
         <a class="navbar-brand" href="{{ view.request.META.SCRIPT_NAME }}/">{{ site_name|default:"mibios" }}</a>
         {% endblock %}
