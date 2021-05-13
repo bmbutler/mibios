@@ -284,7 +284,7 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
 
     meta_opts = dict(
         model=model,
-        template_name='django_tables2/bootstrap.html',
+        template_name='django_tables2/bootstrap4.html',
         order_by_field=ORDER_BY_FIELD,
         fields=[],
     )
