@@ -256,18 +256,19 @@ class DatasetMixin(BaseMixin):
 
     def get(self, request, *args, **kwargs):
         log.debug(f'GET = {request.GET}')
-        self.update_state(*self.compile_state_params())
+        self.update_state()
         return super().get(request, *args, **kwargs)
 
-    def update_state(self, filter, excludes, negate, show):
+    def update_state(self):
         """
         Update state from info compiled from GET query string
 
-        Is called once from get()
-
-        :param list fields: Names of fields to show.  If this is None the
-                            fields of the models are shown by default
+        Is called once from get().  Returns None.  When overriding in child
+        class, first call super().update_state() and then apply any
+        child-specific state settings.
         """
+        filter, excludes, negate, show = self.compile_state_params()
+
         self.filter.update(**filter)
         self.excludes += excludes
         self.negate = negate
