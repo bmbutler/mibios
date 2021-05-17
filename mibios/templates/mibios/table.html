@@ -1,19 +1,20 @@
 {% extends "mibios/base.html" %}
 {% load render_table from django_tables2 %}
 
-{% block curation_switch %}
-{% if curation_switch_data %}
-<li class="nav-item"><span class="navbar-text">Curation:</span></li>
-<li class="nav-item"><div class="btn-group">
-    {% if curation_switch_data.switch == 'off' %}
-        <button type="button" class="btn btn-dark active disabled">on</button>
-    {% endif %}
-    <a class="btn btn-dark" role="button" href="{% url 'table' data_name=curation_switch_data.data_name %}{{ querystr }}">{{ curation_switch_data.switch }}</a>
-    {% if curation_switch_data.switch == 'on' %}
-        <button type="button" class="btn btn-dark active disabled">off</button>
-    {% endif %}
-</div></li>
+{% block navextra %}
+{% if view.user_is_curator and curation_switch_data %}
+    <li class="nav-item"><span class="navbar-text">Curation:</span></li>
+    <li class="nav-item"><div class="btn-group">
+        {% if curation_switch_data.switch == 'off' %}
+            <button type="button" class="btn btn-dark active disabled">on</button>
+        {% endif %}
+        <a class="btn btn-dark" role="button" href="{% url 'table' data_name=curation_switch_data.data_name %}{{ querystr }}">{{ curation_switch_data.switch }}</a>
+        {% if curation_switch_data.switch == 'on' %}
+            <button type="button" class="btn btn-dark active disabled">off</button>
+        {% endif %}
+    </div></li>
 {% endif %}
+
 {% endblock %}
 
 {% block content %}
@@ -47,7 +48,7 @@
     {% if applied_filter %}
 	with:
 	{% for lookup, value, query_without in applied_filter %}
-            {# we need a '?' here if removing the current filter results in an otherwise empty querystring, else the browser will see href="" and put in the current URL with current querystring, with '?' the browser links to the current URL with empty querystring (ezcpet for the '?') #}
+            {# we need a '?' here if removing the current filter results in an otherwise empty querystring, else the browser will see href="" and put in the current URL with current querystring, with '?' the browser links to the current URL with empty querystring (excpet for the '?') #}
             <a href="{{ query_without|default:'?' }}">{{ lookup }}={{ value }}</a>
 	{% endfor %}
     {% endif %}

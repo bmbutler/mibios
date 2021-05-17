@@ -19,7 +19,6 @@
 {% for k, v in version_info.items %}{{ k }}: {{ v|default:'(not available)' }}
 {% endfor %}-->
 
-{% block nav %}
 <div class="navbar fixed-top navbar-expand-lg navbar-dark bg-primary">
     <div class="container-fluid">
         {% block site_name %}
@@ -66,10 +65,10 @@
                 <li class="nav-item"><a class="nav-link" href="{% url 'admin:index' %}">admin interface</a></li>
                 {% block curation_switch %}{% endblock %}
             {% endif %}
+{% block navextra %}{% endblock %}
         </ul>
     </div>
 </div>
-{% endblock %}
 
 {% block notifications %}{% if messages %}
 <ul class="messages">
