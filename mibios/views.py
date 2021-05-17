@@ -531,11 +531,14 @@ class TableViewPlugin():
 # @method_decorator(cache_page(None), name='dispatch')
 class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
     template_name = 'mibios/table.html'
-    compute_counts = True
 
     # Tunables adjusting display varying on number of unique values:
     MEDIUM_UNIQUE_LIMIT = 10
     HIGH_UNIQUE_LIMIT = 30
+
+    def __init__(self, *args, **kwargs):
+        self.compute_counts = False
+        super().__init__(*args, **kwargs)
 
     def get_queryset(self):
         if hasattr(self, 'object_list'):
@@ -579,17 +582,15 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
                 self.queryset = self.model.objects.all()
 
         qs = super().get_queryset().select_related(*related_fields).filter(q)
-        # Do not annotate with rev rel counts on the average table.  Doing so
-        # will mess up the group count in some circumstances (group members
-        # each counted multiply times (for each rev rel count))
         if getattr(self, 'avg_by', None):
             qs = qs.average(*self.avg_by)
-        elif self.compute_counts:
+
+        if self.compute_counts:
             qs = qs.annotate_rev_rel_counts()
         return qs
 
     def get_table_class(self):
-        t = table_factory(view=self, count_columns=True)
+        t = table_factory(view=self)
         return t
 
     def get_sort_by_field(self):
@@ -863,8 +864,6 @@ class ExportMixin(ExportBaseMixin):
     data to be exported as an iterable over rows (which are lists of values).
     The first row should contain the column headers.
     """
-    compute_counts = False
-
     def get_filename(self):
         """
         Get the user-visible name (stem) for the file downloaded.
@@ -1350,12 +1349,6 @@ class AverageMixin():
         self.fields += [i.name for i in self.model.get_average_fields()]
         self.col_names = [None] * len(self.fields)
 
-    def get_table_class(self):
-        """
-        Generate django_tables2 table class
-        """
-        t = table_factory(view=self, count_columns=False)
-        return t
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)

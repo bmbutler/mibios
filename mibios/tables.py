@@ -247,16 +247,14 @@ class DecimalColumn(tables.Column):
         return value
 
 
-def table_factory(model=None, field_names=[], view=None, count_columns=True,
+def table_factory(model=None, field_names=[], view=None,
                   extra={}, group_by_count=None):
     """
     Generate table class from list of field/annotation/column names etc.
 
     :param mibios.Model (class) model: The model class.
     :param list field_names: Names of a queryset's fields/annotations/lookups
-    :param TableView view: The TableView object, will be passed to e.g.
-                           CountColumn which needs various view attributes to
-                           generate href urls.
+    :param TableView view: The TableView for which to make the table.
     :param str group_by_count: Name of the group-by-count column in average
                                 tables.  This column will get a special link to
                                 the table of group members, similar to the
@@ -372,8 +370,8 @@ def table_factory(model=None, field_names=[], view=None, count_columns=True,
 
         opts[col] = col_class(**col_kw)
 
-    if count_columns:
-        # reverse relations -> count columns
+    if view.compute_counts:
+        # add reverse relations -> count columns
         for i in model.get_related_objects():
             # col_name here must be same as what the annotation is made with
             col_name = i.related_model._meta.model_name + '__count'
