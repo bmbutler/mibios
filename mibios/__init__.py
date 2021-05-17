@@ -9,6 +9,7 @@ QUERY_NEGATE = 'inverse'
 QUERY_SHOW = 'show'
 QUERY_FORMAT = 'format'
 QUERY_AVG_BY = 'avg-by'
+QUERY_COUNT = 'count'
 
 
 _registry = None

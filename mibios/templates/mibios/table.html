@@ -14,6 +14,16 @@
         {% endif %}
     </div></li>
 {% endif %}
+<li class="nav-item"><span class="navbar-text">Counts:</span></li>
+<li class="nav-item"><div class="btn-group">
+    {% if view.compute_counts %}
+        <button type="button" class="btn btn-dark active disabled">on</button>
+    {% endif %}
+    <a class="btn btn-dark" role="button" href="{% url 'table' data_name=url_data_name %}{{ query_with_count }}">{% if view.compute_counts %}off{% else %}on{% endif %}</a>
+    {% if not view.compute_counts %}
+        <button type="button" class="btn btn-dark active disabled">off</button>
+    {% endif %}
+</div></li>
 
 {% endblock %}
 

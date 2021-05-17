@@ -25,7 +25,7 @@ from django_tables2 import (SingleTableMixin, SingleTableView, Column,
                             MultiTableMixin)
 
 from . import (__version__, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE,
-               QUERY_SHOW, QUERY_FORMAT, QUERY_AVG_BY,
+               QUERY_SHOW, QUERY_FORMAT, QUERY_AVG_BY, QUERY_COUNT,
                get_registry)
 from .forms import (ExportForm, get_field_search_form, UploadFileForm,
                     ShowHideForm)
@@ -347,6 +347,7 @@ class DatasetMixin(BaseMixin):
             without_filter={},
             without_excludes=[],
             fields=[],
+            count=None,
             keep=False,
     ):
         """
@@ -391,14 +392,23 @@ class DatasetMixin(BaseMixin):
         qdict = self.build_query_dict(f, elist, query_negate, fields)
 
         # (2) set other state
-        # (Nothing here yet)
+        # TODO: belongs to TableView
+        if count is not None:
+            if count:
+                qdict[QUERY_COUNT] = ''
+            else:
+                try:
+                    del qdict[QUERY_COUNT]
+                except Exception:
+                    pass
 
         # (3) keep others
         if keep:
             for k, vs in self.request.GET.lists():
                 if any((
                     k.startswith(i) for i in
-                    [QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE, QUERY_SHOW]
+                    [QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE, QUERY_SHOW,
+                     QUERY_COUNT]
                 )):
                     continue
                 if k not in qdict:
@@ -539,6 +549,11 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
     def __init__(self, *args, **kwargs):
         self.compute_counts = False
         super().__init__(*args, **kwargs)
+
+    def update_state(self):
+        super().update_state()
+        if self.request.GET.get('count', None) == '':
+            self.compute_counts = True
 
     def get_queryset(self):
         if hasattr(self, 'object_list'):
@@ -701,6 +716,10 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
             else:
                 ctx['curation_switch_data']['data_name'] = self.data_name
                 ctx['curation_switch_data']['switch'] = 'on'
+
+        # for count switch
+        ctx['query_with_count'] = \
+            self.to_query_string(count=not self.compute_counts, keep=True)
 
         # Plugin: process the plugin last so that their get_context_data() gets
         # a full view of the existing context:
@@ -1349,6 +1368,12 @@ class AverageMixin():
         self.fields += [i.name for i in self.model.get_average_fields()]
         self.col_names = [None] * len(self.fields)
 
+    def update_state(self):
+        super().update_state()
+        # Do not annotate with rev rel counts on the average table.  Doing so
+        # will mess up the group count in some circumstances (group members
+        # each counted multiply times (for each rev rel count))
+        self.compute_counts = False
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
