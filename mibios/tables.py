@@ -26,7 +26,7 @@ class CountColumn(tables.Column):
     link to exactly those related records.  Those related records can be from a
     reverse foreign key relation or the elements of a grouped-by record.
     """
-    def __init__(self, rel_object=None, view=None, group_by=[],
+    def __init__(self, rel_object=None, table_conf=None, group_by=[],
                  exclude_from_export=True, **kwargs):
         """
         Count column constructor
@@ -37,8 +37,9 @@ class CountColumn(tables.Column):
                               e.g. when taking averaged
         """
         if rel_object is None:
-            data_name = view.data_name
-            our_name = view.data_name
+            # non-relational columns, e.g. group counts for average groups
+            data_name = table_conf.name
+            our_name = table_conf.name
         else:
             # name of the relation's model
             data_name = rel_object.related_model._meta.model_name
@@ -46,14 +47,9 @@ class CountColumn(tables.Column):
             # to the current table
             our_name = rel_object.remote_field.name
 
-        if view.curation:
-            url_data_name = data_name
-        else:
-            url_data_name = view.NO_CURATION_PREFIX + data_name
+        if 'linkify' not in kwargs and table_conf:
+            rel_conf = table_conf.set_name(data_name)
 
-        url = reverse('table', kwargs=dict(data_name=url_data_name))
-
-        if 'linkify' not in kwargs and view:
             def linkify(record):
                 f = {}
                 for i in group_by:
@@ -67,15 +63,12 @@ class CountColumn(tables.Column):
                 if hasattr(record, 'natural'):
                     f[our_name] = record.natural
 
-                query = view.build_query_dict(filter=f).urlencode()
-                if query:
-                    query = '?' + query
-                return url + query
+                return rel_conf.put(filter=f).url()
 
             kwargs.update(linkify=linkify)
 
-        if view is not None:
-            self.set_footer_url(rel_object, view, url, our_name)
+        if table_conf is not None:
+            self.set_footer_url(rel_object, rel_conf, table_conf, our_name)
 
         # django_tables2 internals somehow mess up the verbose name, but
         # verb name can be set after __init__, setting explicitly before
@@ -93,28 +86,29 @@ class CountColumn(tables.Column):
         else:
             self.verbose_name = verbose_name
 
-    def set_footer_url(self, rel_object, view, url, our_name):
+    def set_footer_url(self, rel_object, rel_conf, table_conf, our_name):
         """
         prepare and set URL for footer
         """
         if rel_object is None:
-            f = view.filter.copy()
-            elist = view.excludes.copy()
+            f = table_conf.filter.copy()
+            elist = table_conf.excludes.copy()
         else:
             via_parent = (
-                issubclass(view.model, rel_object.model)
-                and not view.model == rel_object.model
+                issubclass(table_conf.model, rel_object.model)
+                and not table_conf.model == rel_object.model
             )
             if via_parent:
                 # have to add the parent between us and the relation
                 # child name: how we're known to the parent
-                child = rel_object.model.get_child_info()[view.model].name
+                child = \
+                    rel_object.model.get_child_info()[table_conf.model].name
                 our_name = our_name + '__' + child
 
-            f = {our_name + '__' + k: v for k, v in view.filter.items()}
+            f = {our_name + '__' + k: v for k, v in table_conf.filter.items()}
 
             elist = []
-            for i in view.excludes:
+            for i in table_conf.excludes:
                 e = {our_name + '__' + k: v for k, v in i.items()}
                 if e:
                     elist.append(e)
@@ -127,8 +121,7 @@ class CountColumn(tables.Column):
             else:
                 elist.append({our_name: NONE_LOOKUP})
 
-        q = view.build_query_dict(filter=f, excludes=elist, negate=view.negate)
-        self.footer_url = url + ('?' + q.urlencode()) if q else ''
+        self.footer_url = rel_conf.put(filter=f, excludes=elist).url()
 
     def render_footer(self, bound_column, table):
         """
@@ -247,14 +240,14 @@ class DecimalColumn(tables.Column):
         return value
 
 
-def table_factory(model=None, field_names=[], view=None,
+def table_factory(model=None, field_names=[], conf=None,
                   extra={}, group_by_count=None):
     """
     Generate table class from list of field/annotation/column names etc.
 
     :param mibios.Model (class) model: The model class.
     :param list field_names: Names of a queryset's fields/annotations/lookups
-    :param TableView view: The TableView for which to make the table.
+    :param TableConfig conf: The TableConfig for which to make the table.
     :param str group_by_count: Name of the group-by-count column in average
                                 tables.  This column will get a special link to
                                 the table of group members, similar to the
@@ -266,19 +259,21 @@ def table_factory(model=None, field_names=[], view=None,
     TableView.fields.
     """
     if model is None:
-        model = view.model
+        if conf is None:
+            raise ValueError('model and conf must not both be None')
+        model = conf.model
 
     if not field_names:
-        if view is None:
+        if conf is None:
             field_names = model.get_fields().names
         else:
-            field_names = view.fields
+            field_names = conf.fields
 
     # verbose names for column headers
-    if view is None:
+    if conf is None:
         verbose_field_names = [None] * len(field_names)
     else:
-        verbose_field_names = view.col_names
+        verbose_field_names = conf.fields_verbose
 
     meta_opts = dict(
         model=model,
@@ -314,7 +309,7 @@ def table_factory(model=None, field_names=[], view=None,
         else:
             verbose_name = verbose_name.capitalize()
 
-        if view.avg_by:
+        if conf.avg_by:
             # accessors are dict keys, so keep as-is
             col = accessor
         else:
@@ -356,8 +351,8 @@ def table_factory(model=None, field_names=[], view=None,
         # averages
         elif accessor == 'avg_group_count':
             col_class = AvgGroupCountColumn
-            col_kw['view'] = view
-            col_kw['group_by'] = view.avg_by
+            col_kw['table_conf'] = conf
+            col_kw['group_by'] = conf.avg_by
             del col_kw['verbose_name']  # is supplied by constructor
 
         elif isinstance(field, DecimalField):
@@ -370,12 +365,12 @@ def table_factory(model=None, field_names=[], view=None,
 
         opts[col] = col_class(**col_kw)
 
-    if view.compute_counts:
+    if conf.with_counts:
         # add reverse relations -> count columns
         for i in model.get_related_objects():
             # col_name here must be same as what the annotation is made with
             col_name = i.related_model._meta.model_name + '__count'
-            opts[col_name] = CountColumn(i, view=view)
+            opts[col_name] = CountColumn(i, table_conf=conf)
             meta_opts['fields'].append(col_name)
 
     for k, v in extra.items():

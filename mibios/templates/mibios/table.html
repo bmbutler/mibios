@@ -2,45 +2,47 @@
 {% load render_table from django_tables2 %}
 
 {% block navextra %}
-{% if view.user_is_curator and curation_switch_data %}
+{% if view.user_is_curator and curation_switch_conf %}
     <li class="nav-item"><span class="navbar-text">Curation:</span></li>
     <li class="nav-item"><div class="btn-group">
-        {% if curation_switch_data.switch == 'off' %}
+        {% if not curation_switch_conf.is_curated %}
             <button type="button" class="btn btn-dark active disabled">on</button>
         {% endif %}
-        <a class="btn btn-dark" role="button" href="{% url 'table' data_name=curation_switch_data.data_name %}{{ querystr }}">{{ curation_switch_data.switch }}</a>
-        {% if curation_switch_data.switch == 'on' %}
+        <a class="btn btn-dark" role="button" href="{{ curation_switch_conf.url }}">{% if curation_switch_conf.is_curated %}on{% else %}off{% endif %}</a>
+        {% if curation_switch_conf.is_curated %}
             <button type="button" class="btn btn-dark active disabled">off</button>
         {% endif %}
     </div></li>
 {% endif %}
+{% if count_switch_conf %}
 <li class="nav-item"><span class="navbar-text">Counts:</span></li>
 <li class="nav-item"><div class="btn-group">
-    {% if view.compute_counts %}
+    {% if not count_switch_conf.with_counts %}
         <button type="button" class="btn btn-dark active disabled">on</button>
     {% endif %}
-    <a class="btn btn-dark" role="button" href="{% url 'table' data_name=url_data_name %}{{ query_with_count }}">{% if view.compute_counts %}off{% else %}on{% endif %}</a>
-    {% if not view.compute_counts %}
+    <a class="btn btn-dark" role="button" href="?{{ count_switch_conf.url_query }}">{% if count_switch_conf.with_counts %}on{% else %}off{% endif %}</a>
+    {% if count_switch_conf.with_counts %}
         <button type="button" class="btn btn-dark active disabled">off</button>
     {% endif %}
 </div></li>
+{% endif %}
 
 {% endblock %}
 
 {% block content %}
 {% if model %}
 <h2>
-    {{ data_name_verbose }} data
-    {% if view.avg_by %}
+    {{ view.conf.verbose_name|default:view.conf.name|capfirst }} data
+    {% if view.conf.avg_by %}
     (averaged over {{ avg_by_short|join:" / " }}, {{ table.rows|length }} record groups)
     {% else %}
     ({{ table.rows|length }} records)
     {% endif %}
-    {% if not view.curation %}[CURATION: OFF]{% endif %}
+    {% if not view.conf.is_curated %}[CURATION: OFF]{% endif %}
 </h2>
 
 {% if avg_by_data %}
-    {% if view.avg_by %}
+    {% if view.conf.avg_by %}
         {# at average view, display link back to normal table view #}
         [<a href="{% url 'table' data_name=url_data_name %}{{ querystr }}">normal table</a>]<br>
     {% else %}
@@ -53,24 +55,23 @@
 {% endif %}
 
 {% if applied_filter or applied_excludes_list %}
-    {% if view.negate %}(inversely){%endif%}
+    {% if view.conf.negate %}(inversely){%endif%}
     applied filters (click to remove):
     {% if applied_filter %}
 	with:
-	{% for lookup, value, query_without in applied_filter %}
-            {# we need a '?' here if removing the current filter results in an otherwise empty querystring, else the browser will see href="" and put in the current URL with current querystring, with '?' the browser links to the current URL with empty querystring (excpet for the '?') #}
-            <a href="{{ query_without|default:'?' }}">{{ lookup }}={{ value }}</a>
+	{% for lookup, value, link_conf in applied_filter %}
+            <a href="?{{ link_conf.url_query }}">{{ lookup }}={{ value }}</a>
 	{% endfor %}
     {% endif %}
-    {% for applied_exclude, query_without in applied_excludes_list %}
+    {% for applied_exclude, link_conf in applied_excludes_list %}
 	without:
-	<a href="{{ query_without }}">
+	<a href="?{{ link_conf.url_query }}">
 	{% for lookup, value in applied_exclude.items %}
 	    {{ lookup }}={{ value }}
 	{% endfor %}
 	</a>
     {% endfor %}
-    <a href="{{ invquery }}">inverse filter</a>
+    <a href="?{{ view.conf.inverse.url_query }}">inverse filter</a>
     <br>
 {% endif %}
 
@@ -78,17 +79,17 @@
     {# going through this loop only once usually #}
     {% if stats_type == 'choice_counts' %}
 	{% if filter_link_data %}
-	    {% if view.negate %}
+	    {% if view.conf.negate %}
 		Sorted column
 	    {% else %}
 		Filter by
 	    {% endif %}
 	    {{ sort_by_field }}(count):
-	    {% for value, count, query in filter_link_data %}
-		{% if view.negate %}
+	    {% for value, count, link_conf in filter_link_data %}
+		{% if view.conf.negate %}
 		    {{ value|default:table.default }}({{ count }})
 		{% else %}
-                    <a href="{{ query }}">{{ value|default_if_none:table.default }}</a>({{ count }})
+                    <a href="?{{ link_conf.url_query }}">{{ value|default_if_none:table.default }}</a>({{ count }})
 		{% endif %}
 	    {% endfor %}
 	    <br>
@@ -118,7 +119,7 @@
     <br>
 {% endif %}
 
-{% if view.avg_by %}
+{% if view.conf.avg_by %}
     [<a href="{% url 'average_export_form' data_name=url_data_name avg_by=avg_url_slug %}{{ querystr }}">export</a>]
 {% else %}
     [<a href="{% url 'show_hide_form' data_name=url_data_name %}{{ querystr }}">show/hide columns</a>]

@@ -2,7 +2,7 @@ from collections import OrderedDict
 
 from django import forms
 
-from . import QUERY_FILTER, QUERY_SHOW, QUERY_FORMAT
+from . import QUERY_FILTER, QUERY_FORMAT
 from .utils import getLogger
 
 
@@ -104,7 +104,7 @@ class ExportFormatForm(forms.Form):
         form's input elements.
         """
         base = base or (cls, )
-        query_dict = view.to_query_dict(fields=view.fields, keep=True)
+        query_dict = view.conf.as_query_dict()
         opts['format_choices'] = [
             (i[0], i[2].description)
             for i in view.FORMATS
@@ -179,12 +179,14 @@ class ExportForm(ExportFormatForm):
         Return a form class from the given ExportFormView
 
         """
-        query_dict = view.to_query_dict(fields=view.fields, keep=True)
-        fields = query_dict.getlist(QUERY_SHOW)
+        fields = view.conf.fields
 
-        initial_fields = list(fields)
+        if view.conf.show:
+            initial_fields = view.conf.show
+        else:
+            initial_fields = view.conf.fields
         # prefer name over id
-        if 'name' in view.fields and 'name' not in initial_fields:
+        if 'name' in view.conf.fields and 'name' not in initial_fields:
             initial_fields.append('name')
         if 'name' in initial_fields:
             try:
@@ -192,12 +194,14 @@ class ExportForm(ExportFormatForm):
             except ValueError:
                 pass
 
-        verbose_names = {
-            i.name: i.verbose_name
-            for i in view.model.get_fields(with_hidden=True).fields
-        }
-
-        field_choices = [(i, verbose_names.get(i, i)) for i in fields]
+        # TODO: allow export of hidden fields, requies Dataconfig to be
+        # switchable between show and hiden hidden fields
+        # This is a regression of the Dataconfig transition
+        field_choices = [
+            (i, i if j is None else j)
+            for i, j
+            in zip(fields, view.conf.fields_verbose)
+        ]
         opts['field_choices'] = field_choices
         opts['initial_fields'] = initial_fields
 
@@ -225,28 +229,29 @@ class ShowHideForm(forms.Form):
         self.fields['show'].choices = self.choices
 
     @classmethod
-    def factory(cls, view):
+    def factory(cls, data_conf):
         """
         Build form listing all forward related fields
         """
+        model = data_conf.model
         choices = []
-        for i in view.model.get_related_accessors():
+        for i in model.get_related_accessors():
             if i.endswith('__natural'):
                 # DatasetMixin expects the foreign key relation
                 i = i[:-len('__natural')]
             path = i.split('__')
             try:
-                path[-1] = view.model.get_field(i).verbose_name
+                path[-1] = model.get_field(i).verbose_name
             except LookupError:
                 # natural or name property
                 if i in ['natural', 'name']:
                     try:
-                        view.model.get_field('name')
+                        model.get_field('name')
                     except LookupError:
-                        if hasattr(view.model, 'name'):
+                        if hasattr(model, 'name'):
                             i = 'name'
 
-                        path = [view.model._meta.model_name]
+                        path = [model._meta.model_name]
                     else:
                         # name field supercedes natural
                         continue

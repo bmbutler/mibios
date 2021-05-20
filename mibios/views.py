@@ -12,11 +12,9 @@ from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponse
-from django.http.request import QueryDict
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.utils.html import format_html
-from django.utils.text import slugify
 from django.views.decorators.cache import cache_page
 from django.views.generic.base import ContextMixin, TemplateView, View
 from django.views.generic.edit import FormView
@@ -24,15 +22,15 @@ from django.views.generic.edit import FormView
 from django_tables2 import (SingleTableMixin, SingleTableView, Column,
                             MultiTableMixin)
 
-from . import (__version__, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE,
-               QUERY_SHOW, QUERY_FORMAT, QUERY_AVG_BY, QUERY_COUNT,
+from . import (__version__, QUERY_FORMAT, QUERY_AVG_BY,
                get_registry)
+from .data import DataConfig, TableConfig, NO_CURATION_PREFIX
 from .forms import (ExportForm, get_field_search_form, UploadFileForm,
                     ShowHideForm)
 from .load import Loader
 from .management.import_base import AbstractImportCommand
-from .models import Q, ChangeRecord, ImportFile, Snapshot
-from .tables import (DeletedHistoryTable, HistoryTable, NONE_LOOKUP,
+from .models import ChangeRecord, ImportFile, Snapshot
+from .tables import (DeletedHistoryTable, HistoryTable,
                      CompactHistoryTable, DetailedHistoryTable,
                      SnapshotListTable, SnapshotTableColumn, Table,
                      table_factory, ORDER_BY_FIELD)
@@ -133,7 +131,8 @@ class DatasetMixin(BaseMixin):
     The url to which the inheriting view responds must supply a 'data_name'
     kwarg that identifies the dataset or model.
     """
-    NO_CURATION_PREFIX = 'not-curated-'
+    config_class = DataConfig
+    show_hidden = False
 
     # define in class to allow this being passed in as_view()
     data_name = None
@@ -141,17 +140,7 @@ class DatasetMixin(BaseMixin):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # variables set by setup():
-        self.model = None
-        self.avg_by = None  # AverageMixin only
-        self.fields = None
-        self.col_names = None
-        self.filter = None
-        self.excludes = None
-        self.negate = None
-        self.dataset_filter = None
-        self.dataset_excludes = None
-        self.show_hidden = False
-        self.curation = True
+        self.conf = None
 
     def setup(self, request, *args, data_name=None, **kwargs):
         """
@@ -161,304 +150,32 @@ class DatasetMixin(BaseMixin):
         """
         super().setup(request, *args, **kwargs)
 
+        is_curated = True
         if data_name:
-            if data_name.startswith(self.NO_CURATION_PREFIX):
+            if data_name.startswith(NO_CURATION_PREFIX):
                 if not hasattr(self, 'user_is_curator'):
                     raise Http404
 
                 if self.user_is_curator:
-                    self.curation = False
+                    is_curated = False
                 else:
                     raise PermissionDenied
 
-                data_name = data_name[len(self.NO_CURATION_PREFIX):]
+                data_name = data_name[len(NO_CURATION_PREFIX):]
 
-            self.data_name = data_name
-
-        self.filter = {}
-        self.excludes = []
-        self.dataset_filter = {}
-        self.dataset_excludes = []
-        self.fields = []
-        self.col_names = []
-
-        if self.data_name is None:
-            # no models/datasets defined
-            self.model = None
+        if data_name is None:
+            # FIXME: when may this happen?
             return
 
-        # load special dataset
-        try:
-            dataset = get_registry().datasets[self.data_name]
-        except KeyError:
-            try:
-                self.model = get_registry().models[self.data_name]
-            except KeyError:
-                raise Http404('unknown table/data name')
-            else:
-                # setup for normal model
-                self.queryset = None
-                self.data_name_verbose = self.model._meta.verbose_name
-                # set default fields - just the "simple" ones
-                has_name_field = False
-                fields = self.model.get_fields(with_hidden=self.show_hidden)
-                for name, verbose_name in zip(fields.names, fields.verbose):
-                    if name == 'name':
-                        has_name_field = True
-                    self.fields.append(name)
-                    if name == verbose_name:
-                        # None: will be capitalized by django-tables2
-                        self.col_names.append(None)
-                    else:
-                        # e.g. when letter case is important, like for 'pH'
-                        self.col_names.append(verbose_name)
-                del name, verbose_name, fields
-
-                if hasattr(self.model, 'name'):
-                    try:
-                        id_pos = self.fields.index('id')
-                    except ValueError:
-                        id_pos = 0
-                    else:
-                        # hide internal IDs if we have some "name"
-                        # (but not natural, TODO: review this design decision)
-                        self.fields.pop(id_pos)
-                        self.col_names.pop(id_pos)
-                    if not has_name_field:
-                        # replace id column with name property
-                        self.fields.insert(id_pos, 'name')
-                        self.col_names.insert(id_pos, None)
-                    del id_pos
-        else:
-            # setup for special dataset
-            self.data_name_verbose = self.data_name
-            self.model = dataset.model
-            self.dataset_filter = dataset.filter
-            self.dataset_excludes = dataset.excludes
-            for i in dataset.fields:
-                try:
-                    fieldname, colname = i
-                except ValueError:
-                    # assume one-tuple
-                    fieldname = i[0]
-                    colname = i[0]
-                except TypeError:
-                    # assume i is str
-                    fieldname = i
-                    colname = i
-
-                self.fields.append(fieldname)
-                self.col_names.append(colname)
-            del fieldname, colname
-
-            if dataset.manager:
-                self.queryset = getattr(self.model, dataset.manager).all()
+        self.conf = self.config_class(data_name, show_hidden=self.show_hidden)
+        self.conf.is_curated = is_curated
 
     def get(self, request, *args, **kwargs):
         log.debug(f'GET = {request.GET}')
-        self.update_state()
+        if self.conf:
+            self.conf.set(request.GET)
+            log.debug(f'CONF = {vars(self.conf)}')
         return super().get(request, *args, **kwargs)
-
-    def update_state(self):
-        """
-        Update state from info compiled from GET query string
-
-        Is called once from get().  Returns None.  When overriding in child
-        class, first call super().update_state() and then apply any
-        child-specific state settings.
-        """
-        filter, excludes, negate, show = self.compile_state_params()
-
-        self.filter.update(**filter)
-        self.excludes += excludes
-        self.negate = negate
-
-        if show:
-            defaults = list(self.fields)
-            self.fields = show
-            self.col_names = []
-            for i in show:
-                try:
-                    f = self.model.get_field(i)
-                except Exception as e:
-                    # defaults may have special fields e.g. from AverageMixin
-                    if i in defaults:
-                        # TODO: use value from old self.col_names
-                        verbose_name = None
-                    elif i == 'natural':
-                        verbose_name = self.model._meta.model_name
-                    else:
-                        raise Http404(f'unknown field name: {i}') from e
-                else:
-                    verbose_name = f.verbose_name
-                self.col_names.append(verbose_name)
-
-    def compile_state_params(self):
-        """
-        Compile filter and field selection state, etc from GET querystring
-
-        Called from get() to provide arguments for update_state()/
-
-        Converts "NULL" to None, with exact lookup this will translate to
-        SQL's "IS NULL"
-        """
-        filter = {}
-        excludes = {}
-        negate = False
-        show = []
-
-        for qkey, val_list in self.request.GET.lists():
-            if qkey.startswith(QUERY_FILTER + '-'):
-                _, _, filter_key = qkey.partition('-')
-                val = val_list[-1]
-                if val == NONE_LOOKUP:
-                    val = None
-                filter[filter_key] = val
-
-            elif qkey.startswith(QUERY_EXCLUDE + '-'):
-                _, idx, exclude_key = qkey.split('-')
-                val = val_list[-1]
-                if val == NONE_LOOKUP:
-                    val = None
-                if idx not in excludes:
-                    excludes[idx] = {}
-                excludes[idx][exclude_key] = val
-
-            elif qkey == QUERY_NEGATE:
-                val = val_list[-1]
-                if val:
-                    negate = True
-            elif qkey == QUERY_SHOW:
-                show += val_list
-            else:
-                # unrelated item
-                pass
-
-        # convert excludes into list, forget the index
-        excludes = [i for i in excludes.values()]
-        log.debug('DECODED FROM QUERYSTRING:', filter, excludes, negate, show)
-        return filter, excludes, negate, show
-
-    def to_query_dict(
-            self,
-            filter={},
-            excludes=[],
-            negate=False,
-            without_filter={},
-            without_excludes=[],
-            fields=[],
-            count=None,
-            keep=False,
-    ):
-        """
-        Compile a query dict from current state
-
-        If negate is True, then negate the current negation state.
-        Extra filters or excludes can be amended.  The withouts take precedence
-        over extras.
-
-        :param dict without_filter: key/value pairs from self.filter to remove
-        :param list without_excludes: list of dicts, that is, elements of
-                                      self.excludes to remove from querydict
-        :param list fields: List of fields to request. If an empty list, the
-                            default, is passed, then nothing will be added to
-                            the query string, with the intended meaning to then
-                            show all the fields.
-        :param bool keep: Return additional items, present in the original
-                          request query dict but unrelated to TableView, e.g.
-                          those items handled by django_tables2 (sort,
-                          pagination.)
-        """
-        # (1) set filtering options
-        f = {**self.filter, **filter}
-        elist = self.excludes + excludes
-
-        for k, v in without_filter.items():
-            if k in f and f[k] == v:
-                del f[k]
-
-        for i in without_excludes:
-            elist = [j for j in elist if i != j]
-
-        if f or elist:
-            if negate:
-                query_negate = not self.negate
-            else:
-                query_negate = self.negate
-        else:
-            # no filtering is in effect, thus result inversion makes no sense
-            query_negate = False
-
-        qdict = self.build_query_dict(f, elist, query_negate, fields)
-
-        # (2) set other state
-        # TODO: belongs to TableView
-        if count is not None:
-            if count:
-                qdict[QUERY_COUNT] = ''
-            else:
-                try:
-                    del qdict[QUERY_COUNT]
-                except Exception:
-                    pass
-
-        # (3) keep others
-        if keep:
-            for k, vs in self.request.GET.lists():
-                if any((
-                    k.startswith(i) for i in
-                    [QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE, QUERY_SHOW,
-                     QUERY_COUNT]
-                )):
-                    continue
-                if k not in qdict:
-                    qdict.setlist(k, vs)
-
-        return qdict
-
-    def to_query_string(self, *args, **kwargs):
-        """
-        Build the GET querystring from current state
-
-        Accepts the same arguments as to_query_dict()
-        """
-        query = self.to_query_dict(*args, **kwargs).urlencode()
-        if query:
-            query = '?' + query
-
-        return query
-
-    @classmethod
-    def build_query_dict(cls, filter={}, excludes=[], negate=False, fields=[]):
-        """
-        Build a query dict for table filtering
-
-        This is the reverse of the get_filter_from_url method.  This is a class
-        method so we can build arbitrary query strings.  Use
-        TableView.to_query_dict() to build a query string corresponding to
-        the current view.
-        """
-        query_dict = QueryDict(mutable=True)
-        for k, v in filter.items():
-            k = slugify((QUERY_FILTER, k))
-            if v is None:
-                v = NONE_LOOKUP
-            query_dict[k] = v
-
-        for i, excl in enumerate(excludes):
-            for k, v in excl.items():
-                k = slugify((QUERY_EXCLUDE, i, k))
-                if v is None:
-                    v = NONE_LOOKUP
-                query_dict[k] = v
-
-        if negate:
-            query_dict[QUERY_NEGATE] = negate
-
-        if fields:
-            query_dict.setlist(QUERY_SHOW, fields)
-
-        return query_dict
 
     @classmethod
     def shorten_lookup(cls, txt):
@@ -477,40 +194,36 @@ class DatasetMixin(BaseMixin):
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        if self.model is None:
+        if self.conf is None:
             return ctx
 
-        ctx['model'] = self.model._meta.model_name
-        if self.curation:
-            ctx['url_data_name'] = self.data_name
+        ctx['model'] = self.conf.model._meta.model_name
+        if self.conf.is_curated:
+            ctx['url_data_name'] = self.conf.name
         else:
-            ctx['url_data_name'] = self.NO_CURATION_PREFIX + self.data_name
-        ctx['data_name'] = self.data_name
-        ctx['page_title'].append(self.data_name_verbose)
-        ctx['data_name_verbose'] = self.data_name_verbose
+            ctx['url_data_name'] = NO_CURATION_PREFIX + self.conf.name
+        ctx['data_name'] = self.conf.name
+        ctx['page_title'].append(self.conf.verbose_name)
+        ctx['data_name_verbose'] = self.conf.verbose_name
 
         ctx['applied_filter'] = [
-            (k, v, self.to_query_string(without_filter={k: v}, keep=True))
+            (k, v, self.conf.remove_filter(**{k: v}))
             for k, v
-            in self.filter.items()
+            in self.conf.filter.items()
         ]
         ctx['applied_excludes_list'] = [
-            (i, self.to_query_string(without_excludes=[i], keep=True))
+            (i, self.conf.remove_excludes(i))
             for i
-            in self.excludes
+            in self.conf.excludes
         ]
 
-        # the original querystring:
-        query = self.request.GET.urlencode()
-        if query:
-            ctx['querystr'] = '?' + query
-            ctx['invquery'] = self.to_query_string(negate=True)
-        else:
-            ctx['querystr'] = ''
+        # the original querystring to be appended to various URLs:
+        querystr = self.conf.url_query()
+        ctx['querystr'] = '?' + querystr if querystr else ''
 
         ctx['avg_by_data'] = {
             '-'.join(i): [self.shorten_lookup(j) for j in i]
-            for i in self.model.average_by
+            for i in self.conf.model.average_by
         }
 
         return ctx
@@ -541,6 +254,7 @@ class TableViewPlugin():
 # @method_decorator(cache_page(None), name='dispatch')
 class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
     template_name = 'mibios/table.html'
+    config_class = TableConfig
 
     # Tunables adjusting display varying on number of unique values:
     MEDIUM_UNIQUE_LIMIT = 10
@@ -550,62 +264,17 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
         self.compute_counts = False
         super().__init__(*args, **kwargs)
 
-    def update_state(self):
-        super().update_state()
-        if self.request.GET.get('count', None) == '':
-            self.compute_counts = True
-
     def get_queryset(self):
         if hasattr(self, 'object_list'):
             return self.object_list
 
-        if self.model is None:
+        if self.conf is None:
             return []
 
-        excludes = []
-        for i in self.dataset_excludes + self.excludes:
-            excludes.append(~Q(**i, model=self.model))
-
-        filter = {**self.dataset_filter, **self.filter}
-        q = Q(*excludes, **filter, model=self.model)
-
-        if self.negate:
-            q = ~q
-
-        related_fields = []
-        for i in self.fields:
-            try:
-                f = self.model.get_field(i)
-            except LookupError:
-                continue
-            if f.is_relation and not f.many_to_many:
-                related_fields.append(i)
-                for j in f.related_model.resolve_natural_lookups('natural'):
-                    if '__' in j:
-                        # need following relation for natural key
-                        related_fields.append(
-                            i + '__' + j.rpartition('__')[0]
-                        )
-            del f
-
-        log.debug('get_queryset:', f'{q}', f'{related_fields}')
-
-        if self.queryset is None:
-            if self.curation:
-                self.queryset = self.model.curated.all()
-            else:
-                self.queryset = self.model.objects.all()
-
-        qs = super().get_queryset().select_related(*related_fields).filter(q)
-        if getattr(self, 'avg_by', None):
-            qs = qs.average(*self.avg_by)
-
-        if self.compute_counts:
-            qs = qs.annotate_rev_rel_counts()
-        return qs
+        return self.conf.get_queryset()
 
     def get_table_class(self):
-        t = table_factory(view=self)
+        t = table_factory(conf=self.conf)
         return t
 
     def get_sort_by_field(self):
@@ -622,14 +291,14 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
         field = field.lstrip('-')
         # reverse from django_tables2 accessor sep
         field = field.replace('.', '__')
-        if field in self.fields:
+        if field in self.conf.fields:
             return field
 
         return None
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        if self.model is None:
+        if self.conf is None:
             return ctx
 
         ctx['field_search_form'] = None
@@ -688,10 +357,7 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
                                 count,
                                 # TODO: applying filter to negated queryset is
                                 # more complicated
-                                self.to_query_string(
-                                    filter={sort_by_field: value},
-                                    keep=True,
-                                )
+                                self.conf.add_filter(**{sort_by_field: value})
                             )
                             for value, count
                             in counts.items()
@@ -706,26 +372,17 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
                     pass
             # END sort-column stuff
 
-        # for curation switch:
-        ctx['curation_switch_data'] = {}
-        if self.user_is_curator:
-            if self.curation:
-                ctx['curation_switch_data']['data_name'] = \
-                    self.NO_CURATION_PREFIX + self.data_name
-                ctx['curation_switch_data']['switch'] = 'off'
-            else:
-                ctx['curation_switch_data']['data_name'] = self.data_name
-                ctx['curation_switch_data']['switch'] = 'on'
+        ctx['curation_switch_conf'] = \
+            self.conf.put(is_curated=not self.conf.is_curated)
 
-        # for count switch
-        ctx['query_with_count'] = \
-            self.to_query_string(count=not self.compute_counts, keep=True)
+        ctx['count_switch_conf'] = \
+            self.conf.put(with_counts=not self.conf.with_counts)
 
         # Plugin: process the plugin last so that their get_context_data() gets
         # a full view of the existing context:
         try:
             plugin_class = \
-                get_registry().table_view_plugins[self.model._meta.model_name]
+                get_registry().table_view_plugins[self.conf.name]
         except KeyError:
             ctx['table_view_plugin_template'] = None
         else:
@@ -746,12 +403,12 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
         """
         name = self.get_sort_by_field()
         try:
-            field = self.model.get_field(name)
+            field = self.conf.model.get_field(name)
         except LookupError as e:
             # name column is assumed to be natural key
             if name == 'name':
                 field = None
-                model = self.model
+                model = self.conf.model
             else:
                 raise SearchFieldLookupError from e
         else:
@@ -910,7 +567,7 @@ class ExportView(ExportMixin, TableView):
     File download of table data
     """
     def get_filename(self):
-        return self.data_name
+        return self.conf.name
 
     def get_values(self):
         return self.get_table().as_values()
@@ -926,6 +583,7 @@ class ExportFormView(ExportBaseMixin, DatasetMixin, FormView):
     """
     template_name = 'mibios/export.html'
     export_url_name = 'export'
+    config_class = TableConfig  # need show attribute
 
     def get_form_class(self):
         return ExportForm.factory(self)
@@ -949,17 +607,17 @@ class ImportView(DatasetMixin, CuratorRequiredMixin, FormView):
         dry_run = form.cleaned_data['dry_run']
         if dry_run:
             log.debug(
-                '[dry run] Importing into {}: {}'.format(self.data_name, f)
+                '[dry run] Importing into {}: {}'.format(self.conf.name, f)
             )
         else:
             self.log.info(
-                'Importing into {}: {}'.format(self.data_name, f)
+                'Importing into {}: {}'.format(self.conf.name, f)
             )
 
         try:
             stats = Loader.load_file(
                 f,
-                self.data_name,
+                self.conf.name,
                 dry_run=dry_run,
                 can_overwrite=form.cleaned_data['overwrite'],
                 erase_on_blank=form.cleaned_data['erase_on_blank'],
@@ -1008,7 +666,8 @@ class ImportView(DatasetMixin, CuratorRequiredMixin, FormView):
         return super().form_valid(form)
 
     def get_success_url(self):
-        return reverse('table', kwargs=dict(data_name=self.data_name))
+        # TODO: return self.conf.url()
+        return reverse('table', kwargs=dict(data_name=self.conf.name))
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
@@ -1017,10 +676,10 @@ class ImportView(DatasetMixin, CuratorRequiredMixin, FormView):
         # field names if the col name is None:
         ctx['col_names'] = [
             (j if j else i.capitalize())
-            for i, j in zip(self.fields, self.col_names)
+            for i, j in zip(self.conf.fields, self.conf.fields_verbose)
         ]
         try:
-            dataset = get_registry().datasets[self.data_name]
+            dataset = get_registry().datasets[self.conf.name]
         except KeyError:
             ctx['dataset_doc'] = None
         else:
@@ -1032,8 +691,8 @@ class ShowHideFormView(DatasetMixin, FormView):
     template_name = 'mibios/show_hide_form.html'
 
     def get_form_class(self):
-        self.initial = {'show': tuple(self.fields)}
-        return ShowHideForm.factory(self)
+        self.initial = {'show': tuple(self.conf.fields)}
+        return ShowHideForm.factory(self.conf)
 
 
 class HistoryView(BaseMixin, CuratorRequiredMixin, MultiTableMixin,
@@ -1347,6 +1006,7 @@ class AverageMixin():
         if 'avg_by' in kwargs:
             avg_by = kwargs['avg_by'].split('-')
 
+        # FIXME: DELETE (is anachronistic, QUERY_AVG_BY was never in use?)
         if QUERY_AVG_BY in request.GET:
             for i in request.GET.getlist(QUERY_AVG_BY):
                 if i not in avg_by:
@@ -1354,31 +1014,26 @@ class AverageMixin():
 
         if avg_by == ['']:
             # for testing?
-            self.avg_by = []
+            self.conf.avg_by = []
         else:
-            for i in self.model.average_by:
+            for i in self.conf.model.average_by:
                 if set(avg_by) == set(i):
-                    self.avg_by = avg_by
+                    self.conf.avg_by = avg_by
                     break
             else:
                 raise Http404(f'bad avg_by: {avg_by}')
 
         # names for the fields that average() adds
-        self.fields = list(self.avg_by) + ['avg_group_count']
-        self.fields += [i.name for i in self.model.get_average_fields()]
-        self.col_names = [None] * len(self.fields)
-
-    def update_state(self):
-        super().update_state()
-        # Do not annotate with rev rel counts on the average table.  Doing so
-        # will mess up the group count in some circumstances (group members
-        # each counted multiply times (for each rev rel count))
-        self.compute_counts = False
+        fields = list(self.conf.avg_by) + ['avg_group_count']
+        fields += [i.name for i in self.conf.model.get_average_fields()]
+        self.conf.fields = fields
+        self.conf.fields_verbose = [None] * len(self.conf.fields)
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['avg_url_slug'] = '-'.join(self.avg_by)
-        ctx['avg_by_short'] = [self.shorten_lookup(i) for i in self.avg_by]
+        avg_by = self.conf.avg_by
+        ctx['avg_url_slug'] = '-'.join(avg_by)
+        ctx['avg_by_short'] = [self.shorten_lookup(i) for i in avg_by]
         ctx['page_title'].append('average')
         return ctx
 
