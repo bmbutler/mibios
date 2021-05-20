@@ -353,7 +353,9 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
                         }
                         filter_link_data = [
                             (
-                                value,
+                                # '' => None hack for blank char fields to make
+                                # dash appear
+                                None if value == '' else value,
                                 count,
                                 # TODO: applying filter to negated queryset is
                                 # more complicated
