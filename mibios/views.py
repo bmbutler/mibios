@@ -359,7 +359,8 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
                                 count,
                                 # TODO: applying filter to negated queryset is
                                 # more complicated
-                                self.conf.add_filter(**{sort_by_field: value})
+                                self.conf.add_filter(**{sort_by_field: value}),
+                                self.conf.add_exclude(**{sort_by_field: value}),
                             )
                             for value, count
                             in counts.items()

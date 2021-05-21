@@ -377,6 +377,16 @@ class DataConfig:
         obj.filter.update(**kwargs)
         return obj
 
+    def add_exclude(self, **kwargs):
+        """
+        Add an exclude
+
+        Returns a new instance.
+        """
+        obj = self._copy()
+        obj.excludes.append(kwargs)
+        return obj
+
     def remove_filter(self, **items):
         """
         Return a copy config with given filters removed

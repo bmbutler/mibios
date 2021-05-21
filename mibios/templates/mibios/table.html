@@ -85,11 +85,11 @@
 		Filter by
 	    {% endif %}
 	    {{ sort_by_field }}(count):
-	    {% for value, count, link_conf in filter_link_data %}
+	    {% for value, count, filt_conf, excl_conf in filter_link_data %}
 		{% if view.conf.negate %}
 		    {{ value|default:table.default }}({{ count }})
 		{% else %}
-                    <a href="?{{ link_conf.url_query }}">{{ value|default_if_none:table.default }}</a>({{ count }})
+                <a href="?{{ filt_conf.url_query }}">{{ value|default_if_none:table.default }}</a>[<a href="?{{ excl_conf.url_query }}">X</a>]({{ count }})
 		{% endif %}
 	    {% endfor %}
 	    <br>
