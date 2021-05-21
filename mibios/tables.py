@@ -18,18 +18,20 @@ NONE_LOOKUP = 'NULL'
 ORDER_BY_FIELD = 'sort'
 
 
-class CountColumn(tables.Column):
+class GroupColumn(tables.Column):
     """
     Count column
 
-    A column showing the number of related rows from a different table with
-    link to exactly those related records.  Those related records can be from a
-    reverse foreign key relation or the elements of a grouped-by record.
+    A column displaying links to a table of (reversly) related records.  Those
+    related records can be from a reverse foreign key relation or the elements
+    of a grouped-by record.
     """
+    column_header = None
+
     def __init__(self, rel_object=None, table_conf=None, group_by=[],
-                 exclude_from_export=True, **kwargs):
+                 exclude_from_export=True, verbose_name=None, **kwargs):
         """
-        Count column constructor
+        Reverse relation column constructor
 
         :param rel_object: The reverse relation field, i.e. an element of
                                Model._meta.rel_objects
@@ -70,21 +72,21 @@ class CountColumn(tables.Column):
         if table_conf is not None:
             self.set_footer_url(rel_object, rel_conf, table_conf, our_name)
 
-        # django_tables2 internals somehow mess up the verbose name, but
-        # verb name can be set after __init__, setting explicitly before
-        # would interfere with the automatic column class selection
-        verbose_name = kwargs.pop('verbose_name', None)
-
-        super().__init__(self, exclude_from_export=exclude_from_export,
-                         **kwargs)
-
         if verbose_name is None:
-            if rel_object:
-                self.verbose_name = rel_object.name + ' count'
-            else:
-                self.verbose_name = 'group count'
-        else:
-            self.verbose_name = verbose_name
+            if self.column_header is None:
+                if rel_object:
+                    n = rel_object.related_model._meta.verbose_name_plural
+                    self.column_header = f'related {n}'
+            verbose_name = self.column_header
+
+        super().__init__(exclude_from_export=exclude_from_export,
+                         empty_values=(),
+                         verbose_name=verbose_name, **kwargs)
+
+    def render(self, value):
+        if value is None:
+            return 'link'
+        return super().render(value)
 
     def set_footer_url(self, rel_object, rel_conf, table_conf, our_name):
         """
@@ -121,7 +123,7 @@ class CountColumn(tables.Column):
             else:
                 elist.append({our_name: NONE_LOOKUP})
 
-        self.footer_url = rel_conf.put(filter=f, excludes=elist).url()
+        self.all_related_conf = rel_conf.put(filter=f, excludes=elist)
 
     def render_footer(self, bound_column, table):
         """
@@ -130,6 +132,10 @@ class CountColumn(tables.Column):
         This needs to look at the whole table not just the page that is
         displayed and so needs a separate database query.
         """
+        url = self.all_related_conf.url()
+        if not self.all_related_conf.with_counts:
+            return format_html('<a href="{}">link to all</a>', url)
+
         total = 0
         try:
             total = \
@@ -148,10 +154,10 @@ class CountColumn(tables.Column):
             log.debug(f'sum for count column {bound_column.accessor} missing')
             total = 'NA'
 
-        return format_html('all: <a href="{}">{}</a>', self.footer_url, total)
+        return format_html('all: <a href="{}">{}</a>', url, total)
 
 
-class AvgGroupCountColumn(CountColumn):
+class AvgGroupCountColumn(GroupColumn):
     """
     Group count column for average tables
 
@@ -365,13 +371,15 @@ def table_factory(model=None, field_names=[], conf=None,
 
         opts[col] = col_class(**col_kw)
 
-    if conf.with_counts:
-        # add reverse relations -> count columns
-        for i in model.get_related_objects():
+    # add reverse relations / count columns
+    for i in model.get_related_objects():
+        if conf.with_counts:
             # col_name here must be same as what the annotation is made with
             col_name = i.related_model._meta.model_name + '__count'
-            opts[col_name] = CountColumn(i, table_conf=conf)
-            meta_opts['fields'].append(col_name)
+        else:
+            col_name = f'related {i.related_model._meta.verbose_name_plural}'
+        opts[col_name] = GroupColumn(rel_object=i, table_conf=conf)
+        meta_opts['fields'].append(col_name)
 
     for k, v in extra.items():
         # TODO: allow specifiying the position
