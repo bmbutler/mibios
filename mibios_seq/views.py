@@ -22,14 +22,14 @@ class AbundancePlugin(TableViewPlugin):
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        if self.view.avg_by:
+        if self.view.conf.avg_by:
             # Normally TableView with AverageMixin gets the avg-by fields from
             # the URL path, but for the shared export view we put them into the
             # query string.  The idea is that eventually will completely switch
             # to avg-by in query string.
             # add avg-by spec to query string:
             qavg = QueryDict(mutable=True)
-            qavg.setlist(QUERY_AVG_BY, self.view.avg_by)
+            qavg.setlist(QUERY_AVG_BY, self.view.conf.avg_by)
             q = ctx['querystr']
             if q:
                 q += '&'
@@ -94,6 +94,7 @@ class ExportSharedFormMixin:
 
 class ExportSharedFormView(ExportSharedFormMixin, ExportBaseMixin,
                            DatasetMixin, FormView):
+    data_name = 'abundance'
     template_name = 'mibios/export.html'
     export_url_name = 'mibios_seq:export_shared'
 
@@ -107,7 +108,7 @@ class ExportAvgSharedFormView(AverageMixin, ExportSharedFormView):
     export_url_name = 'mibios_seq:export_avg_shared'
 
     def get_form_class(self):
-        if self.avg_by:
+        if self.conf.avg_by:
             # FIXME: the way we modularize the averaged vs. non-averaged
             # function need re-design, part is conditional, e.g. here, and part
             # is by using class inheritance, it's messy
@@ -117,7 +118,7 @@ class ExportAvgSharedFormView(AverageMixin, ExportSharedFormView):
             # just participant and week:
             # TODO: auto-detect other relations
             self.meta_col_choice_map = dict()
-            for i in self.avg_by:
+            for i in self.conf.avg_by:
                 if i in ['project', 'otu']:
                     continue
                 model_name = i.split('__')[-1]
@@ -140,6 +141,7 @@ class ExportAvgSharedFormView(AverageMixin, ExportSharedFormView):
 
 
 class ExportSharedView(ExportSharedFormMixin, ExportView):
+    data_name = 'abundance'
     _group_id_maps = None
 
     def get_filename(self):

@@ -63,7 +63,7 @@ class ExportSharedForm(ExportFormatForm):
             (i, i) for i in
             AnalysisProject.objects.all().values_list('name', flat=True)
         ]
-        if not view.avg_by:
+        if not view.conf.avg_by:
             opts['min_avg_group_size'] = None
         opts['mothur'] = None  # disabled, mothur support is not implemented
         return super().factory(view, 'Auto' + cls.__name__, (cls, ), opts=opts)

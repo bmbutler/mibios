@@ -133,8 +133,6 @@ class DatasetMixin(BaseMixin):
     """
     config_class = DataConfig
     show_hidden = False
-
-    # define in class to allow this being passed in as_view()
     data_name = None
 
     def __init__(self, *args, **kwargs):
@@ -151,7 +149,7 @@ class DatasetMixin(BaseMixin):
         super().setup(request, *args, **kwargs)
 
         is_curated = True
-        if data_name:
+        if data_name is not None:
             if data_name.startswith(NO_CURATION_PREFIX):
                 if not hasattr(self, 'user_is_curator'):
                     raise Http404
@@ -162,12 +160,16 @@ class DatasetMixin(BaseMixin):
                     raise PermissionDenied
 
                 data_name = data_name[len(NO_CURATION_PREFIX):]
+            self.data_name = data_name
 
-        if data_name is None:
-            # FIXME: when may this happen?
+        if self.data_name is None:
+            # FIXME: may this happen?
             return
 
-        self.conf = self.config_class(data_name, show_hidden=self.show_hidden)
+        self.conf = self.config_class(
+            self.data_name,
+            show_hidden=self.show_hidden,
+        )
         self.conf.is_curated = is_curated
 
     def get(self, request, *args, **kwargs):
