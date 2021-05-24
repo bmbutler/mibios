@@ -144,8 +144,29 @@ class DataConfig:
         self.fields = []
         self.fields_verbose = []
         has_name_field = False
-        fields = self.model.get_fields(with_hidden=self.show_hidden)
-        for name, verbose_name in zip(fields.names, fields.verbose):
+
+        if selected_fields:
+            choices = []
+            for i in self.model.get_related_accessors():
+                try:
+                    _f = self.model.get_field(i)
+                except LookupError:
+                    continue  # TODO: handle name natural?
+
+                try:
+                    _v = _f.verbose_name
+                except AttributeError:
+                    # _f is OneToOneRel (FIXME)
+                    _v = _f.name
+
+                choices.append((i, _v))
+            del _f, _v
+        else:
+            fields = self.model.get_fields(with_hidden=self.show_hidden)
+            choices = zip(fields.names, fields.verbose)
+            del fields
+
+        for name, verbose_name in choices:
             if selected_fields and name not in selected_fields:
                 continue
             if name == 'name':
@@ -157,7 +178,7 @@ class DataConfig:
             else:
                 # e.g. when letter case is important, like for 'pH'
                 self.fields_verbose.append(verbose_name)
-        del name, verbose_name, fields
+        del name, verbose_name
 
         if hasattr(self.model, 'name'):
             try:
