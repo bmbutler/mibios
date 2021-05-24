@@ -248,7 +248,8 @@ class ShowHideForm(forms.Form):
                 path[-1] = model.get_field(i).verbose_name
             except LookupError:
                 # natural or name property
-                if i in ['natural', 'name']:
+                if i in ['natural', 'name'] or i.endswith('__natural') \
+                        or i.endswith('__name'):
                     try:
                         model.get_field('name')
                     except LookupError:
