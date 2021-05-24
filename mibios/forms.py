@@ -55,7 +55,7 @@ class UploadFileForm(forms.Form):
     )
 
 
-def get_field_search_form(*fields):
+def get_field_search_form(table_conf, *fields):
     """
     Factory to build field search forms
 
@@ -70,6 +70,9 @@ def get_field_search_form(*fields):
             required=False,
         )
         opts[name] = field
+
+    opts.update(**table_conf.as_hidden_input(skip=['name']))
+
     return type('FieldSearchForm', (forms.Form, ), opts)
 
 
@@ -218,6 +221,7 @@ class ExportForm(ExportFormatForm):
 
 
 class ShowHideForm(forms.Form):
+    # field name should equal value of mibios.QUERY_SHOW
     show = forms.MultipleChoiceField(
         widget=forms.CheckboxSelectMultiple(attrs={'class': None}),
         # choices set by constructor
@@ -266,4 +270,5 @@ class ShowHideForm(forms.Form):
         opts = dict(
             choices=tuple(choices),
         )
+        opts.update(**data_conf.as_hidden_input(skip=['show']))
         return type('AutoShowHideForm', (cls,), opts)

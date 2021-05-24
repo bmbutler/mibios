@@ -3,6 +3,7 @@ Module for data abstraction
 """
 from urllib.parse import urlparse
 
+from django import forms
 from django.http.request import QueryDict
 from django.utils.text import slugify
 from django.urls import resolve, reverse
@@ -381,6 +382,22 @@ class DataConfig:
         """
         querystr = self.url_query()
         return self.url_path() + ('?' + querystr if querystr else '')
+
+    def as_hidden_input(self, skip=[]):
+        """
+        Make fields to be used as hidden form input
+        """
+        opts = {}
+        for k, v in self.as_query_dict().lists():
+            if k in skip:
+                # is provided by caller
+                continue
+
+            opts[k] = forms.CharField(
+                widget=forms.MultipleHiddenInput(),
+                initial=v
+            )
+        return opts
 
     def _populate_query_dict(self, qdict):
         """
