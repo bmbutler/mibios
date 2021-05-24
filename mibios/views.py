@@ -325,6 +325,7 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
 
             else:
                 # a non-boring column
+                add_search_form = True
                 if 'description' in stats:
                     # only give these for numeric columns
                     try:
@@ -362,7 +363,7 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
                                 # TODO: applying filter to negated queryset is
                                 # more complicated
                                 self.conf.add_filter(**{sort_by_field: value}),
-                                self.conf.add_exclude(**{sort_by_field: value}),
+                                self.conf.add_exclude(**{sort_by_field: value}),  # noqa: E501
                             )
                             for value, count
                             in counts.items()
@@ -372,7 +373,10 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
             if add_search_form:
                 try:
                     ctx['field_search_form'] = \
-                        get_field_search_form(*self.get_search_field())()
+                        get_field_search_form(
+                            self.conf,
+                            *self.get_search_field()
+                        )()
                 except SearchFieldLookupError:
                     pass
             # END sort-column stuff
