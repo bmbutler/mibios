@@ -175,7 +175,7 @@ class DatasetMixin(BaseMixin):
     def get(self, request, *args, **kwargs):
         log.debug(f'GET = {request.GET}')
         if self.conf:
-            self.conf.set(request.GET)
+            self.conf.set_from_query(request.GET)
             log.debug(f'CONF = {vars(self.conf)}')
         return super().get(request, *args, **kwargs)
 

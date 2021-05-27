@@ -48,7 +48,7 @@ class DataConfig:
         url = urlparse(url)
         data_name = resolve(url.path).kwargs['data_name']
         conf = cls(data_name)
-        conf.set(QueryDict(url.query))
+        conf.set_from_query(QueryDict(url.query))
         return conf
 
     def _copy(self):
@@ -255,7 +255,7 @@ class DataConfig:
         obj._set_name(name)
         return obj
 
-    def set(self, qdict):
+    def set_from_query(self, qdict):
         """
         Update from a GET querydict
 
@@ -264,8 +264,8 @@ class DataConfig:
         Existing filter and excludes are preserved, new filters are added.  Any
         unprocessed qdict key/list pairs are added (update) to the extras
         dictionary to give child classed a chance of processing them.
-        Accordingly, overriding methods should first call super().set(qdict)
-        before proceeding.
+        Accordingly, overriding methods should first call
+        super().set_from_query(qdict) before proceeding.
         """
         qlist = []
         filter = {}
@@ -510,13 +510,13 @@ class TableConfig(DataConfig):
             qs = qs.annotate_rev_rel_counts()
         return qs
 
-    def set(self, *args):
+    def set_from_query(self, *args):
         """
         Update from a GET querydict
 
         :param QueryDict qdict: A QueryDict usually obtained via request.GET
         """
-        super().set(*args)
+        super().set_from_query(*args)
         self.with_counts = False
         show = []
         extras = {}
