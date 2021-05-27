@@ -9,11 +9,11 @@ from django.utils.text import slugify
 from django.urls import resolve, reverse
 
 from . import (get_registry, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE,
-               QUERY_SHOW, QUERY_COUNT, QUERY_Q)
+               QUERY_SHOW, QUERY_COUNT, QUERY_SEARCH, QUERY_Q)
 from .dataset import Dataset
 from .models import Model, Q
 from .tables import NONE_LOOKUP
-from .utils import getLogger
+from .utils import getLogger, prep_url_query_value, url_query_value_to_python
 
 
 log = getLogger(__name__)
@@ -280,6 +280,7 @@ class DataConfig:
                 val = val_list[-1]
                 if val == NONE_LOOKUP:
                     val = None
+                val = url_query_value_to_python(qkey, val)
                 filter[filter_key] = val
 
             elif qkey.startswith(QUERY_EXCLUDE + '-'):
@@ -289,6 +290,7 @@ class DataConfig:
                     val = None
                 if idx not in excludes:
                     excludes[idx] = {}
+                val = url_query_value_to_python(qkey, val)
                 excludes[idx][exclude_key] = val
 
             elif qkey == QUERY_NEGATE:
@@ -325,7 +327,7 @@ class DataConfig:
             k = slugify((QUERY_FILTER, k))
             if v is None:
                 v = NONE_LOOKUP
-            qdict[k] = v
+            qdict[k] = prep_url_query_value(v)
             have_filter_or_excl = True
 
         for i, excl in enumerate(self.excludes):
@@ -333,7 +335,7 @@ class DataConfig:
                 k = slugify((QUERY_EXCLUDE, i, k))
                 if v is None:
                     v = NONE_LOOKUP
-                qdict[k] = v
+                qdict[k] = prep_url_query_value(v)
                 have_filter_or_excl = True
 
         if self.q:
@@ -346,6 +348,7 @@ class DataConfig:
         qdict = self._populate_query_dict(qdict)
 
         for k, v in self.extras.items():
+            # no further value prepping here
             if isinstance(v, str):
                 # avoid setlist on str
                 qdict[k] = v

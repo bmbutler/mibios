@@ -241,3 +241,37 @@ class StatsMiddleWare:
         self.log.debug('stats:', self.count, 'clock delta:', t1 - t0,
                        'proc delta:', pt1 - pt0)
         return response
+
+
+def prep_url_query_value(value):
+    """
+    Mangle python objects for serialization into URL query string values
+
+    This helper is to be used on values before calling QueryDict.setlist or
+    similar.  Numbers and strings don't require special treatment.  This
+    function implements transforming tuples and lists into comma-separated
+    lists.  Other python objects are p[assed through without change.
+    """
+    if isinstance(value, (tuple, list)):
+        value = ','.join((str(i) for i in value))
+    return value
+
+
+def url_query_value_to_python(key, value):
+    """
+    Convert a url query value into a python object
+
+    This is the reverse of prep_url_query_value.  Depending on the lookup, some
+    lists and tuples are converted.  All other values are passed through
+    unchanged.  In particular, numeric values, can be left as strings, because
+    lookup in query set filter methods are usually converted correctly
+    depending of the field type in question.
+    """
+    if key.endswith('__in'):
+        # a list
+        value = value.split(',')
+    elif key.endswith('__range'):
+        # a tuple
+        value = tuple(value.split(','))
+
+    return value
