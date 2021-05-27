@@ -1329,12 +1329,8 @@ class Model(models.Model):
                              ''.format(field, field.get_internal_type()))
         return dtype
 
-    @classmethod
-    def is_numeric_field(cls, field):
-        """
-        Check if given field is of some numeric data type
-        """
-        numeric_fields = (
+    field_types = {
+        'numeric': (
             'AutoField',
             'BigAutoField',
             'DateField',
@@ -1349,11 +1345,45 @@ class Model(models.Model):
             'SmallIntegerField',
             'TimeField',
             'BinaryField',
-        )
-        if field.get_internal_type() in numeric_fields:
-            return True
+        ),
+        'boolean': ('BooleanField',),
+    }
+
+    @classmethod
+    def _field_type_check(cls, field, kind):
+        """
+        Return True if field is of the given kind
+
+        Supported kind are the keys of the field_type class member dictionary.
+        The related per-kind methods that call this can be used to check if a
+        field supports certain operations.
+
+        :param field: Either a field object or the name of a field.
+
+        May raise ValueError if the given field does not belong to this Model or 
+        """
+        if isinstance(field, str):
+            field = cls.get_field(field)
         else:
-            return False
+            if field not in cls.get_fields().fields:
+                raise ValueError('field does not belong to model or is not '
+                                 'supported by this method')
+
+        return field.get_internal_type() in cls.field_types[kind]
+
+    @classmethod
+    def is_numeric_field(cls, field):
+        """
+        Check if given field is of some numeric data type
+        """
+        return cls._field_type_check(field, 'numeric')
+
+    @classmethod
+    def is_bool_field(cls, field):
+        """
+        Check if given field is of some boolean type
+        """
+        return cls._field_type_check(field, 'boolean')
 
     @classmethod
     def is_simple_field(cls, field):

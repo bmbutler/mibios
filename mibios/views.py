@@ -370,6 +370,14 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
                         ]
                 ctx['filter_link_data'] = filter_link_data
             ctx['sort_by_stats'] = stats
+
+            if sort_by_field is not None:
+                _field = self.conf.model.get_field(sort_by_field)
+                if _field.get_internal_type() == 'BooleanField':
+                    # search fields on boolean don't make sense
+                    add_search_form = False
+                del _field
+
             if add_search_form:
                 try:
                     ctx['field_search_form'] = \
