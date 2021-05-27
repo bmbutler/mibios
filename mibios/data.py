@@ -9,7 +9,7 @@ from django.utils.text import slugify
 from django.urls import resolve, reverse
 
 from . import (get_registry, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE,
-               QUERY_SHOW, QUERY_COUNT)
+               QUERY_SHOW, QUERY_COUNT, QUERY_Q)
 from .dataset import Dataset
 from .models import Model, Q
 from .tables import NONE_LOOKUP
@@ -199,7 +199,7 @@ class DataConfig:
 
     def get_queryset(self):
         excludes = [~Q(**i, model=self.model) for i in self.excludes]
-        q = Q(*excludes, **self.filter, model=self.model)
+        q = Q(*self.q, *excludes, **self.filter, model=self.model)
 
         if self.negate:
             q = ~q
@@ -238,6 +238,7 @@ class DataConfig:
         return qs
 
     def clear_selection(self):
+        self.q = []
         self.excludes = []
         self.filter = {}
         self.negate = False
@@ -266,6 +267,7 @@ class DataConfig:
         Accordingly, overriding methods should first call super().set(qdict)
         before proceeding.
         """
+        qlist = []
         filter = {}
         excludes = {}
         negate = False
@@ -294,6 +296,11 @@ class DataConfig:
                 # test for presence/absence, other values are invalid
                 if val == '':
                     negate = True
+
+            elif qkey == QUERY_Q:
+                for i in val_list:
+                    qlist.append(Q.deserialize(i))
+
             else:
                 extras[qkey] = val_list
 
@@ -301,6 +308,7 @@ class DataConfig:
         excludes = [i for i in excludes.values()]
         log.debug('DECODED QUERYSTRING:', filter, excludes, negate, extras)
 
+        self.q = qlist
         self.excludes += excludes
         self.filter.update(**filter)
         self.negate = negate
@@ -327,6 +335,9 @@ class DataConfig:
                     v = NONE_LOOKUP
                 qdict[k] = v
                 have_filter_or_excl = True
+
+        if self.q:
+            qdict.setlist(QUERY_Q, [i.serialize() for i in self.q])
 
         if have_filter_or_excl and self.negate:
             # only add negate if we have some filtering
@@ -374,7 +385,7 @@ class DataConfig:
         A convenience method, the output is intended to be rendered inside a <a
         href="?{{ }}"> element.
         """
-        return self.as_query_dict().urlencode()
+        return self.as_query_dict().urlencode(safe=',')
 
     def url(self):
         """

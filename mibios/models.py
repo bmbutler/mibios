@@ -102,12 +102,80 @@ class Q(models.Q):
     doesn't touch SQL in at all.  Hence, we re-write natural lookups before
     they get packaged into the Q object.
     """
+    NOT = 'NOT'
+
     def __init__(self, *args, model=None, **kwargs):
         # handling natural lookups is only done if the model is provided,
         # since we need to know to which model the Q is relative to
         if model is not None:
             kwargs = model.resolve_natural_lookups(**kwargs)
         super().__init__(*args, **kwargs)
+
+    def serialize(self, as_tuple=False, separators=(',', ':'), **kwargs):
+        """
+        Serialize a Q object to json
+
+        This is a wrapper around json.dumps.
+
+        :param bool as_tuple: return intermediate tuple representation
+        """
+        tree = []
+        if self.negated:
+            tree.append(Q.NOT)
+
+        if self.connector == Q.OR:
+            tree.append(self.connector)
+        else:
+
+            if self.connector != Q.AND:
+                raise ValueError('connector must be either AND or OR')
+
+        for i in self.children:
+            if isinstance(i, Q):
+                tree.append(i.serialize(as_tuple=True))
+            else:
+                # a 2-tuple (or other object?)
+                tree.append(i)
+
+        if as_tuple:
+            return tuple(tree)
+        else:
+            return json.dumps(tree, separators=separators, **kwargs)
+
+    @classmethod
+    def deserialize(cls, text=None, tuple_repr=None):
+        if text is None:
+            if tuple_repr is None:
+                raise ValueError('need some non-None input')
+            items = tuple_repr
+        else:
+            if tuple_repr is not None:
+                raise ValueError('exactly one of text or tuple_repr must be '
+                                 'None')
+            items = json.loads(text)
+
+        if len(items) == 2 \
+                and isinstance(items[0], str) \
+                and not isinstance(items[1], (Q, tuple)):
+            # (foo, 123)
+            # will be added as arg to Q class constructor
+            return items
+
+        items = list(items)
+        conn = Q.AND
+        negated = False
+        while items and items[0] in [cls.NOT, cls.OR]:
+            _conn = items.pop(0)
+            if _conn == cls.NOT:
+                negated = True
+            elif _conn == cls.OR:
+                conn = cls.OR
+
+        return cls(
+            *[cls.deserialize(tuple_repr=i) for i in items],
+            _connector=conn,
+            _negated=negated,
+        )
 
 
 class QuerySet(models.QuerySet):
