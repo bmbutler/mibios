@@ -1330,6 +1330,32 @@ class Model(models.Model):
         return dtype
 
     @classmethod
+    def is_numeric_field(cls, field):
+        """
+        Check if given field is of some numeric data type
+        """
+        numeric_fields = (
+            'AutoField',
+            'BigAutoField',
+            'DateField',
+            'DateTimeField',
+            'DecimalField',
+            'DurationField',
+            'FloatField',
+            'IntegerField',
+            'BigIntegerField',
+            'PositiveIntegerField',
+            'PositiveSmallIntegerField',
+            'SmallIntegerField',
+            'TimeField',
+            'BinaryField',
+        )
+        if field.get_internal_type() in numeric_fields:
+            return True
+        else:
+            return False
+
+    @classmethod
     def is_simple_field(cls, field):
         """
         Check if given field is "simple"

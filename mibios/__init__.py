@@ -10,6 +10,7 @@ QUERY_SHOW = 'show'
 QUERY_FORMAT = 'format'
 QUERY_AVG_BY = 'avg-by'
 QUERY_COUNT = 'count'
+QUERY_SEARCH = 'search'
 QUERY_Q = 'q'
 
 

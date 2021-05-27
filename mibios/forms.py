@@ -2,7 +2,7 @@ from collections import OrderedDict
 
 from django import forms
 
-from . import QUERY_FILTER, QUERY_FORMAT
+from . import QUERY_FILTER, QUERY_FORMAT, QUERY_SEARCH
 from .utils import getLogger
 
 
@@ -63,7 +63,7 @@ def get_field_search_form(table_conf, *fields):
     """
     opts = {}
     for i in fields:
-        name = QUERY_FILTER + '-' + i + '__regex'
+        name = QUERY_SEARCH + '-' + i
         field = forms.CharField(
             label=i.capitalize().replace('__', ' '),
             strip=True,

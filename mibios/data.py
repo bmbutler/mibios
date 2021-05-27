@@ -303,6 +303,13 @@ class DataConfig:
                 for i in val_list:
                     qlist.append(Q.deserialize(i))
 
+            elif qkey.startswith(QUERY_SEARCH + '-'):
+                # search queries are consumed here, but they are not part of
+                # the state so they are compiled into filters or Q objects here
+                _, _, search_name = qkey.partition('-')
+                _q, _f = self._search(search_name, val_list)
+                qlist += _q
+                filter.update(**_f)
             else:
                 extras[qkey] = val_list
 
@@ -477,6 +484,82 @@ class DataConfig:
         into a template.
         """
         return self.put(negate=not self.negate)
+
+    def _search(self, field_name, terms):
+        """
+        Compile Q or filter/excludes from search terms.
+
+        Returns 2-tuple of (1) a list of Q objects, (2) a filter dict.
+        """
+        qlist = []
+        filter = {}
+        field = self.model.get_field(field_name)
+        if self.model.is_numeric_field(field):
+            for i in terms:
+                q = Q()
+                num_list = []
+                for j in i.replace(' ', '').split(','):
+                    # inclusive range
+                    start, sign, end = j.partition('-')
+                    if sign == '-':
+                        if start and end:
+                            q |= Q((field_name + '__range', (start, end)))
+                        elif start:
+                            # like ge
+                            q |= Q((field_name + '__gte', start))
+                        elif end:
+                            # like le
+                            q |= Q((field_name + '__lte', end))
+                        else:
+                            # just a dash, whole range, so do nothing
+                            pass
+                        continue
+
+                    # ge
+                    if j.startswith('>='):
+                        q |= Q((field_name + '__gte', j[2:]))
+                        continue
+
+                    # gt
+                    if j.startswith('>'):
+                        q |= Q((field_name + '__gt', j[1:]))
+                        continue
+
+                    # le
+                    if j.startswith('<='):
+                        q |= Q((field_name + '__lte', j[2:]))
+                        continue
+
+                    # lt
+                    if j.startswith('<'):
+                        q |= Q((field_name + '__lt', j[1:]))
+                        continue
+
+                    # assume a number, add to explicit list
+                    num_list.append(j)
+
+                if len(num_list) == 1:
+                    q |= Q((field_name, num_list[0]))
+                elif len(num_list) > 1:
+                    q |= Q((field_name + '__in', num_list))
+
+                qlist.append(q)
+
+        else:
+            for i in terms:
+                # last term wins
+                filter[field_name + '__iregex'] = i
+
+        # simplify Qs to filter opportunistically
+        complex_qlist = []
+        for i in qlist:
+            if not i.negated and len(i.children) == 1:
+                k, v = i.children[0]
+                filter[k] = v  # may overwrite existing key
+            else:
+                complex_qlist.append(i)
+
+        return complex_qlist, filter
 
 
 class TableConfig(DataConfig):
