@@ -232,6 +232,10 @@ class DataConfig:
 
         qs = qs.select_related(*related_fields).filter(q)
 
+        if self._need_distinct():
+            qs = qs.distinct()
+            log_msg += ' distinct'
+
         if self.avg_by is not None:
             qs = qs.average(*self.avg_by)
 
@@ -560,6 +564,30 @@ class DataConfig:
                 complex_qlist.append(i)
 
         return complex_qlist, filter
+
+    def _need_distinct(self):
+        """
+        Say if queryset needs dictinct() added
+
+        Determine if a join over reverse relation is performed and add
+        dictinct() call to avoid duplicate records
+        """
+        # FIXME: maybe this should always return True?  What's the downside?
+        for i in self.excludes + [self.filter]:
+            for k in i.keys():
+                parts = k.split('__')
+                for j in range(len(parts)):
+                    try:
+                        field = self.model.get_field('__'.join(parts[:j + 1]))
+                    except LookupError:
+                        break
+                    if field.one_to_many:
+                        # reverse relation
+                        return True
+                    # TODO: m2m?
+
+        # TODO: handle self.q
+        return False
 
 
 class TableConfig(DataConfig):
