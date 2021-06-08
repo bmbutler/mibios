@@ -309,7 +309,7 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
             ctx['sort_by_stats'] = {}
         else:
             # prepare all things needed for the selected/sorted column:
-            add_search_form = False
+            add_search_form = True
             ctx['sort_by_field'] = sort_by_field
             qs = self.get_queryset()
             stats = qs.get_field_stats(sort_by_field, natural=True)
@@ -320,12 +320,11 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
                 except KeyError:
                     pass
 
-                if 'unique' in stats:
+                if 'uniform' in stats:
                     add_search_form = True
 
             else:
                 # a non-boring column
-                add_search_form = True
                 if 'description' in stats:
                     # only give these for numeric columns
                     try:
@@ -372,11 +371,13 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
             ctx['sort_by_stats'] = stats
 
             if sort_by_field is not None:
-                _field = self.conf.model.get_field(sort_by_field)
-                if _field.get_internal_type() == 'BooleanField':
-                    # search fields on boolean don't make sense
-                    add_search_form = False
-                del _field
+                try:
+                    if self.conf.model.is_bool_field(sort_by_field):
+                        # search fields on boolean don't make sense
+                        add_search_form = False
+                except LookupError:
+                    # fields that are not real fields
+                    pass
 
             if add_search_form:
                 try:
