@@ -503,7 +503,7 @@ class DataConfig:
         qlist = []
         filter = {}
         field = self.model.get_field(field_name)
-        if self.model.is_numeric_field(field):
+        if field.model.is_numeric_field(field):
             for i in terms:
                 q = Q()
                 num_list = []
