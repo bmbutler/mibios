@@ -67,7 +67,7 @@ class DataConfig:
 
     def _set_name(self, arg):
         """
-        Set up config with given name
+        Set up config from given name or Model or Dataset class
 
         This will clear all model-specific settings. Inheriting classes should
         override this method, call via super() and reset model-specific
@@ -94,12 +94,12 @@ class DataConfig:
                     self._setup_model(model)
             else:
                 self._setup_dataset(dataset)
-        elif isinstance(arg, Dataset):
+        elif issubclass(arg, Dataset):
             self._setup_dataset(arg)
-        elif isinstance(arg, Model):
+        elif issubclass(arg, Model):
             self._setup_model(arg)
         else:
-            raise TypeError('arg must be str or Dataset or Model')
+            raise TypeError('arg must be str or Dataset or Model subclass')
 
     def _setup_dataset(self, dataset):
         self.name = dataset.name
