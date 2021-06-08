@@ -204,6 +204,8 @@ class DataConfig:
         if self.negate:
             q = ~q
 
+        log_msg = f'Dataconfig: get_queryset: Q: {q}'
+
         related_fields = []
         for i in self.fields:
             try:
@@ -220,7 +222,8 @@ class DataConfig:
                         )
             del f
 
-        log.debug(f'Dataconfig: get_queryset: Q: {q}, rel:{related_fields}')
+        if related_fields:
+            log_msg += f' rel:{related_fields}'
 
         if self._manager is None:
             if self.is_curated:
@@ -238,7 +241,9 @@ class DataConfig:
 
         if self.avg_by is not None:
             qs = qs.average(*self.avg_by)
+            log_msg += f' avg_by: {self.avg_by}'
 
+        log.debug(log_msg)
         return qs
 
     def clear_selection(self):
