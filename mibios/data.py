@@ -55,7 +55,15 @@ class DataConfig:
         """
         Make and return a deepish copy of instance
         """
-        obj = type(self)(self.name)
+        if self.model._meta.model_name == self.name:
+            # create new instance from model as to not require model to be
+            # registered (a parent model)
+            obj = type(self)(self.model)
+        else:
+            # others e.g. dataset-based instances should be re-created starting
+            # with the name
+            obj = type(self)(self.name)
+
         for k, v in vars(self).items():
             if k == 'excludes':
                 # is list of dicts
