@@ -264,8 +264,6 @@ class DataConfig:
         """
         Switch config over to different model/dataset
 
-        Will wipe all settings related to the model/dataset
-
         Returns a new instance.
         """
         obj = self._copy()
@@ -577,6 +575,71 @@ class DataConfig:
                 complex_qlist.append(i)
 
         return complex_qlist, filter
+
+    def shift(self, *fields):
+        """
+        Shift to a related model
+
+        :param *fields:
+            name of relational field or the field object itself.  If multiple
+            fields are given, the config instance is shifted multiple times in
+            the order of the given fields.
+
+        Shifting must be one relation hop at a time.  A new config instance
+        will be returned.
+        """
+        if self.q:
+            raise NotImplementedError('shifting Q objects is not implemented')
+
+        field, *others = fields
+        if isinstance(field, str):
+            field, *more = field.split('__')
+            field = self.model.get_field(field)
+            others = more + others
+
+        if not any((field.many_to_one, field.one_to_many, field.one_to_one)):
+            raise NotImplementedError('only works for fwd/rev relation atm')
+
+        if field.model is not self.model:
+            # assume field is a ManyToOneRel for a ForeignKey to a
+            # ParentModel and self.model is the child and field.model derives
+            # directly from ParentModel
+            # We first have to shift to the parent, then to the related model.
+            for i in field.model.get_fields().fields:
+                if i.get_internal_type() == 'OneToOneField':
+                    if i.related_model is self.model:
+                        # i.field is our OneToOneField
+                        return self.shift(i.field, field, *others)
+
+        conf = self.set_name(field.related_model)
+
+        # conf is the new, shifted config, but the _shift_lookups methods are
+        # still called on the old config
+        conf.filter = self._shift_lookups(field, **self.filter)
+        conf.excludes = [
+            self._shift_lookups(field, **i)
+            for i in self.excludes
+        ]
+        if others:
+            return conf.shift(*others)
+        else:
+            return conf
+
+    def _shift_lookups(self, field, **lookups):
+        """
+        Helper to shift filters and excludes
+
+        Called on the old config, the field is the relation field from old to
+        new, the lookups are filter or exclude elements.
+        """
+        if isinstance(field, str):
+            field = self.model.get_field(field)
+
+        ret = dict()
+        for k, v in lookups.items():
+            k = field.remote_field.name + '__' + k
+            ret[k] = v
+        return ret
 
     def _need_distinct(self):
         """

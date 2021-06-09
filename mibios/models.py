@@ -1404,6 +1404,7 @@ class Model(models.Model):
         skip_auto=False,
         with_m2m=False,
         with_hidden=False,
+        with_reverse=False,
         **filters,
     ):
         """
@@ -1413,6 +1414,8 @@ class Model(models.Model):
         Many-to-many fields are by default excluded because of the difficulties
         of meaningfully displaying them
 
+        :param bool with_reverse: Include one_to_many relations, that is,
+                                  foreign keys that point to us.
         :param bool filters: Filter by boolean field attributes.  Only return
                              fields for which the given attribute evaluates to
                              True or False respectively.  Beware interactions
@@ -1421,7 +1424,7 @@ class Model(models.Model):
         """
         # exclude a field if test comes back True
         tests = [
-            lambda x: x.one_to_many,
+            # list default tests here
             lambda x: x.name == 'history',
         ]
 
@@ -1433,6 +1436,9 @@ class Model(models.Model):
 
         if not with_hidden:
             tests.append(lambda x: x.name in cls.hidden_fields)
+
+        if not with_reverse:
+            tests.append(lambda x: x.one_to_many)
 
         for k, v in filters.items():
             if not hasattr(models.Field, k):

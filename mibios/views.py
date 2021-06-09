@@ -408,6 +408,16 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
             ctx['table_view_plugin_template'] = plugin.template_name
             ctx = plugin.get_context_data(**ctx)
 
+        # add relation links
+        related_confs = []
+        for i in self.conf.model.get_fields(with_reverse=True).fields:
+            try:
+                related_confs.append(self.conf.shift(i))
+            except NotImplementedError:
+                # FIXME: remove this after shift is fully implemented
+                pass
+        ctx['related_confs'] = related_confs
+
         return ctx
 
     def get_search_field(self):
