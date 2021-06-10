@@ -600,6 +600,9 @@ class DataConfig:
         if not any((field.many_to_one, field.one_to_many, field.one_to_one)):
             raise NotImplementedError('only works for fwd/rev relation atm')
 
+        if not issubclass(field.remote_field.model, Model):
+            raise NotImplementedError('only for relations to mibios.Model')
+
         if field.model is not self.model:
             # assume field is a ManyToOneRel for a ForeignKey to a
             # ParentModel and self.model is the child and field.model derives

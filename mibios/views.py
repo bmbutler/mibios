@@ -411,6 +411,8 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
         # add relation links
         related_confs = []
         for i in self.conf.model.get_fields(with_reverse=True).fields:
+            if not self.conf.model.is_relation_field(i):
+                continue
             try:
                 related_confs.append(self.conf.shift(i))
             except NotImplementedError:

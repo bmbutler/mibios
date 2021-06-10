@@ -1347,6 +1347,7 @@ class Model(models.Model):
             'BinaryField',
         ),
         'boolean': ('BooleanField',),
+        'relation': ('ForeignKey',),
     }
 
     @classmethod
@@ -1360,14 +1361,16 @@ class Model(models.Model):
 
         :param field: Either a field object or the name of a field.
 
-        May raise ValueError if the given field does not belong to this Model or 
+        May raise ValueError if the given field does not belong to this Model
+        or ???
         """
         if isinstance(field, str):
             field = cls.get_field(field)
         else:
-            if field not in cls.get_fields().fields:
+            flist = cls.get_fields(with_m2m=True, with_reverse=True).fields
+            if field not in flist:
                 raise ValueError('field does not belong to model or is not '
-                                 'supported by this method')
+                                 f'supported by this method: {field}')
 
         return field.get_internal_type() in cls.field_types[kind]
 
@@ -1384,6 +1387,13 @@ class Model(models.Model):
         Check if given field is of some boolean type
         """
         return cls._field_type_check(field, 'boolean')
+
+    @classmethod
+    def is_relation_field(cls, field):
+        """
+        Check if given field is of a forward relation
+        """
+        return cls._field_type_check(field, 'relation')
 
     @classmethod
     def is_simple_field(cls, field):
