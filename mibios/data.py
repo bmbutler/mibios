@@ -623,6 +623,12 @@ class DataConfig:
             self._shift_lookups(field, **i)
             for i in self.excludes
         ]
+
+        if not conf.filter:
+            if field.remote_field.null:
+                # exclude rows without empty relation to current
+                conf.excludes.append({field.remote_field.name: None})
+
         if others:
             return conf.shift(*others)
         else:
@@ -642,6 +648,7 @@ class DataConfig:
         for k, v in lookups.items():
             k = field.remote_field.name + '__' + k
             ret[k] = v
+
         return ret
 
     def _need_distinct(self):
