@@ -23,7 +23,7 @@ class Sample(ParentModel):
 
     This is the multi-table-inheritance parent that other apps should use to
     interface with sequencing data.  There are no fields declared here besides
-    the usual auto-primary-key and history.
+    the inherited auto-primary-key and history.
     """
     pass
 
