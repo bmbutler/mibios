@@ -76,6 +76,12 @@ setuptools.setup(
         ],
         'mibios_seq': ['templates/mibios_seq/*.html'],
     },
+    entry_points={
+        'console_scripts': [
+            'manage_' + NAME + '=' + NAME + '.ops:manage',
+        ],
+    },
+
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Programming Language :: Python :: 3',
