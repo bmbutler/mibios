@@ -1,6 +1,8 @@
 """
 Module for data abstraction
 """
+from decimal import Decimal
+from pathlib import Path
 from urllib.parse import urlparse
 
 from django import forms
@@ -12,7 +14,7 @@ from . import (get_registry, QUERY_FILTER, QUERY_EXCLUDE, QUERY_NEGATE,
                QUERY_SHOW, QUERY_COUNT, QUERY_SEARCH, QUERY_Q)
 from .dataset import Dataset
 from .models import Model, Q
-from .tables import NONE_LOOKUP
+from .tables import table_factory, NONE_LOOKUP
 from .utils import getLogger, prep_url_query_value, url_query_value_to_python
 
 
@@ -742,3 +744,30 @@ class TableConfig(DataConfig):
             qdict[QUERY_COUNT] = ''
 
         return qdict
+
+    def save_csv(self, path, sep='\t', empty='', decimal_fmt=None):
+        """
+        Save table to csv text file
+
+        :param str sep: Separatoe string, default is <tab>
+        :param str empty:
+            What to render for None values.  Default is the empty string.
+        :param str decimal_fmt:
+            Optional format string for decimal fields, e.g.: ':.2f'
+        """
+        if isinstance(path, str):
+            path = Path(path)
+
+        with path.open('w') as f:
+            for i in table_factory(conf=self)(self.get_queryset()).as_values():
+                row = []
+                for j in i:
+                    if j is None:
+                        value = empty
+                    elif isinstance(j, Decimal) and decimal_fmt:
+                        value = ('{' + decimal_fmt + '}').format(j)
+                    else:
+                        value = str(j)
+                    row.append(value)
+
+                f.write(sep.join(row) + '\n')
