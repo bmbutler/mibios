@@ -463,6 +463,7 @@ class DetailedHistoryTable(HistoryTable):
     is_deleted = tables.BooleanColumn(verbose_name='Removed?')
     record_natural = tables.Column(verbose_name='Name')
     changes = DiffColumn(accessor=tables.A('diff'))
+    comment = tables.Column(empty_values=())  # makes render() work for blanks
 
     class Meta:
         model = ChangeRecord
@@ -472,6 +473,15 @@ class DetailedHistoryTable(HistoryTable):
             'comment',
         )
         exclude = ('record_pk',)
+
+    def render_comment(self, value, record):
+        if value:
+            return value
+
+        if record.file:
+            return record.file.get_abbr_note()
+
+        return ''
 
 
 class SnapshotListTable(tables.Table):

@@ -689,6 +689,20 @@ class ImportFile(models.Model):
         return format_html(templ, url)
     get_log_url.short_description = 'Import log'
 
+    def get_abbr_note(self, import_file=None, max_length=75):
+        """
+        Return an abbreviated form of the note
+
+        Returns the first sentence of the first line of the note, at most
+        max_length characters.
+        """
+        if not self.note:
+            return ''
+
+        txt = self.note[:max_length].splitlines()[0]
+        txt = txt.split('.', maxsplit=1)[0]
+        return txt
+
 
 class ChangeRecordQuerySet(QuerySet):
     def with_old_fields(self):
@@ -930,14 +944,19 @@ class ChangeRecord(models.Model):
         users = User.objects.in_bulk()
         rec_types = ContentType.objects.in_bulk()
         files = ImportFile.objects.in_bulk()
+
+        def get_file(rec):
+            return files.get(rec['file'], None)
+
         return (
             (
                 (i['imin'], i['imax']),
                 i['ts'],
                 i['count'],
                 rec_types.get(i['record_type'], '??'),
-                i['comment'],
-                files.get(i['file'], '-'),
+                i['comment'] or (get_file(i).get_abbr_note()
+                                 if get_file(i) else ''),
+                get_file(i) or '-',
                 users.get(i['user'], 'admin'),
             )
             for i in qs.iterator()
