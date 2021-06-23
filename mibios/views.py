@@ -634,6 +634,7 @@ class ImportView(DatasetMixin, CuratorRequiredMixin, FormView):
     def form_valid(self, form):
         # do data import
         f = form.files['file']
+        note = form.cleaned_data['note']
         dry_run = form.cleaned_data['dry_run']
         if dry_run:
             log.debug(
@@ -654,7 +655,7 @@ class ImportView(DatasetMixin, CuratorRequiredMixin, FormView):
                 warn_on_error=True,
                 no_new_records=not form.cleaned_data['allow_new_records'],
                 user=self.request.user,
-                note=form.cleaned_data['note'],
+                note=note,
             )
 
         except Exception as e:
@@ -664,10 +665,14 @@ class ImportView(DatasetMixin, CuratorRequiredMixin, FormView):
                    ''.format(type(e).__name__, e))
             msg_level = messages.ERROR
         else:
-            import_log = AbstractImportCommand.format_import_stats(
+            import_log = ''
+            if note:
+                import_log += f' Note: {note}\n\n'
+            import_log += AbstractImportCommand.format_import_stats(
                 **stats,
                 verbose_changes=True,
             )
+
             msg = 'data successfully imported'
             msg_level = messages.SUCCESS
 
