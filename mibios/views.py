@@ -654,6 +654,7 @@ class ImportView(DatasetMixin, CuratorRequiredMixin, FormView):
                 warn_on_error=True,
                 no_new_records=not form.cleaned_data['allow_new_records'],
                 user=self.request.user,
+                note=form.cleaned_data['note'],
             )
 
         except Exception as e:

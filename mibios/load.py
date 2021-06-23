@@ -34,7 +34,8 @@ class Loader():
 
     def __init__(self, data_name, sep=None, can_overwrite=True,
                  warn_on_error=False, strict_sample_id=False, dry_run=False,
-                 user=None, erase_on_blank=False, no_new_records=False):
+                 user=None, erase_on_blank=False, no_new_records=False,
+                 note=''):
         try:
             self.dataset = get_registry().datasets[data_name]
         except KeyError:
@@ -87,6 +88,7 @@ class Loader():
         self.user = user
         self.erase_on_blank = erase_on_blank
         self.no_new_records = no_new_records
+        self.note = note
         self.file_record = None
         if dry_run:
             self.log = log
@@ -178,7 +180,10 @@ class Loader():
         row = None
         try:
             with transaction.atomic():
-                self.file_record = ImportFile.create_from_file(file=file)
+                self.file_record = ImportFile.create_from_file(
+                    file=file,
+                    note=self.note,
+                )
                 # Saving input file to storage: if the input file come from the
                 # local filesystem, ImportFile.save() we need to seek(0) our
                 # file handle.  Do uploaded files in memory do something else?

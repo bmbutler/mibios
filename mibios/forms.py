@@ -53,6 +53,13 @@ class UploadFileForm(forms.Form):
         help_text='De-select this to prevent new records from being created '
                   'while still allowing modifications to existing records.',
     )
+    note = forms.CharField(
+        widget=forms.widgets.Textarea,
+        required=False,
+        initial='',
+        label='Note',
+        max_length=5000,  # be generous but some limit needed
+    )
 
 
 def get_field_search_form(table_conf, *fields):

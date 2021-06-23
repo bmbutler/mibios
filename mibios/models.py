@@ -638,6 +638,8 @@ class ImportFile(models.Model):
     log = models.TextField(
         blank=True, default='', help_text='log output from data import',
     )
+    note = models.TextField(blank=True, default='', help_text='File meta '
+                            'info: origin of data, why was it imported etci.')
 
     class Meta:
         get_latest_by = 'timestamp'
