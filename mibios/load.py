@@ -75,7 +75,7 @@ class Loader():
         self.warnings = []
         self.sep = sep
         self.new = defaultdict(list)
-        self.added = Counter()
+        self.added = defaultdict(lambda: defaultdict(list))
         self.changed = defaultdict(lambda: defaultdict(list))
         self.erased = defaultdict(lambda: defaultdict(list))
         self.count = 0
@@ -267,7 +267,9 @@ class Loader():
 
                 if k in diffs['only_them']:
                     apply_change = True
-                    self.added[model_name] += 1
+                    self.added[model_name][obj].append(
+                        (k, from_row.get(k))
+                    )
                 elif k in diffs['only_us']:
                     self.erased[model_name][obj].append(
                         (k, getattr(obj, k))

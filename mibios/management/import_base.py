@@ -156,11 +156,21 @@ class AbstractImportCommand(BaseCommand):
             out += ' No new records\n'
 
         if added:
-            out += ' Records with blank fields filled:\n' + '\n'.join([
-                '  {}: {}'.format(k, v)
-                for k, v
-                in added.items()
-            ]) + '\n'
+            out += ' Records with blank fields filled:\n'
+            if options.get('verbose_changes'):
+                for m, i in added.items():
+                    for obj, add_list in i.items():
+                        row = []
+                        for field, new in add_list:
+                            row.append('{}: {}'.format(field, new))
+                        out += '   {} {}: {}\n'.format(m, obj, ' | '.join(row))
+            else:
+                out += '\n'.join([
+                    '  {}: {}'.format(k, len(v))
+                    for k, v
+                    in added.items()
+                ])
+            out += '\n'
 
         if changed:
             if options.get('overwrite'):
