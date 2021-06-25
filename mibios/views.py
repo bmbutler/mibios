@@ -13,7 +13,6 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponse
 from django.urls import reverse
-from django.utils.decorators import method_decorator
 from django.utils.html import format_html
 from django.views.decorators.cache import cache_page
 from django.views.generic.base import ContextMixin, TemplateView, View
@@ -88,6 +87,13 @@ class BasicBaseMixin(CuratorMixin, ContextMixin):
         for conf in get_registry().apps.values():
             ctx['version_info'][conf.name] = getattr(conf, 'version', None)
         return ctx
+
+    def dispatch(self, request, *args, **kwargs):
+        if 'nocache' in request.GET:
+            log.debug('SKIPPING CACHE')
+            return super().dispatch(request, *args, **kwargs)
+        else:
+            return cache_page(None)(super().dispatch)(request, *args, **kwargs)
 
 
 class BaseMixin(BasicBaseMixin):
@@ -253,7 +259,6 @@ class TableViewPlugin():
         return ctx
 
 
-# @method_decorator(cache_page(None), name='dispatch')
 class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
     template_name = 'mibios/table.html'
     config_class = TableConfig
@@ -902,7 +907,6 @@ class DetailedHistoryView(BaseMixin, UserRequiredMixin, SingleTableMixin,
         return ChangeRecord.get_details(self.first, self.last)
 
 
-# @method_decorator(cache_page(None), name='dispatch')
 class FrontPageView(BaseMixin, UserRequiredMixin, SingleTableMixin,
                     TemplateView):
     template_name = 'mibios/frontpage.html'
