@@ -2,7 +2,7 @@ from collections import namedtuple, OrderedDict
 from decimal import Decimal
 from itertools import groupby
 import json
-from operator import attrgetter
+from operator import itemgetter
 from pathlib import Path
 from shutil import copy2
 
@@ -930,24 +930,26 @@ class ChangeRecord(models.Model):
         """
         Generator of compact history table
 
-        Starts with mose recent change.  This is intended for showing the last
-        few changes and is reasonable fast in that use case.  Producing the
-        whole history may take several seconds depending on the size of the
-        history table.
+        Starts with mose recent change.
         """
-        rel_fields = ('user', 'file', 'record_type')
-        qs = ChangeRecord.objects.select_related(*rel_fields)
+        users = User.objects.in_bulk()
+        rec_types = ContentType.objects.in_bulk()
+        files = ImportFile.objects.in_bulk()
 
-        group_key = *rel_fields, 'comment'
-        g = groupby(qs.iterator(), key=attrgetter(*group_key))
+        group_key = ('user_id', 'file_id', 'record_type_id', 'comment')
+        qs = ChangeRecord.objects.values('id', 'timestamp', *group_key)
+        g = groupby(qs.iterator(), key=itemgetter(*group_key))
 
-        for (user, file, record_type, comment), grp in g:
+        for (user_id, file_id, record_type_id, comment), grp in g:
             grp = list(grp)
+            record_type = rec_types.get(record_type_id)
+            file = files.get(file_id)
+            user = users.get(user_id)
             yield (
                 # order of items as expected by .tables.CompactHistoryTable
                 # and summary_shorter()
-                (grp[-1].pk, grp[0].pk),  # smaller pk goes first
-                grp[0].timestamp,
+                (grp[-1]['id'], grp[0]['id']),  # smaller pk goes first
+                grp[0]['timestamp'],
                 len(grp),
                 record_type,
                 comment or (file.get_abbr_note() if file else ''),
@@ -968,6 +970,7 @@ class ChangeRecord(models.Model):
         keys = ['ids', 'ts', 'count', 'rec_t', 'comment', 'file', 'user']
         buf = None
         nrows = 0
+
         # iterate from last to first change set:
         for row in cls.summary():
             n = dict(zip(keys, row))
