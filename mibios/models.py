@@ -828,7 +828,8 @@ class ChangeRecord(models.Model):
         self.serialize()
         super().save(*args, **kwargs)
         self.record.history.add(self)
-        del self.record.change
+        if hasattr(self.record, 'change'):
+            del self.record.change
 
     def fields_as_dict(self, json_serial=None):
         """

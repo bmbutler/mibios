@@ -4,7 +4,7 @@ from django.db.transaction import atomic
 from django.urls import reverse_lazy
 
 from . import get_registry
-from .models import ImportFile, Snapshot
+from .models import ImportFile, Snapshot, ChangeRecord
 from .views import HistoryView
 
 
@@ -32,6 +32,7 @@ class AdminSite(admin.AdminSite):
 
         self.register(ImportFile, ImportFileAdmin)
         self.register(Snapshot, SnapshotAdmin)
+        self.register(ChangeRecord, HistoryAdmin)
 
     def get_app_list(self, request):
         """
@@ -98,3 +99,34 @@ class ImportFileAdmin(admin.ModelAdmin):
 
 class SnapshotAdmin(admin.ModelAdmin):
     list_display = ('timestamp', 'name', 'dbpath', 'jsonpath', 'note')
+
+
+class HistoryAdmin(admin.ModelAdmin):
+    """
+    Admin interface for history
+
+    We only want to allow changing comments
+    """
+    actions = None
+    list_display = ('timestamp', 'record_type', 'record_natural',
+                    'comment', 'file')
+    fields = (
+        ('timestamp', 'record_type', 'record_natural', 'record_pk'),
+        ('user', 'file', 'line'), ('is_created', 'is_deleted'), 'comment',
+    )
+    readonly_fields = (
+        'timestamp', 'user', 'line', 'record_pk', 'file', 'record_type',
+        'record_natural', 'fields', 'is_created', 'is_deleted',
+    )
+
+    def has_add_permission(self, request):
+        """
+        No adding history via the admin interface
+        """
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        """
+        No removing history via the admin interface
+        """
+        return False
