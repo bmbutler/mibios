@@ -1,6 +1,8 @@
 from collections import namedtuple, OrderedDict
 from decimal import Decimal
+from itertools import groupby
 import json
+from operator import attrgetter
 from pathlib import Path
 from shutil import copy2
 
@@ -925,42 +927,32 @@ class ChangeRecord(models.Model):
     @classmethod
     def summary(cls):
         """
-        Generate a compact history table
+        Generator of compact history table
 
-        Starts with mose recent change.
+        Starts with mose recent change.  This is intended for showing the last
+        few changes and is reasonable fast in that use case.  Producing the
+        whole history may take several seconds depending on the size of the
+        history table.
         """
-        qs = (
-                ChangeRecord
-                .objects
-                .values('user', 'file', 'comment', 'record_type')
-                .annotate(
-                    imin=models.Min('id'),
-                    imax=models.Max('id'),
-                    ts=models.Min('timestamp'),
-                    count=models.Count('id'),
-                )
-                .order_by('-imin')
-            )
-        users = User.objects.in_bulk()
-        rec_types = ContentType.objects.in_bulk()
-        files = ImportFile.objects.in_bulk()
+        rel_fields = ('user', 'file', 'record_type')
+        qs = ChangeRecord.objects.select_related(*rel_fields)
 
-        def get_file(rec):
-            return files.get(rec['file'], None)
+        group_key = *rel_fields, 'comment'
+        g = groupby(qs.iterator(), key=attrgetter(*group_key))
 
-        return (
-            (
-                (i['imin'], i['imax']),
-                i['ts'],
-                i['count'],
-                rec_types.get(i['record_type'], '??'),
-                i['comment'] or (get_file(i).get_abbr_note()
-                                 if get_file(i) else ''),
-                get_file(i) or '-',
-                users.get(i['user'], 'admin'),
+        for (user, file, record_type, comment), grp in g:
+            grp = list(grp)
+            yield (
+                # order of items as expected by .tables.CompactHistoryTable
+                # and summary_shorter()
+                (grp[-1].pk, grp[0].pk),  # smaller pk goes first
+                grp[0].timestamp,
+                len(grp),
+                record_type,
+                comment or (file.get_abbr_note() if file else ''),
+                file,
+                user or 'admin',
             )
-            for i in qs.iterator()
-        )
 
     @classmethod
     def summary_shorter(cls, limit=None):
