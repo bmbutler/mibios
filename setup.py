@@ -58,14 +58,14 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://sites.google.com/a/umich.edu/the-schmidt-lab/home',
-    python_requires='>=3.7',
+    python_requires='>=3.9',
     install_requires=[
         'Django~=2.2.0',
         'django-extensions~=2.2.0',
-        'djangorestframework~=3.11.0',
+        'djangorestframework~=3.12.0',
         'django-tables2~=2.1.0',
-        'pandas~=0.25.0',
-        'biopython~=1.77',
+        'pandas~=1.1.0',
+        'biopython~=1.78',
     ],
     packages=setuptools.find_packages(),
     package_data={
