@@ -925,8 +925,7 @@ class FrontPageView(BaseMixin, UserRequiredMixin, SingleTableMixin,
 
         for i in sorted(models, key=sort_key):
             count = i.objects.count()
-            if count:
-                ctx['counts'][i._meta.verbose_name_plural.capitalize()] = count
+            ctx['counts'][i._meta.verbose_name_plural.capitalize()] = count
 
         ctx['have_changes'] = ChangeRecord.objects.exists()
         ctx['admins'] = settings.ADMINS
