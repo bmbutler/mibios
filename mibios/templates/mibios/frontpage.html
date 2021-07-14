@@ -14,6 +14,7 @@
 {% else %}
 <p>no change history</p>
 {% endif %}
+{% if schema_path %}{% load static %}<p><a href="{% static schema_path %}">DB schema</a></p>{% endif %}
 <p>For comments, questions, help, requests for user accounts please contact the site maintainer:
 {% for i in admins %}
 {{ i|last|urlize }} ({{ i|first }})

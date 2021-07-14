@@ -224,3 +224,12 @@ CACHES = {
 }
 
 IGNORABLE_404_URLS = []
+
+### Settings for plot_schema command:
+# path to image file, relative to mibios app's static files base directory
+SCHEMA_PLOT_PATH = 'img/schema.png'
+SCHEMA_PLOT_SIMPLE_PATH = 'img/schema_simple.png'
+# Plot models from given apps, a list of app names
+SCHEMA_PLOT_APPS = ['mibios', 'mibios_seq']
+# Models to exclude from plot, comma-separated list as str
+SCHEMA_PLOT_EXCLUDE = 'ChangeRecord,Model,ParentModel'

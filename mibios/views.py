@@ -3,11 +3,13 @@ import csv
 from itertools import tee, zip_longest
 from io import StringIO
 from math import isnan
+from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 
 from django.apps import apps
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.staticfiles.finders import find as find_static
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
@@ -974,6 +976,15 @@ class FrontPageView(BaseMixin, UserRequiredMixin, SingleTableMixin,
 
         ctx['have_changes'] = ChangeRecord.objects.exists()
         ctx['admins'] = settings.ADMINS
+
+        # only show schema if we have an image file:
+        ctx['schema_path'] = None
+        static_root = find_static('mibios')
+        if static_root is not None:
+            schema_path = Path(static_root) / settings.SCHEMA_PLOT_PATH
+            if schema_path.is_file():
+                ctx['schema_path'] = str(schema_path)
+
         return ctx
 
 

@@ -21,3 +21,4 @@ DEBUG = True
 ALLOWED_HOSTS.append('127.0.0.1')
 MIDDLEWARE = ['mibios.ops.utils.RemoteUserInjection'] + MIDDLEWARE
 ASSUME_IDENTITY = ('', 'heinro')
+SCHEMA_PLOT_APPS = ['mibios_omics']
