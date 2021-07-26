@@ -1593,9 +1593,14 @@ class Model(models.Model):
 
         Usually these are all the decimal fields
         """
+        numeric_types = (
+            models.DecimalField,
+            models.FloatField,
+            models.BooleanField,
+        )
         ret = [cls.get_field(i) for i in cls.average_fields]
         for i in cls.get_fields().fields:
-            if isinstance(i, models.DecimalField):
+            if isinstance(i, numeric_types):
                 if i not in ret:
                     ret.append(i)
         return ret
