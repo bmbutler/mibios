@@ -176,7 +176,8 @@ class AvgGroupCountColumn(GroupColumn):
         total = 0
         for row in table.data:
             total += bound_column.accessor.resolve(row)
-        return format_html('all: <a href="{}">{}</a>', self.footer_url, total)
+        url = self.all_related_conf.url()
+        return format_html(f'all: <a href="{url}">{total}</a>')
 
 
 class ManyToManyColumn(tables.ManyToManyColumn):
