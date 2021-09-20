@@ -39,20 +39,6 @@ class DataConfig:
         self.is_curated = True
         self.extras = {}
 
-    @classmethod
-    def from_url(cls, url):
-        """
-        Return instance corresponding to given URL
-
-        This is intended for testing and debugging.  Missing curation status
-        handling.
-        """
-        url = urlparse(url)
-        data_name = resolve(url.path).kwargs['data_name']
-        conf = cls(data_name)
-        conf.set_from_query(QueryDict(url.query))
-        return conf
-
     def _copy(self):
         """
         Make and return a deepish copy of instance
