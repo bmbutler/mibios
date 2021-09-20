@@ -1,6 +1,6 @@
 <p>
 Export
-{% if view.avg_by %}
+{% if view.conf.avg_by %}
 <a href="{% url 'mibios_seq:export_avg_shared_form' %}{{ querystr }}">
 {% else %}
 <a href="{% url 'mibios_seq:export_shared_form' %}{{ querystr }}">
