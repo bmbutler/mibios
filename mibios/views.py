@@ -1078,31 +1078,33 @@ class AverageMixin():
     """
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)
-        avg_by = []
 
+        # Collect the avg-by fields from both, the path and the querystring,
+        # since both are in use by different views.  At some point we'll
+        # probably drop putting these into the url path just not yet.
+        avg_by = []
         if 'avg_by' in kwargs:
             avg_by = kwargs['avg_by'].split('-')
 
-        # FIXME: DELETE (is anachronistic, QUERY_AVG_BY was never in use?)
-        if QUERY_AVG_BY in request.GET:
-            for i in request.GET.getlist(QUERY_AVG_BY):
+        if QUERY_AVG_BY in self.conf.extras:
+            for i in self.conf.extras[QUERY_AVG_BY]:
                 if i not in avg_by:
                     avg_by.append(i)
 
-        if avg_by == ['']:
-            # for testing?
-            self.conf.avg_by = []
-        else:
-            for i in self.conf.model.average_by:
-                if set(avg_by) == set(i):
-                    self.conf.avg_by = avg_by
-                    break
-            else:
-                raise Http404(f'bad avg_by: {avg_by}')
+            del self.conf.extras[QUERY_AVG_BY]
 
-        # names for the fields that average() adds
-        fields = list(self.conf.avg_by) + ['avg_group_count']
+        for i in self.conf.model.average_by:
+            # TODO: is this check really useful? should it be done here?
+            if set(avg_by).issubset(set(i)):
+                break
+        else:
+            raise Http404(f'unexpected avg_by: {self.conf.avg_by}')
+
+        # Use fields that average() adds:
+        fields = avg_by + ['avg_group_count']
         fields += [i.name for i in self.conf.model.get_average_fields()]
+
+        self.conf.avg_by = avg_by
         self.conf.fields = fields
         self.conf.fields_verbose = [None] * len(self.conf.fields)
 

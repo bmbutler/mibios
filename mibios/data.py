@@ -72,7 +72,7 @@ class DataConfig:
         self.verbose_name = None
         self.fields = []
         self.fields_verbose = []
-        self.avg_by = None
+        self.avg_by = []
         self._manager = None
         self.clear_selection()
         if isinstance(arg, str):
@@ -235,7 +235,7 @@ class DataConfig:
             qs = qs.distinct()
             log_msg += ' distinct'
 
-        if self.avg_by is not None:
+        if self.avg_by:
             qs = qs.average(*self.avg_by)
             log_msg += f' avg_by: {self.avg_by}'
 

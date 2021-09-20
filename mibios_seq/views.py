@@ -104,40 +104,49 @@ class ExportSharedFormView(ExportSharedFormMixin, ExportBaseMixin,
         return ctx
 
 
-class ExportAvgSharedFormView(AverageMixin, ExportSharedFormView):
+class ExportAvgSharedFormMixin:
     export_url_name = 'mibios_seq:export_avg_shared'
 
     def get_form_class(self):
-        if self.conf.avg_by:
-            # FIXME: the way we modularize the averaged vs. non-averaged
-            # function need re-design, part is conditional, e.g. here, and part
-            # is by using class inheritance, it's messy
+        avg_by = self.conf.avg_by
 
-            # override meta col choices: meta is avg_by but without project
-            # nor otu since those are always averaged by.  What we want is e.g.
-            # just participant and week:
-            # TODO: auto-detect other relations
-            self.meta_col_choice_map = dict()
-            for i in self.conf.avg_by:
-                if i in ['project', 'otu']:
-                    continue
-                model_name = i.split('__')[-1]
-                self.meta_col_choice_map[model_name.capitalize()] = \
-                    model_name + '__natural'
+        # ensure avg_by data is put in form:
+        self.conf.extras[QUERY_AVG_BY] = avg_by
 
-            self.meta_col_choice_map['Semester'] = \
-                'participant__semester__natural'
-            self.meta_col_choice_map['participant compiance'] = \
-                'participant__quantity_compliant'
-            self.meta_col_choice_map['Supplement'] = \
-                'participant__supplement__natural'
-            self.meta_col_choice_map['Supplement composition'] = \
-                'participant__supplement__composition'
-            # override norm choices: rm "none"
-            # as there's no such thing as average absolute counts
-            self.norm_choices = tuple(self.norm_choices[1:])
+        # FIXME: ??? the way we modularize the averaged vs. non-averaged
+        # function need re-design, part is conditional, e.g. here, and part
+        # is by using class inheritance, it's messy
+
+        # override meta col choices: meta is avg_by but without project
+        # nor otu since those are always averaged by.  What we want is e.g.
+        # just participant and week:
+        # TODO: auto-detect other relations
+        self.meta_col_choice_map = dict()
+        for i in avg_by:
+            if i in ['project', 'otu']:
+                continue
+            model_name = i.split('__')[-1]
+            self.meta_col_choice_map[model_name.capitalize()] = \
+                model_name + '__natural'
+
+        self.meta_col_choice_map['Semester'] = \
+            'participant__semester__natural'
+        self.meta_col_choice_map['participant compiance'] = \
+            'participant__quantity_compliant'
+        self.meta_col_choice_map['Supplement'] = \
+            'participant__supplement__natural'
+        self.meta_col_choice_map['Supplement composition'] = \
+            'participant__supplement__composition'
+        # override norm choices: rm "none"
+        # as there's no such thing as average absolute counts
+        self.norm_choices = tuple(self.norm_choices[1:])
 
         return super().get_form_class()
+
+
+class ExportAvgSharedFormView(AverageMixin, ExportAvgSharedFormMixin,
+                              ExportSharedFormView):
+    pass
 
 
 class ExportSharedView(ExportSharedFormMixin, ExportView):
@@ -197,7 +206,8 @@ class ExportSharedView(ExportSharedFormMixin, ExportView):
         )
 
 
-class ExportAvgSharedView(ExportAvgSharedFormView, ExportSharedView):
+class ExportAvgSharedView(AverageMixin, ExportAvgSharedFormMixin,
+                          ExportSharedView):
     def get_filename(self):
         return super().get_filename() + '-avg'
 
