@@ -77,6 +77,7 @@ class BasicBaseMixin(CuratorMixin, ContextMixin):
         log.debug(request.resolver_match or 'no url resolver match')
         log.debug(f'user:{request.user} path:{request.path_info} '
                   f'GET:{request.GET}')
+        request.GET = self.parse_query_string_csv(request.GET)
         super().setup(request, *args, **kwargs)
 
     def get_context_data(self, **ctx):
@@ -92,6 +93,30 @@ class BasicBaseMixin(CuratorMixin, ContextMixin):
         for conf in get_registry().apps.values():
             ctx['version_info'][conf.name] = getattr(conf, 'version', None)
         return ctx
+
+    @staticmethod
+    def parse_query_string_csv(get):
+        """
+        convert CSVs to lists in query string
+
+        Such CSVs come back via saving lists with MultipleHiddenInput
+
+        :param get QueryDict: Usually the GET attribute of a request.
+
+        Returns a modified QueryDict instance.  This should be called as the
+        first thing in setup().
+        """
+        # FIXME: allow values to contain properly escaped commas, currently
+        # everything with a comma gets turned into a list
+        get = get.copy()
+        for k, vs in get.lists():
+            get.setlist(
+                k,
+                # flatten list of CSVs:
+                [val for i in vs for val in i.split(',')]
+            )
+        get._mutable = False
+        return get
 
     def dispatch(self, request, *args, **kwargs):
         if 'nocache' in request.GET:
