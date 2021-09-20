@@ -50,10 +50,9 @@ class CuratorMixin():
     def setup(self, request, *args, **kwargs):
         f = dict(name=self.CURATOR_GROUP_NAME)
         try:
-            is_curator = request.user.groups.filter(**f).exists()
+            self.user_is_curator = request.user.groups.filter(**f).exists()
         except Exception:
-            pass
-        self.user_is_curator = is_curator
+            pass  # default applies
         super().setup(request, *args, **kwargs)
 
 
@@ -74,6 +73,12 @@ class BasicBaseMixin(CuratorMixin, ContextMixin):
     """
     Mixin to populate context for the base template without model/dataset info
     """
+    def setup(self, request, *args, **kwargs):
+        log.debug(request.resolver_match or 'no url resolver match')
+        log.debug(f'user:{request.user} path:{request.path_info} '
+                  f'GET:{request.GET}')
+        super().setup(request, *args, **kwargs)
+
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         # page_title: a list, inheriting views should consider adding to this
@@ -178,12 +183,20 @@ class DatasetMixin(BaseMixin):
         )
         self.conf.is_curated = is_curated
 
-    def get(self, request, *args, **kwargs):
-        log.debug(f'GET = {request.GET}')
+        # this sort of assumes that all requests are GET
+        self.process_query_string()
+        log.debug(f'CONF = {vars(self.conf)}')
+
+    def process_query_string(self):
+        """
+        Load the query string / request.GET into data config
+
+        Method should be called ahead of get().  When overriding this method to
+        allow special processing, the child class should first call the
+        parent's method.
+        """
         if self.conf:
-            self.conf.set_from_query(request.GET)
-            log.debug(f'CONF = {vars(self.conf)}')
-        return super().get(request, *args, **kwargs)
+            self.conf.set_from_query(self.request.GET)
 
     @classmethod
     def shorten_lookup(cls, txt):
