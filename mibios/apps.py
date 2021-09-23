@@ -1,4 +1,5 @@
 from importlib import import_module
+import logging
 
 from django import apps
 from django.conf import settings
@@ -6,7 +7,7 @@ from django.contrib.admin.apps import AdminConfig as UpstreamAdminConfig
 from django.utils.module_loading import import_string
 
 from .registry import Registry
-from .utils import getLogger
+from .utils import getLogger, QueryLogFilter
 
 
 log = getLogger(__name__)
@@ -18,6 +19,9 @@ class MibiosConfig(apps.AppConfig):
 
     def ready(self):
         super().ready()
+
+        if settings.DEBUG:
+            logging.getLogger('django.db.backends').addFilter(QueryLogFilter())
 
         # set up registry
         registry = Registry()

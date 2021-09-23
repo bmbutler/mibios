@@ -2,6 +2,7 @@
 Utilities module
 """
 from datetime import datetime
+import inspect
 import logging
 import time
 
@@ -27,6 +28,50 @@ def getLogger(name):
     Wrapper around logging.getLogger()
     """
     return PrintLikeLogging(logging.getLogger(name), {})
+
+
+class QueryLogFilter(logging.Filter):
+    """
+    Filter to add call origin info to the db.backends debug log entries.
+
+    With this we can tell where in our code DB queries originate.  It doesn't
+    work for queries that are triggered by the django machinery after our code
+    has already done it's work, e.g. the usual call to get_queryset() in a
+    class-based view that is triggered by the response rendering.  Some of our
+    middleware might still show up in those queries' call traces but those get
+    skipped here as to not clutter the logs.
+
+    The filter should be added to the django.db.backends logger during the app
+    initilization in DEBUG mode.
+    """
+    def filter(self, record):
+        fr = inspect.currentframe()
+        while True:
+            # iterate up the call chain, ends when f_back is None
+            if fr.f_back is None:
+                break
+
+            fr = fr.f_back
+            mod = inspect.getmodule(fr)
+            if mod is None:
+                # maybe we're interactive or so?
+                continue
+
+            mname = mod.__name__
+
+            if not mname.startswith('mibios'):
+                continue
+
+            info = inspect.getframeinfo(fr)
+
+            if mname in ['mibios.ops.utils', 'mibios.utils']:
+                if info.function == '__call__':
+                    # skip middleware frames
+                    continue
+
+            record.msg += f' via: {mname} ln:{info.lineno} fn:{info.function}'
+            break
+        return True
 
 
 class DeepRecord():
