@@ -202,10 +202,15 @@ class DatasetMixin(BaseMixin):
             # FIXME: may this happen?
             return
 
-        self.conf = self.config_class(
-            self.data_name,
-            show_hidden=self.show_hidden,
-        )
+        try:
+            self.conf = self.config_class(
+                self.data_name,
+                show_hidden=self.show_hidden,
+            )
+        except LookupError:
+            # no table or data set with that name
+            raise Http404(f'no dataset with name: {self.data_name}')
+
         self.conf.is_curated = is_curated
 
         # this sort of assumes that all requests are GET
