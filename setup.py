@@ -71,6 +71,7 @@ setuptools.setup(
     package_data={
         NAME: [
             'templates/' + NAME + '/*.html',
+            'templates/*.html',
             'static/' + NAME + '/css/*.css',
             'static/' + NAME + '/js/*.js',
         ],
