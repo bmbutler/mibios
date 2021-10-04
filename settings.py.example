@@ -55,3 +55,6 @@ INSTALLED_APPS.append('mibios_seqapps.AppConfig')
 # ALLOWED_HOSTS += ['my.server.domain.name']
 # ALLOWED_HOSTS = ['my.server.domain.name']
 # ALLOWED_HOSTS = ['localhost']
+
+# Uncomment this do disable caching, for testing/debugging only
+# CACHES['default']['BACKEND'] = 'django.core.cache.backends.dummy.DummyCache'
