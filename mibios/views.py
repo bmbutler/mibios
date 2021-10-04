@@ -21,6 +21,8 @@ from django.views.generic.edit import FormView
 from django_tables2 import (SingleTableMixin, SingleTableView, Column,
                             MultiTableMixin)
 
+from pandas import isna
+
 from . import (__version__, QUERY_FORMAT, QUERY_AVG_BY,
                get_registry)
 from .data import DataConfig, TableConfig, NO_CURATION_PREFIX
@@ -405,7 +407,7 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
                             (
                                 # '' => None hack for blank char fields to make
                                 # dash appear
-                                None if value == '' else value,
+                                None if isna(value) or value == '' else value,
                                 count,
                                 # TODO: applying filter to negated queryset is
                                 # more complicated
