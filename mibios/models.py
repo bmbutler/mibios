@@ -204,66 +204,83 @@ class QuerySet(models.QuerySet):
         if not fields:
             fields = self.model.get_fields().names
 
-        index = self.values_list('id', flat=True)
-
-        df = pandas.DataFrame([], index=index)
-        for i in fields:
-            # TODO / FIXME: going through the fields is inefficient (one DB
-            # query per field) for multiple deep-relational fields, the data
-            # should be fetched in one go
-
+        _fields = OrderedDict()
+        for i in ['id'] + list(fields):
             try:
-                f = self.model.get_field(i)
+                _fields[i] = self.model.get_field(i)
             except LookupError:
                 if not hasattr(self.model, i):
                     raise ValueError(
                         'not the name of a field or model attribute: {}'
                         ''.format(i)
                     )
+                # not a real field
+                _fields[i] = None
+        fields = _fields
+        del _fields
 
-                # some other model attribute that hopefully works, but we can't
-                # use values_list()
-                f = None
+        # get transposed value list (for real fields):
+        data = list(map(list, zip(*self.values_list(
+            *([i for i in fields if fields[i] is not None])
+        ))))
+
+        # map field name to list index (for real fields):
+        fidx = dict(
+            (j, i) for i, j
+            in enumerate(
+                [i for i in fields if fields[i] is not None]
+            )
+        )
+
+        index = pandas.Index(data[fidx['id']], dtype=int, name='id')
+        df = pandas.DataFrame([], index=index)
+
+        for name, field in fields.items():
+            if name == 'id':
+                continue
+
+            if field is None:
                 dtype = None
-                col_dat = map(lambda obj: obj.get_value_related(i), self)
+                # not a field we can retrieve directly from the DB, have to
+                # hope this works, can be expensive (extra DB queries)
+                # E.g. 'pk', 'natural',
+                # TODO: other examples?
+                col_dat = (row.get_value_related(name) for row in self)
             else:
-                if not Model.is_simple_field(f):
-                    continue
-                dtype = Model.pd_type(f)
+                dtype = Model.pd_type(field)
+                col_dat = data[fidx[name]]
 
-                col_dat = self.values_list(i, flat=True)
-
-                if f.is_relation and natural:
-                    # replace pks with natural key, 1 extra DB query
-                    if self.is_curated():
-                        manager = f.related_model.curated
-                    else:
-                        manager = f.related_model.objects
-                    qs = manager.iterator()
-                    nat_dict = {i.pk: i.natural for i in qs}
-                    col_dat = map(
-                        lambda pk: None if pk is None else nat_dict[pk],
-                        col_dat
-                    )
+            if field is not None and field.is_relation and natural:
+                # replace pks with natural key, 1 extra DB query
+                if self.is_curated():
+                    manager = field.related_model.curated
+                else:
+                    manager = field.related_model.objects
+                qs = manager.iterator()
+                nat_dict = {i.pk: i.natural for i in qs}
+                col_dat = map(
+                    lambda pk: None if pk is None else nat_dict[pk],
+                    col_dat
+                )
 
             kwargs = dict(index=index)
-            if f is not None and f.choices:
+            if field is not None and field.choices:
                 col_dat = pandas.Categorical(col_dat)
             else:
-                if dtype is str and not f.is_relation:
+                if dtype is str and not field.is_relation:
                     # None become empty str
                     # prevents 'None' string to enter df str columns
                     # (but not for foreign key columns)
-                    col_dat = ('' if j is None else j for j in col_dat)
+                    col_dat = ('' if i is None else i for i in col_dat)
                 if dtype == bool:
-                    # don't pass dtype to Series, this would make Nones be
-                    # identified as False in the Series, but without dtype
-                    # Series will auto-detect the type and store Nones as NaNs
+                    # don't pass dtype=bool to Series, this would make Nones
+                    # be identified as False in the Series, but without dtype
+                    # Series will auto-detect the type and store Nones as NAs
                     pass
                 else:
                     kwargs['dtype'] = dtype
 
-            df[i] = pandas.Series(col_dat, **kwargs)
+            df[name] = pandas.Series(col_dat, **kwargs)
 
         return df
 
