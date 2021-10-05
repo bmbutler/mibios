@@ -1381,7 +1381,7 @@ class Model(models.Model):
             'BinaryField',
         ),
         'boolean': ('BooleanField',),
-        'relation': ('ForeignKey',),
+        'relation': ('ForeignKey', 'OneToOneField'),
     }
 
     @classmethod
