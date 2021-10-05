@@ -52,6 +52,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'mibios.utils.StatsMiddleWare',
+    'django.middleware.common.BrokenLinkEmailsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -221,3 +222,5 @@ CACHES = {
         'TIMEOUT': 300,
     },
 }
+
+IGNORABLE_404_URLS = []
