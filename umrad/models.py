@@ -50,6 +50,17 @@ class Bin(Model):
         return f'{self.sample.accession} {self.method} #{self.number}'
 
     @classmethod
+    def get_class(cls, method):
+        if cls.method is not None:
+            return super().get_class(method)
+
+        for i in cls.__subclasses__():
+            if i.method == method:
+                return i
+
+        raise ValueError(f'not a valid binning type/method: {method}')
+
+    @classmethod
     def import_all(cls):
         """
         Import all binning data
@@ -59,24 +70,46 @@ class Bin(Model):
         inheriting class and then will only import data for the corresponding
         binning type.
         """
-        if cls._meta.abstract:
-            for klass in cls.__subclasses__():
-                klass.import_all()
-            return
-
-        # Bin subclasses only
+        if not cls._meta.abstract:
+            raise RuntimeError(
+                'method can not be called by concrete bin subclass'
+            )
         for i in Sample.objects.all():
             cls.import_sample_bins(i)
 
     @classmethod
-    @atomic
     def import_sample_bins(cls, sample):
         """
         Import bin for given sample
         """
-        pat = f'{sample.accession}_{cls.method}_bins.*'
-        for i in sorted((settings.GLAMR_DATA_ROOT / 'BINS').glob(pat)):
-            cls._import_bins_file(sample, i)
+        if sample.binning_ok:
+            log.info(f'{sample} has bins loaded already')
+            return
+
+        if cls._meta.abstract:
+            # Bin parent class only
+            with atomic():
+                noerr = True
+                for klass in cls.__subclasses__():
+                    res = klass.import_sample_bins(sample)
+                    noerr = bool(res) and noerr
+                if noerr:
+                    sample.binning_ok = True
+                    sample.save()
+                return
+
+        # Bin subclasses only
+        files = list(cls.bin_files(sample))
+        if not files:
+            log.warning(f'no {cls.method} bins found for {sample}')
+            return None
+
+        for i in sorted(files):
+            res = cls._import_bins_file(sample, i)
+            if not res:
+                log.warning(f'got empty cluster from {i} ??')
+
+        return len(files)
 
     @classmethod
     def _import_bins_file(cls, sample, path):
@@ -98,10 +131,16 @@ class Bin(Model):
         kwargs = {cls._meta.get_field('members').remote_field.name: obj}
         qs.update(**kwargs)
         log.info(f'{obj} imported: {len(cids)} contig clusters')
+        return len(cids)
 
     @classmethod
-    def import_sample_checkm(cls, sample):
-        ...
+    def bin_files(cls, sample):
+        """
+        Generator over bin file paths
+        """
+        pat = f'{sample.accession}_{cls.method}_bins.*'
+        path = settings.GLAMR_DATA_ROOT / 'BINS'
+        return path.glob(pat)
 
 
 class BinMAX(Bin):
@@ -135,9 +174,7 @@ class CheckM(Model):
     genome_size = models.PositiveIntegerField(verbose_name='Genome size')
     longest_contig = models.PositiveIntegerField(verbose_name='Longest contig')
     n50_scaffolds = models.PositiveIntegerField(verbose_name='N50 (scaffolds)')
-    mean_scaffold_len = models.PositiveIntegerField(
-        verbose_name='Mean scaffold length',
-    )
+    mean_scaffold_len = models.FloatField(verbose_name='Mean scaffold length')
     num_contigs = models.PositiveIntegerField(verbose_name='# contigs')
     num_scaffolds = models.PositiveIntegerField(verbose_name='# scaffolds')
     num_predicted_genes = models.PositiveIntegerField(
@@ -149,16 +186,74 @@ class CheckM(Model):
     gc = models.FloatField(verbose_name='GC')
     n50_contigs = models.PositiveIntegerField(verbose_name='N50 (contigs)')
     coding_density = models.FloatField(verbose_name='Coding density')
-    mean_contig_length = models.PositiveIntegerField(
-        verbose_name='Mean contig length',
-    )
+    mean_contig_length = models.FloatField(verbose_name='Mean contig length')
+
+    @classmethod
+    def import_all(cls):
+        for i in Sample.objects.all():
+            if i.checkm_ok:
+                log.info(f'sample {i}: have checkm stats, skipping')
+                continue
+            cls.import_sample(i)
+
+    @classmethod
+    @atomic
+    def import_sample(cls, sample):
+        bins = {}
+        stats_file = sample.get_checkm_stats_path()
+        if not stats_file.exists():
+            log.warning(f'{sample}: checkm stats do not exist: {stats_file}')
+            return
+
+        for binid, obj in cls.from_file(stats_file):
+            # parse binid, is like: Sample_42895_MET_P99S99E300_bins.6
+            part1, _, num = binid.partition('.')  # separate number part
+            parts = part1.split('_')
+            sample_name = '_'.join(parts[:2])
+            meth = '_'.join(parts[2:-1])  # rest but without the "_bins"
+
+            try:
+                num = int(num)
+            except ValueError as e:
+                raise ValueError(f'Bad bin id in stats: {binid}, {e}')
+
+            if sample_name != sample.accession:
+                raise ValueError(
+                    f'Bad sample name in stats: {binid} -- expected: '
+                    f'{sample.accession}'
+                )
+
+            try:
+                binclass = Bin.get_class(meth)
+            except ValueError as e:
+                raise ValueError('Bad method in stats: {binid}: {e}') from e
+
+            try:
+                binobj = binclass.objects.get(sample=sample, number=num)
+            except binclass.DoesNotExist as e:
+                raise RuntimeError(
+                    f'no bin with checkm bin id: {binid} file: {stats_file}'
+                ) from e
+
+            binobj.checkm = obj
+
+            if binclass not in bins:
+                bins[binclass] = []
+
+            bins[binclass].append(binobj)
+
+        for binclass, bobjs in bins.items():
+            binclass.objects.bulk_update(bobjs, ['checkm'])
+
+        sample.checkm_ok = True
+        sample.save()
 
     @classmethod
     def from_file(cls, path):
         """
-        Return instances from given bin_stats.analyze.tsv file.
+        Create instances from given bin_stats.analyze.tsv file.
 
-
+        Should normally be only called from CheckM.import_sample().
         """
         ret = []
         with path.open() as fh:
@@ -167,8 +262,11 @@ class CheckM(Model):
                 data = data.lstrip('{').rstrip('}').split(', ')
                 obj = cls()
                 for item in data:
-                    key, _, value = item.split(': ', maxsplit=2)
+                    key, value = item.split(': ', maxsplit=2)
+                    key = key.strip("'")
                     for i in cls._meta.get_fields():
+                        if i.is_relation:
+                            continue
                         # assumes correclty assigned verbose names
                         if i.verbose_name == key:
                             field = i
@@ -179,10 +277,22 @@ class CheckM(Model):
                             f'{key}, offending line is:\n{line}'
                         )
 
-                    value = field.to_python(value)
+                    try:
+                        value = field.to_python(value)
+                    except ValidationError as e:
+                        message = (f'Failed parsing field "{key}" on line:\n'
+                                   f'{line}\n{e.message}')
+                        raise ValidationError(
+                            message,
+                            code=e.code,
+                            params=e.params,
+                        ) from e
+
                     setattr(obj, field.attname, value)
 
+                obj.save()
                 ret.append((bin_key, obj))
+
         return ret
 
 
@@ -250,10 +360,9 @@ class ContigCluster(Model):
     def load(cls, verbose=False):
         """ Load contig cluster data for all samples """
         for i in Sample.objects.all():
-            if cls.objects.filter(sample=i).exists():
-                log.warning(
-                    f'some contig clusters for {i} exist already, skipping'
-                )
+            if i.assembly_ok and i.mapping_ok:
+                log.info(f'sample {i} has assembly/mapping, skipping')
+                continue
             error = cls.load_sample(i, verbose=verbose)
             if error is None:
                 log.info(f'contig cluster loaded: {i}')
@@ -272,12 +381,17 @@ class ContigCluster(Model):
         objs = cls.from_sample(sample, limit=limit, verbose=verbose)
         cov = cls.read_coverage(sample)
         cls.objects.bulk_create(cls._join_cov_data(objs, cov))
+        sample.assembly_ok = True
+        sample.mapping_ok = True
+        sample.save()
 
     @classmethod
     def from_sample(cls, sample, limit=None, verbose=False):
         """
         Generate contig cluster instances for given sample
         """
+        print_count = verbose and sys.stdout.isatty()
+
         with sample.get_assembly_path().open('r') as asm:
             os.posix_fadvise(asm.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
             if verbose:
@@ -294,12 +408,8 @@ class ContigCluster(Model):
                     if obj is not None:
                         obj.seq_bytes = pos - obj.seq_offset
                         # obj.full_clean()  # way too slow
-                        if verbose:
-                            if count % 1000 == 0 and sys.stdout.isatty():
-                                print(
-                                    f'  {count} contig clusters found',
-                                    end='\r'
-                                )
+                        if print_count:
+                            print(f'  {count} contig clusters found', end='\r')
                         yield obj
                         count += 1
 
@@ -316,12 +426,14 @@ class ContigCluster(Model):
             print(f'{count} contig clusters loaded')
 
     @classmethod
-    def read_coverage(cls, sample):
+    def read_coverage(cls, sample, verbose=False):
         """
         read and coverage data
         """
+        print_count = verbose and sys.stdout.isatty()
         rpkm_cols = ['Name', 'Length', 'Bases', 'Coverage', 'Reads', 'RPKM',
                      'Frags', 'FPKM']
+
         with sample.get_coverage_path('rpkm').open('r') as f:
             os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
             # 1. read header
@@ -349,8 +461,12 @@ class ContigCluster(Model):
                     sample.num_ref_sequences = value
 
             # 2. read rows
+            count = 0
             for line in f:
                 yield line.rstrip().split('\t')
+                count += 1
+                if print_count and count % 1000 == 0:
+                    print(f'  {count} coverage rows processed', end='\r')
 
     @classmethod
     def _join_cov_data(cls, objs, cov):
@@ -388,7 +504,7 @@ class ReadLibrary(Model):
 
     @classmethod
     @atomic
-    def sync(cls, no_counts=True, raise_on_error=True):
+    def sync(cls, no_counts=True, raise_on_error=False):
         if not no_counts:
             raise NotImplementedError('read counting is not yet implemented')
 
@@ -419,6 +535,24 @@ class ReadLibrary(Model):
 
 class Sample(Model):
     accession = AccessionField()
+
+    # data accounting
+    assembly_ok = models.BooleanField(
+        default=False,
+        help_text='Contig cluster data loaded',
+    )
+    mapping_ok = models.BooleanField(
+        default=False,
+        help_text='coverage data loaded',
+    )
+    binning_ok = models.BooleanField(
+        default=False,
+        help_text='Binning data loaded',
+    )
+    checkm_ok = models.BooleanField(
+        default=False,
+        help_text='Binning stats loaded',
+    )
 
     # mapping data (from ASSEMBLIES/COVERAGE)
     read_count = models.PositiveIntegerField(
@@ -456,6 +590,67 @@ class Sample(Model):
             log.warning(f'Have {not_in_src.count()} extra samples in DB not '
                         f'found in {src}')
 
+    @classmethod
+    def status(cls):
+        if not cls.objects.exists():
+            print('no samples in database yet')
+            return
+
+        print(' ' * 10, 'assemblyl', 'mapping', 'bins', 'checkm', sep='\t')
+        for i in cls.objects.all():
+            print(
+                f'{i}:',
+                'OK' if i.assembly_ok else '',
+                'OK' if i.mapping_ok else '',
+                'OK' if i.binning_ok else '',
+                'OK' if i.checkm_ok else '',
+                sep='\t'
+            )
+
+    @classmethod
+    def status_long(cls):
+        if not cls.objects.exists():
+            print('no samples in database yet')
+            return
+
+        print(' ' * 10, 'cont cl', 'MAX', 'MET93', 'MET97', 'MET99', sep='\t')
+        for i in cls.objects.all():
+            print(
+                f'{i}:',
+                i.contigcluster_set.count(),
+                i.binmax_set.count(),
+                i.binmet93_set.count(),
+                i.binmet97_set.count(),
+                i.binmet99_set.count(),
+                sep='\t'
+            )
+
+    def load_bins(self):
+        if not self.binning_ok:
+            with atomic():
+                Bin.import_sample_bins(self)
+                self.binning_ok = True
+                self.save()
+        if self.binning_ok and not self.checkm_ok:
+            with atomic():
+                CheckM.import_sample(self)
+                self.checkm_ok = True
+                self.save()
+
+    @atomic
+    def delete_bins(self):
+        with atomic():
+            qslist = [self.binmax_set, self.binmet93_set, self.binmet97_set,
+                      self.binmet99_set]
+            for qs in qslist:
+                print(f'{self}: deleting {qs.model.method} bins ...', end='',
+                      flush=True)
+                counts = qs.all().delete()
+                print('\b\b\bOK', counts)
+            self.binning_ok = False
+            self.checkm_ok = False  # was cascade-deleted
+            self.save()
+
     def get_assembly_path(self):
         return (
             settings.GLAMR_DATA_ROOT / 'ASSEMBLIES' / 'MERGED'
@@ -481,6 +676,10 @@ class Sample(Model):
             infix: base / fname.format(infix=infix)
             for infix in ['dd_fwd', 'dd_rev', 'ddtrnhnp_fwd', 'ddtrnhnp_rev']
         }
+
+    def get_checkm_stats_path(self):
+        return (settings.GLAMR_DATA_ROOT / 'BINS' / f'{self.accession}_CHECKM'
+                / 'storage' / 'bin_stats.analyze.tsv')
 
 
 class Taxonomy(Model):
@@ -543,9 +742,10 @@ def load_all(**kwargs):
     """
     Load all data
 
-    assumes an empty DB
+    assumes an empty DB.
     """
     Sample.sync(**kwargs)
     # ReadLibrary.sync()
     ContigCluster.load(verbose=kwargs.get('verbose', False))
     Bin.import_all()
+    CheckM.import_all()
