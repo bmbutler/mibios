@@ -18,6 +18,9 @@ class ReturningGenerator:
     for i in g:
         do_stuff()
     foo = g.value
+
+    An AttributeError will be raised if one attempts to access the return value
+    before the generator is exhausted.
     """
     def __init__(self, generator):
         self.generator = generator
