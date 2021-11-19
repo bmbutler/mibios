@@ -297,15 +297,9 @@ class CheckM(Model):
         return ret
 
 
-class ContigLike(Model):
+class SequenceLike(Model):
     """
-    Abstract parent class for contigs and genes
-
-    Contigs and Genes have a few things in common: fasta files with sequences
-    and bbmap coverage results.  This class covers those commonalities.  There
-    are a few methods that need to be implemented by the children that spell
-    out the differences.  Those deal with where to find the files and different
-    fasta headers.
+    Abstraction of model based on fasta file sequences
     """
     history = None
     sample = models.ForeignKey('Sample', **fk_req)
@@ -316,22 +310,8 @@ class ContigLike(Model):
     # 2. num of bytes until next offset (or EOF)
     seq_bytes = models.PositiveIntegerField(**opt)
 
-    # Data from mapping / coverage:
-    # decimals in bbmap output have 4 fractional places
-    # FIXME: determine max_places for sure
-    length = models.PositiveIntegerField(**opt)
-    bases = models.PositiveIntegerField(**opt)
-    coverage = models.DecimalField(decimal_places=4, max_digits=10, **opt)
-    reads_mapped = models.PositiveIntegerField(**opt)
-    rpkm = models.DecimalField(decimal_places=4, max_digits=10, **opt)
-    frags_mapped = models.PositiveIntegerField(**opt)
-    fpkm = models.DecimalField(decimal_places=4, max_digits=10, **opt)
-
     class Meta:
         abstract = True
-
-    # Name of the (per-sample) id field, must be set in inheriting class
-    id_field_name = None
 
     def get_sequence(self, fasta_format=False):
         with self.get_fasta_path(self.sample).open('rb') as fa:
@@ -370,16 +350,9 @@ class ContigLike(Model):
         raise NotImplementedError
 
     @classmethod
-    def process_coverage_header_data(cls, sample):
-        """ Add header data to sample """
-        # must be implemented by inheriting class
-        return  # FIXME: !!!
-        raise NotImplementedError
-
-    @classmethod
-    def get_sample_extra_kw(cls, sample):
+    def get_load_sample_fasta_extra_kw(cls, sample):
         """
-        Return extra kwargs for from_sample()
+        Return extra kwargs for from_sample_fasta()
 
         Should be overwritten by inherinting class if needed
         """
@@ -387,7 +360,7 @@ class ContigLike(Model):
 
     @classmethod
     def load(cls, verbose=False):
-        """ Load contig-like data for all samples """
+        """ Load sequence-like data for all samples """
         for i in Sample.objects.all():
             with atomic():
                 if cls.have_sample_data(i):
@@ -404,20 +377,17 @@ class ContigLike(Model):
     @atomic
     def load_sample(cls, sample, limit=None, verbose=False):
         """
-        import sequence/coverage data for one sample
+        import sequence data for one sample
 
         limit - limit to that many contigs, for testing only
         """
-        # assumes that contigs are ordered the same in objs and cov
-        extra = cls.get_sample_extra_kw(sample)
-        objs = cls.from_sample(sample, limit=limit, verbose=verbose, **extra)
-        cov = cls.read_coverage(sample, limit=limit, verbose=verbose)
-        cov = ReturningGenerator(cov)
-        cls.objects.bulk_create(cls._join_cov_data(objs, cov))
-        cls.process_coverage_header_data(cov.value)
+        extra = cls.get_load_sample_fasta_extra_kw(sample)
+        objs = cls.from_sample_fasta(sample, limit=limit, verbose=verbose,
+                                     **extra)
+        cls.objects.bulk_create(objs)
 
     @classmethod
-    def from_sample(cls, sample, limit=None, verbose=False, **extra):
+    def from_sample_fasta(cls, sample, limit=None, verbose=False, **extra):
         """
         Generate instances for given sample
         """
@@ -464,6 +434,60 @@ class ContigLike(Model):
 
         if verbose:
             print(f'{count} {cls._meta.verbose_name} loaded')
+
+
+class ContigLike(SequenceLike):
+    """
+    Abstract parent class for sequence like data with converage info
+
+    This is for contigs and genes but not proteins.
+
+    Contigs and Genes have a few things in common: fasta files with sequences
+    and bbmap coverage results.  This class covers those commonalities.  There
+    are a few methods that need to be implemented by the children that spell
+    out the differences.  Those deal with where to find the files and different
+    fasta headers.
+    """
+    # Data from mapping / coverage:
+    # decimals in bbmap output have 4 fractional places
+    # FIXME: determine max_places for sure
+    length = models.PositiveIntegerField(**opt)
+    bases = models.PositiveIntegerField(**opt)
+    coverage = models.DecimalField(decimal_places=4, max_digits=10, **opt)
+    reads_mapped = models.PositiveIntegerField(**opt)
+    rpkm = models.DecimalField(decimal_places=4, max_digits=10, **opt)
+    frags_mapped = models.PositiveIntegerField(**opt)
+    fpkm = models.DecimalField(decimal_places=4, max_digits=10, **opt)
+
+    class Meta:
+        abstract = True
+
+    # Name of the (per-sample) id field, must be set in inheriting class
+    id_field_name = None
+
+    @classmethod
+    def process_coverage_header_data(cls, sample):
+        """ Add header data to sample """
+        # must be implemented by inheriting class
+        return  # FIXME: !!!
+        raise NotImplementedError
+
+    @classmethod
+    @atomic
+    def load_sample(cls, sample, limit=None, verbose=False):
+        """
+        import sequence/coverage data for one sample
+
+        limit - limit to that many contigs, for testing only
+        """
+        # assumes that contigs are ordered the same in objs and cov
+        extra = cls.get_load_sample_fasta_extra_kw(sample)
+        objs = cls.from_sample_fasta(sample, limit=limit, verbose=verbose,
+                                     **extra)
+        cov = cls.read_coverage(sample, limit=limit, verbose=verbose)
+        cov = ReturningGenerator(cov)
+        cls.objects.bulk_create(cls._join_cov_data(objs, cov))
+        cls.process_coverage_header_data(cov.value)
 
     @classmethod
     def read_coverage(cls, sample, limit=None, verbose=False):
@@ -620,26 +644,16 @@ class Gene(ContigLike):
         return sample.get_gene_coverage_path()
 
     @classmethod
-    def Xget_sample_extra_kw(cls, sample):
-        # returns a dict of the sample's contig clusters
-        return dict(
-            contigs={
-                i.cluster_id: i
-                for i in sample.contigcluster_set.iterator()
-            }
-        )
-
-    @classmethod
-    def get_sample_extra_kw(cls, sample):
+    def get_load_sample_fasta_extra_kw(cls, sample):
         # returns a dict of the sample's contig clusters
         qs = sample.contigcluster_set.values_list('cluster_id', 'pk')
-        return dict(contig_ids={k: v for k, v in qs.iterator()})
+        return dict(contig_ids=dict(qs.iterator()))
 
     def set_from_fa_head(self, line, **kwargs):
         if 'contig_ids' in kwargs:
             contig_ids = kwargs['contig_ids']
         else:
-            raise ValueError('Expect "contigs_ids" in kw args')
+            raise ValueError('Expect "contig_ids" in kw args')
 
         # parsing prodigal info
         name, start, end, strand, misc = line.lstrip('>').rstrip().split(' # ')
@@ -661,6 +675,35 @@ class Gene(ContigLike):
         self.start = start
         self.end = end
         self.strand = strand
+
+
+class Protein(SequenceLike):
+    gene = models.OneToOneField(Gene, **fk_req)
+
+    def __str__(self):
+        return str(self.gene)
+
+    @classmethod
+    def get_fasta_path(cls, sample):
+        return (settings.GLAMR_DATA_ROOT / 'PROTEINS' /
+                f'{sample.accession}_PROTEINS.faa')
+
+    @classmethod
+    def get_load_sample_fasta_extra_kw(cls, sample):
+        # returns a dict of the sample's genes pks
+        qs = sample.gene_set.values_list('gene_id', 'pk')
+        return dict(gene_ids=dict(qs.iterator()))
+
+    def set_from_fa_head(self, line, **kwargs):
+        if 'gene_ids' in kwargs:
+            gene_ids = kwargs['gene_ids']
+        else:
+            raise ValueError('Expect "contig_ids" in kw args')
+
+        # parsing prodigal info
+        gene_accn, _, _ = line.lstrip('>').rstrip().partition(' # ')
+
+        self.gene_id = gene_ids[gene_accn]
 
 
 class ReadLibrary(Model):
@@ -892,6 +935,9 @@ class SimpleTaxonomyName(Model):
 
     class Meta:
         unique_together = (('rank', 'name'),)
+
+    def __str__(self):
+        return f'{self.get_rank_display()} {self.name}'
 
     @classmethod
     @atomic
