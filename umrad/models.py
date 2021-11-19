@@ -428,9 +428,7 @@ class ContigLike(Model):
             if verbose:
                 print(f'reading {fa.name} ...')
             obj = None
-            pp = ProgressPrinter(
-                f'  {{progress}} {cls._meta.verbose_name} found'
-            )
+            pp = ProgressPrinter(f'{cls._meta.verbose_name} found')
             count = 0
             pos = 0
             end = EOF()
@@ -903,18 +901,15 @@ class SimpleTaxonomyName(Model):
 
         data = []
         with path.open() as f:
-            pp = ProgressPrinter('{progress} taxa found')
-            count = 0
+            pp = ProgressPrinter('taxa found')
             log.info(f'reading taxonomy: {path}')
             for line in f:
                 data.append(line.strip().split('\t'))
-                count += 1
-                pp.update(count)
+                pp.inc()
 
             pp.finish()
 
-        pp = ProgressPrinter('{progress} tax names processed')
-        count = 0
+        pp = ProgressPrinter('tax names processed')
         rankids = [i[0] for i in SimpleTaxonomyName.RANKS[1:]]
         names = dict()
         for row in data:
@@ -925,8 +920,7 @@ class SimpleTaxonomyName(Model):
                     # no strain etc
                     continue
                 key = (rid, name)
-                count += 1
-                pp.update(count)
+                pp.inc()
                 if key not in names:
                     names[key] = SimpleTaxonomyName(rank=rid, name=name)
 
@@ -1005,8 +999,7 @@ class SimpleTaxonomy(Model):
             in SimpleTaxonomyName.objects.values_list().iterator()
         }
 
-        pp = ProgressPrinter('{progress} taxa processed')
-        count = 0
+        pp = ProgressPrinter('taxa processed')
         objs = []
         # ranks: get pairs of rank id and rank field attribute name
         ranks = [(i[0], i[-1]) for i in SimpleTaxonomyName.RANKS[1:]]
@@ -1020,8 +1013,7 @@ class SimpleTaxonomy(Model):
                     kwargs[attr + '_id'] = names[(rid, name)]
 
             objs.append(cls(**kwargs))
-            count += 1
-            pp.update(count)
+            pp.inc()
 
         pp.finish()
         log.info(f'Storing {len(objs)} taxa in DB...')

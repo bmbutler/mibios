@@ -1,4 +1,5 @@
 from threading import Timer
+from string import Formatter
 import sys
 
 
@@ -44,7 +45,7 @@ class ProgressPrinter():
     restarting as long as the update() method is called with changing progress
     counts.
 
-    After the timer has stopped, even after calling finishe() or stop() the
+    After the timer has stopped, even after calling finish() or stop() the
     progress printing can be resumed by calling update() with a different state
     than the last one.
     """
@@ -56,18 +57,52 @@ class ProgressPrinter():
             template=DEFAULT_TEMPLATE,
             interval=DEFAULT_INTERVAL,
             output_file=sys.stdout,
+            show_rate=True,
     ):
-        self.template = template
+        self.template, self.template_var = self._init_template(template)
         self.interval = interval
         self.output_file = output_file
+        self.show_rate = show_rate
         self.to_terminal = output_file.isatty()
+
+        self._reset_state()
+
+    def _reset_state(self):
+        """ reset the varibale state """
         self.current = None
         self.last = None
+        self.at_previous_ring = None
         self.timer = None
         self.timer_running = False
 
-    def start_timer(self):
-        self.timer = Timer(self.interval, self.ring)
+    def _init_template(self, template):
+        """
+        set up template
+
+        We support templates with zero or one formatting fields, the single
+        field may be named or anonymous.
+        """
+        fmt_vars = [
+            i[1] for i
+            in Formatter().parse(template)
+            if i[1] is not None
+        ]
+        if len(fmt_vars) == 0:
+            template = '{} ' + template
+            template_var = None
+        elif len(fmt_vars) == 1:
+            # keep tmpl as-is
+            if fmt_vars[0] == '':
+                template_var = None
+            else:
+                template_var = fmt_vars[0]
+        else:
+            raise ValueError(f'too many format fields in template: {fmt_vars}')
+
+        return template, template_var
+
+    def _start_timer(self):
+        self.timer = Timer(self.interval, self._ring)
         self.timer.start()
         self.timer_running = True
 
@@ -91,14 +126,26 @@ class ProgressPrinter():
         if not self.timer_running and current != self.last:
             self.print_progress()  # print on first update
             # turn on
-            self.start_timer()
+            self._start_timer()
+
+    def inc(self):
+        """
+        Assume we're progressing by counting integers and increment
+        """
+        count = self.current
+        if count is None:
+            count = 1
+        else:
+            count += 1
+        self.update(count)
 
     def finish(self):
         """ Stop the timer but print a final result """
         self.stop()
         self.print_progress(end='\n')  # print a last time
+        self._reset_state()
 
-    def ring(self):
+    def _ring(self):
         """ Print and restart timer """
         if self.current is None:
             return
@@ -108,11 +155,28 @@ class ProgressPrinter():
 
         self.print_progress()
         self.last = self.current  # ensure we'll turn off without updates
-        self.start_timer()
+        self.at_previous_ring = self.current
+        self._start_timer()
 
     def print_progress(self, end=''):
         """ Do the progress printing """
-        txt = self.template.format(progress=self.current)
+        if self.template_var is None:
+            txt = self.template.format(self.current)
+        else:
+            txt = self.template.format(**{self.template_var: self.current})
+
+        if self.show_rate:
+            prev = self.at_previous_ring
+            if prev is None:
+                prev = 0
+            try:
+                rate = (self.current - prev) / self.interval
+            except Exception:
+                # math errors if current is not a number?
+                pass
+            else:
+                txt += f' ({rate:.0f}/s)'
+
         if self.to_terminal:
             txt = '\r' + txt
 
