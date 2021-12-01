@@ -1,6 +1,7 @@
 from logging import getLogger
 from itertools import chain, zip_longest
 import os
+from subprocess import PIPE, Popen, TimeoutExpired
 import sys
 
 from django.conf import settings
@@ -371,7 +372,7 @@ class SequenceLike(Model):
                     return (i, *error)
 
                 cls.have_sample_data(i, set_to=True)
-                log.info(f'{i}: loaded {cls._meta.verbose_name}')
+                log.info(f'{i}: loaded {cls._meta.verbose_name_plural}')
 
     @classmethod
     @atomic
@@ -398,7 +399,7 @@ class SequenceLike(Model):
             if verbose:
                 print(f'reading {fa.name} ...')
             obj = None
-            pp = ProgressPrinter(f'{cls._meta.verbose_name} found')
+            pp = ProgressPrinter(f'{cls._meta.verbose_name_plural} found')
             count = 0
             pos = 0
             end = EOF()
@@ -433,7 +434,7 @@ class SequenceLike(Model):
             pp.finish()
 
         if verbose:
-            print(f'{count} {cls._meta.verbose_name} loaded')
+            print(f'{count} {cls._meta.verbose_name_plural} loaded')
 
 
 class ContigLike(SequenceLike):
@@ -677,11 +678,51 @@ class Gene(ContigLike):
         self.strand = strand
 
 
+class NCRNA(Model):
+    history = None
+    sample = models.ForeignKey('Sample', **fk_req)
+    contig = models.ForeignKey('ContigCluster', **fk_req)
+    match = models.ForeignKey('RNACentralRep', **fk_req)
+    part = models.PositiveIntegerField(**opt)
+
+    # SAM alignment section data
+    flag = models.PositiveIntegerField(help_text='bitwise FLAG')
+    pos = models.PositiveIntegerField(
+        help_text='1-based leftmost mapping position',
+    )
+    mapq = models.PositiveIntegerField(help_text='MAPing Quality')
+
+    class Meta:
+        unique_together = (
+            ('sample', 'contig', 'part'),
+        )
+
+    def __str__(self):
+        if self.part is None:
+            part = ''
+        else:
+            part = f'part_{self.part}'
+        return f'{self.sample.accession}:{self.contig}{part}->{self.match}'
+
+    @classmethod
+    def get_sam_file(cls, sample):
+        return (settings.GLAMR_DATA_ROOT / 'NCRNA'
+                / f'{sample.accession}_convsrna.sam')
+
+
 class Protein(SequenceLike):
     gene = models.OneToOneField(Gene, **fk_req)
 
     def __str__(self):
         return str(self.gene)
+
+    @classmethod
+    def have_sample_data(cls, sample, set_to=None):
+        if set_to is None:
+            return sample.proteins_ok
+        else:
+            sample.proteins_ok = set_to
+            sample.save()
 
     @classmethod
     def get_fasta_path(cls, sample):
@@ -753,6 +794,97 @@ class ReadLibrary(Model):
         return obj
 
 
+class RNACentral(Model):
+    history = None
+    RNA_TYPES = (
+        # unique 3rd column from rnacentral_ids.txt
+        (1, 'antisense_RNA'),
+        (2, 'autocatalytically_spliced_intron'),
+        (3, 'guide_RNA'),
+        (4, 'hammerhead_ribozyme'),
+        (5, 'lncRNA'),
+        (6, 'miRNA'),
+        (7, 'misc_RNA'),
+        (8, 'ncRNA'),
+        (9, 'other'),
+        (10, 'piRNA'),
+        (11, 'precursor_RNA'),
+        (12, 'pre_miRNA'),
+        (13, 'ribozyme'),
+        (14, 'RNase_MRP_RNA'),
+        (15, 'RNase_P_RNA'),
+        (16, 'rRNA'),
+        (17, 'scaRNA'),
+        (18, 'scRNA'),
+        (19, 'siRNA'),
+        (20, 'snoRNA'),
+        (21, 'snRNA'),
+        (22, 'sRNA'),
+        (23, 'SRP_RNA'),
+        (24, 'telomerase_RNA'),
+        (25, 'tmRNA'),
+        (26, 'tRNA'),
+        (27, 'vault_RNA'),
+        (28, 'Y_RNA'),
+    )
+    INPUT_FILE = (settings.GLAMR_DATA_ROOT / 'NCRNA' / 'RNA_CENTRAL'
+                  / 'rnacentral_clean.fasta.gz')
+
+    accession = AccessionField()
+    taxon = models.ForeignKey('SimpleTaxonomy', **fk_req)
+    rna_type = models.PositiveSmallIntegerField(choices=RNA_TYPES)
+
+    def __str__(self):
+        return (f'{self.accession} {self.taxon.taxid} '
+                f'{self.get_rna_type_display()}')
+
+    @classmethod
+    def load(cls, path=INPUT_FILE):
+        type_map = dict(((b.casefold(), a) for a, b, in cls.RNA_TYPES))
+        taxa = dict(SimpleTaxonomy.objects.values_list('taxid', 'pk'))
+
+        zcat_cmd = ['/usr/bin/unpigz', '-c', str(path)]
+        zcat = Popen(zcat_cmd, stdout=PIPE)
+
+        pp = ProgressPrinter('rna central records read')
+        objs = []
+        try:
+            print('BORK STAGE I')
+            for line in zcat.stdout:
+                # line is bytes
+                if not line.startswith(b'>'):
+                    continue
+                line = line.decode()
+                accn, typ, taxid2, _ = line.lstrip('>').split('|', maxsplit=4)
+                # taxid2 can be multiple, so take taxid from accn (ask Teal?)
+                accn, _, taxid = accn.partition('_')
+                objs.append(cls(
+                    accession=accn,
+                    taxon_id=taxa[int(taxid)],
+                    rna_type=type_map[typ.lower()],
+                ))
+                pp.inc()
+        except Exception:
+            raise
+        finally:
+            try:
+                zcat.communicate(timeout=15)
+            except TimeoutExpired:
+                zcat.kill()
+                zcat.communicate()
+            if zcat.returncode:
+                log.error(f'{zcat_cmd} returned with status {zcat.returncode}')
+
+        pp.finish()
+        log.info(f'Saving {len(objs)} RNA Central accessions...')
+        cls.objects.bulk_create(objs)
+
+
+class RNACentralRep(Model):
+    """ Unique RNACentral representatives """
+    history = None
+
+
 class Sample(Model):
     accession = AccessionField()
 
@@ -772,6 +904,10 @@ class Sample(Model):
     genes_ok = models.BooleanField(
         default=False,
         help_text='Gene data and coverage loaded',
+    )
+    proteins_ok = models.BooleanField(
+        default=False,
+        help_text='Protein data loaded',
     )
 
     # mapping data (from ASSEMBLIES/COVERAGE)
@@ -1142,8 +1278,10 @@ def load_all(**kwargs):
     """
     verbose = kwargs.get('verbose', False)
     Sample.sync(**kwargs)
+    SimpleTaxonomy.load()
     # ReadLibrary.sync()
     ContigCluster.load(verbose=verbose)
     Bin.import_all()
     CheckM.import_all()
     Gene.load(verbose=verbose)
+    Protein.load(verbose=verbose)
