@@ -52,11 +52,34 @@ class Bin(Model):
         return f'{self.sample.accession} {self.method} #{self.number}'
 
     @classmethod
+    def get_concrete_models(cls):
+        """
+        Return list of all concrete bin sub-classes/models
+        """
+        # The recursion stops at the first non-abstract models, so this may not
+        # make sense in a multi-table inheritance setting.
+        children = cls.__subclasses__()
+        if children:
+            ret = []
+            for i in children:
+                ret += i.get_concrete_models()
+            return ret
+        else:
+            # method called on a non-parent
+            if cls._meta.abstract:
+                return []
+            else:
+                return [cls]
+
+    @classmethod
     def get_class(cls, method):
+        """
+        Get the concrete model for give binning method
+        """
         if cls.method is not None:
             return super().get_class(method)
 
-        for i in cls.__subclasses__():
+        for i in cls.get_concrete_models():
             if i.method == method:
                 return i
 
@@ -69,8 +92,8 @@ class Bin(Model):
 
         This class method can be called on the abstract parent Bin class and
         will then import data for all binning types.  Or it can be called on an
-        inheriting class and then will only import data for the corresponding
-        binning type.
+        concrete model/class and then will only import data for the
+        corresponding binning type.
         """
         if not cls._meta.abstract:
             raise RuntimeError(
@@ -82,7 +105,7 @@ class Bin(Model):
     @classmethod
     def import_sample_bins(cls, sample):
         """
-        Import bin for given sample
+        Import all types of bins for given sample
         """
         if sample.binning_ok:
             log.info(f'{sample} has bins loaded already')
@@ -92,7 +115,7 @@ class Bin(Model):
             # Bin parent class only
             with atomic():
                 noerr = True
-                for klass in cls.__subclasses__():
+                for klass in cls.get_concrete_models():
                     res = klass.import_sample_bins(sample)
                     noerr = bool(res) and noerr
                 if noerr:
@@ -135,29 +158,44 @@ class Bin(Model):
         log.info(f'{obj} imported: {len(cids)} contig clusters')
         return len(cids)
 
+
+class BinMAX(Bin):
+    method = 'MAX'
+
+    @classmethod
+    def bin_files(cls, sample):
+        """
+        Generator over bin file paths
+        """
+        pat = f'{sample.accession}_{cls.method}_bins.*.fasta'
+        path = settings.GLAMR_DATA_ROOT / 'BINS' / 'MAX_BIN'
+        return path.glob(pat)
+
+
+class BinMetaBat(Bin):
+
+    class Meta(Bin.Meta):
+        abstract = True
+
     @classmethod
     def bin_files(cls, sample):
         """
         Generator over bin file paths
         """
         pat = f'{sample.accession}_{cls.method}_bins.*'
-        path = settings.GLAMR_DATA_ROOT / 'BINS'
+        path = settings.GLAMR_DATA_ROOT / 'BINS' / 'METABAT'
         return path.glob(pat)
 
 
-class BinMAX(Bin):
-    method = 'MAX'
-
-
-class BinMET93(Bin):
+class BinMET93(BinMetaBat):
     method = 'MET_P97S93E300'
 
 
-class BinMET97(Bin):
+class BinMET97(BinMetaBat):
     method = 'MET_P99S97E300'
 
 
-class BinMET99(Bin):
+class BinMET99(BinMetaBat):
     method = 'MET_P99S99E300'
 
 
@@ -228,7 +266,7 @@ class CheckM(Model):
             try:
                 binclass = Bin.get_class(meth)
             except ValueError as e:
-                raise ValueError('Bad method in stats: {binid}: {e}') from e
+                raise ValueError(f'Bad method in stats: {binid}: {e}') from e
 
             try:
                 binobj = binclass.objects.get(sample=sample, number=num)
@@ -1046,8 +1084,9 @@ class Sample(Model):
         }
 
     def get_checkm_stats_path(self):
-        return (settings.GLAMR_DATA_ROOT / 'BINS' / f'{self.accession}_CHECKM'
-                / 'storage' / 'bin_stats.analyze.tsv')
+        return (settings.GLAMR_DATA_ROOT / 'BINS' / 'CHECKM'
+                / f'{self.accession}_CHECKM' / 'storage'
+                / 'bin_stats.analyze.tsv')
 
 
 class SimpleTaxonomyName(Model):
