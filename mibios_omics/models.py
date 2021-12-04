@@ -10,20 +10,15 @@ from django.db import models
 from django.db.transaction import atomic
 
 from mibios.models import Model
+from mibios_umrad.fields import AccessionField
+from mibios_umrad.model_utils import opt, fk_req, fk_opt
+from mibios_umrad.models import Taxon
+from mibios_umrad.utils import ProgressPrinter, ReturningGenerator
 
-from .fields import AccessionField, DataPathField
-from .utils import ProgressPrinter, ReturningGenerator
+from .fields import DataPathField
 
 
 log = getLogger(__name__)
-
-# standard data field options
-opt = dict(blank=True, null=True, default=None)  # non-char optional
-ch_opt = dict(blank=True, default='')  # optional char
-uniq_opt = dict(unique=True, **opt)  # unique and optional (char/non-char)
-# standard foreign key options
-fk_req = dict(on_delete=models.CASCADE)  # required FK
-fk_opt = dict(on_delete=models.SET_NULL, **opt)  # optional FK
 
 
 class EOF():
@@ -168,7 +163,7 @@ class BinMAX(Bin):
         Generator over bin file paths
         """
         pat = f'{sample.accession}_{cls.method}_bins.*.fasta'
-        path = settings.GLAMR_DATA_ROOT / 'BINS' / 'MAX_BIN'
+        path = settings.OMICS_DATA_ROOT / 'BINS' / 'MAX_BIN'
         return path.glob(pat)
 
 
@@ -183,7 +178,7 @@ class BinMetaBat(Bin):
         Generator over bin file paths
         """
         pat = f'{sample.accession}_{cls.method}_bins.*'
-        path = settings.GLAMR_DATA_ROOT / 'BINS' / 'METABAT'
+        path = settings.OMICS_DATA_ROOT / 'BINS' / 'METABAT'
         return path.glob(pat)
 
 
@@ -744,7 +739,7 @@ class NCRNA(Model):
 
     @classmethod
     def get_sam_file(cls, sample):
-        return (settings.GLAMR_DATA_ROOT / 'NCRNA'
+        return (settings.OMICS_DATA_ROOT / 'NCRNA'
                 / f'{sample.accession}_convsrna.sam')
 
 
@@ -764,7 +759,7 @@ class Protein(SequenceLike):
 
     @classmethod
     def get_fasta_path(cls, sample):
-        return (settings.GLAMR_DATA_ROOT / 'PROTEINS' /
+        return (settings.OMICS_DATA_ROOT / 'PROTEINS' /
                 f'{sample.accession}_PROTEINS.faa')
 
     @classmethod
@@ -865,11 +860,11 @@ class RNACentral(Model):
         (27, 'vault_RNA'),
         (28, 'Y_RNA'),
     )
-    INPUT_FILE = (settings.GLAMR_DATA_ROOT / 'NCRNA' / 'RNA_CENTRAL'
+    INPUT_FILE = (settings.OMICS_DATA_ROOT / 'NCRNA' / 'RNA_CENTRAL'
                   / 'rnacentral_clean.fasta.gz')
 
     accession = AccessionField()
-    taxon = models.ForeignKey('SimpleTaxonomy', **fk_req)
+    taxon = models.ForeignKey(Taxon, **fk_req)
     rna_type = models.PositiveSmallIntegerField(choices=RNA_TYPES)
 
     def __str__(self):
@@ -879,7 +874,7 @@ class RNACentral(Model):
     @classmethod
     def load(cls, path=INPUT_FILE):
         type_map = dict(((b.casefold(), a) for a, b, in cls.RNA_TYPES))
-        taxa = dict(SimpleTaxonomy.objects.values_list('taxid', 'pk'))
+        taxa = dict(Taxon.objects.values_list('taxid', 'pk'))
 
         zcat_cmd = ['/usr/bin/unpigz', '-c', str(path)]
         zcat = Popen(zcat_cmd, stdout=PIPE)
@@ -968,7 +963,7 @@ class Sample(Model):
     @classmethod
     @atomic
     def sync(cls, sample_list='sample_list.txt', **kwargs):
-        src = settings.GLAMR_DATA_ROOT / sample_list
+        src = settings.OMICS_DATA_ROOT / sample_list
         with open(src) as f:
             seen = []
             for line in f:
@@ -1049,13 +1044,13 @@ class Sample(Model):
 
     def get_contig_fasta_path(self):
         return (
-            settings.GLAMR_DATA_ROOT / 'ASSEMBLIES' / 'MERGED'
+            settings.OMICS_DATA_ROOT / 'ASSEMBLIES' / 'MERGED'
             / (self.accession + '_MCDD.fa')
         )
 
     def get_gene_fasta_path(self):
         return (
-            settings.GLAMR_DATA_ROOT / 'GENES'
+            settings.OMICS_DATA_ROOT / 'GENES'
             / (self.accession + '_GENES.fna')
         )
 
@@ -1065,18 +1060,18 @@ class Sample(Model):
             'max': f'{self.accession}_MAX_coverage.txt',
             'met': f'{self.accession}_MET_coverage.txt',
         }
-        base = settings.GLAMR_DATA_ROOT / 'ASSEMBLIES' / 'COVERAGE'
+        base = settings.OMICS_DATA_ROOT / 'ASSEMBLIES' / 'COVERAGE'
         try:
             return base / fnames[filetype.casefold()]
         except KeyError as e:
             raise ValueError(f'unknown filetype: {filetype}') from e
 
     def get_gene_coverage_path(self):
-        return (settings.GLAMR_DATA_ROOT / 'GENES' / 'COVERAGE'
+        return (settings.OMICS_DATA_ROOT / 'GENES' / 'COVERAGE'
                 / f'{self.accession}_READSvsGENES.rpkm')
 
     def get_fq_paths(self):
-        base = settings.GLAMR_DATA_ROOT / 'READS'
+        base = settings.OMICS_DATA_ROOT / 'READS'
         fname = f'{self.accession}_{{infix}}.fastq.gz'
         return {
             infix: base / fname.format(infix=infix)
@@ -1084,173 +1079,9 @@ class Sample(Model):
         }
 
     def get_checkm_stats_path(self):
-        return (settings.GLAMR_DATA_ROOT / 'BINS' / 'CHECKM'
+        return (settings.OMICS_DATA_ROOT / 'BINS' / 'CHECKM'
                 / f'{self.accession}_CHECKM' / 'storage'
                 / 'bin_stats.analyze.tsv')
-
-
-class SimpleTaxonomyName(Model):
-    history = None
-
-    RANKS = (
-        (0, 'root'),
-        (1, 'domain'),
-        (2, 'phylum'),
-        (3, 'class', 'klass'),
-        (4, 'order'),
-        (5, 'family'),
-        (6, 'genus'),
-        (7, 'species'),
-        (8, 'strain'),
-    )
-    RANK_CHOICE = ((i[0], i[1]) for i in RANKS)
-
-    rank = models.PositiveSmallIntegerField(choices=RANK_CHOICE)
-    name = models.CharField(max_length=64)
-
-    class Meta:
-        unique_together = (('rank', 'name'),)
-
-    def __str__(self):
-        return f'{self.get_rank_display()} {self.name}'
-
-    @classmethod
-    @atomic
-    def load(cls, path=None):
-        if path is None:
-            path = cls.get_taxonomy_path()
-
-        data = []
-        with path.open() as f:
-            pp = ProgressPrinter('taxa found')
-            log.info(f'reading taxonomy: {path}')
-            for line in f:
-                data.append(line.strip().split('\t'))
-                pp.inc()
-
-            pp.finish()
-
-        pp = ProgressPrinter('tax names processed')
-        rankids = [i[0] for i in SimpleTaxonomyName.RANKS[1:]]
-        names = dict()
-        for row in data:
-            for rid, name in zip_longest(rankids, row[1:]):
-                if rid is None:
-                    raise RuntimeError(f'unexpectedly low ranks: {row}')
-                if name is None:
-                    # no strain etc
-                    continue
-                key = (rid, name)
-                pp.inc()
-                if key not in names:
-                    names[key] = SimpleTaxonomyName(rank=rid, name=name)
-
-        pp.finish()
-
-        log.info(f'Storing {len(names)} unique tax names to DB...')
-        SimpleTaxonomyName.objects.bulk_create(names.values())
-
-        return data
-
-    @classmethod
-    def get_taxonomy_path(cls):
-        return (settings.GLAMR_DATA_ROOT / 'NCRNA' / 'RNA_CENTRAL'
-                / 'TAXONOMY_DB_2021.txt')
-
-
-class SimpleTaxonomy(Model):
-    history = None
-
-    taxid = models.PositiveIntegerField(unique=True)
-    domain = models.ForeignKey(
-        SimpleTaxonomyName, **fk_opt,
-        related_name='tax_dom_rel',
-    )
-    phylum = models.ForeignKey(
-        SimpleTaxonomyName, **fk_opt,
-        related_name='tax_phy_rel',
-    )
-    klass = models.ForeignKey(
-        SimpleTaxonomyName, **fk_opt,
-        related_name='tax_cls_rel',
-    )
-    order = models.ForeignKey(
-        SimpleTaxonomyName, **fk_opt,
-        related_name='tax_ord_rel',
-    )
-    family = models.ForeignKey(
-        SimpleTaxonomyName, **fk_opt,
-        related_name='tax_fam_rel',
-    )
-    genus = models.ForeignKey(
-        SimpleTaxonomyName, **fk_opt,
-        related_name='tax_gen_rel',
-    )
-    species = models.ForeignKey(
-        SimpleTaxonomyName, **fk_opt,
-        related_name='tax_sp_rel',
-    )
-    strain = models.ForeignKey(
-        SimpleTaxonomyName, **fk_opt,
-        related_name='tax_str_rel',
-    )
-
-    def __str__(self):
-        return f'{self.taxid} {"|".join(self.get_lineage())}'
-
-    def get_lineage(self):
-        lineage = []
-        for i in SimpleTaxonomyName.RANKS[1:]:
-            name = getattr(self, i[-1], None)
-            if name is None:
-                break
-            else:
-                lineage.append(name.name)
-        return lineage
-
-    @classmethod
-    @atomic
-    def load(cls, path=None):
-        data = SimpleTaxonomyName.load(path)
-
-        # reloading names to get the ids, depends on order the fields are
-        # declared
-        names = {
-            (rank, name): pk for pk, rank, name
-            in SimpleTaxonomyName.objects.values_list().iterator()
-        }
-
-        pp = ProgressPrinter('taxa processed')
-        objs = []
-        # ranks: get pairs of rank id and rank field attribute name
-        ranks = [(i[0], i[-1]) for i in SimpleTaxonomyName.RANKS[1:]]
-        for row in data:
-            kwargs = dict(taxid=row[0])
-            for (rid, attr), name in zip_longest(ranks, row[1:]):
-                # we should always have rid, attr here since we went through
-                # data before, name may be None for missing low ranks
-                if name is not None:
-                    # assign ids directly
-                    kwargs[attr + '_id'] = names[(rid, name)]
-
-            objs.append(cls(**kwargs))
-            pp.inc()
-
-        pp.finish()
-        log.info(f'Storing {len(objs)} taxa in DB...')
-        cls.objects.bulk_create(objs)
-
-    @classmethod
-    def classified(cls, lineage):
-        """ remove unclassified tail of a lineage """
-        ranks = [i[1].upper() for i in cls.RANK_CHOICE[1:]]
-        ret = lineage[:1]  # keep first
-        for rank, name in zip(ranks, lineage[1:]):
-            if name == f'UNCLASSIFIED_{ret[-1]}_{rank}':
-                break
-            ret.append(name)
-
-        return ret
 
 
 class Taxonomy(Model):
@@ -1280,35 +1111,6 @@ class Taxonomy(Model):
         verbose_name_plural = 'taxa'
 
 
-class UniRef100(Model):
-    # UNIREF100	NAME	LENGTH	UNIPROT_IDS	UNIREF90	TAXON_IDS
-    # LINEAGE	SIGALPEP	TMS	DNA	METAL	TCDB	LOCATION
-    # COG	PFAM	TIGR	GO	IPR	EC	KEGG	RHEA	BIOCYC
-    # REACTANTS	PRODUCTS	TRANS_CPD
-    accession = models.CharField(  # UNIREF1100
-        max_length=32,
-        unique=True,
-        verbose_name='UniRef100 accession',
-    )
-    protein_name = models.CharField(max_length=32, **ch_opt)  # NAME
-    taxonomic_lineage_id = models.CharField(max_length=32, **ch_opt)
-    taxonomic_lineage_species = models.CharField(max_length=32, **ch_opt)
-    organism = models.CharField(max_length=32, **ch_opt)
-    dna_binding = models.CharField(max_length=32, **ch_opt)
-    metal_binding = models.CharField(max_length=32, **ch_opt)
-    signal_peptide = models.CharField(max_length=32, **ch_opt)
-    transmembrane = models.CharField(max_length=32, **ch_opt)
-    subcellular_location = models.CharField(max_length=32, **ch_opt)
-    tcdb = models.CharField(max_length=32, **ch_opt)
-    cog_kog = models.CharField(max_length=32, **ch_opt)
-    pfam = models.CharField(max_length=32, **ch_opt)
-    tigrfams = models.CharField(max_length=32, **ch_opt)
-    kegg = models.CharField(max_length=32, **ch_opt)
-    gene_ontology = models.CharField(max_length=32, **ch_opt)
-    interpro = models.CharField(max_length=32, **ch_opt)
-    ec_number = models.CharField(max_length=32, **ch_opt)
-
-
 def load_all(**kwargs):
     """
     Load all data
@@ -1317,7 +1119,6 @@ def load_all(**kwargs):
     """
     verbose = kwargs.get('verbose', False)
     Sample.sync(**kwargs)
-    SimpleTaxonomy.load()
     # ReadLibrary.sync()
     ContigCluster.load(verbose=verbose)
     Bin.import_all()
