@@ -65,6 +65,7 @@ class ExportSharedFormMixin:
         'sample ID': 'sequencing__sample__fecalsample__natural',
         'sequencing record ID': 'sequencing__name',
         'participant': 'sequencing__sample__fecalsample__participant__name',
+        'week': 'sequencing__sample__fecalsample__week__number',
         'participant compliance': 'sequencing__sample__fecalsample'
                                   '__participant__quantity_compliant',
         'supplement': 'sequencing__sample__fecalsample__participant'
