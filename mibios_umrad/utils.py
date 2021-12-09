@@ -1,3 +1,4 @@
+from datetime import datetime
 from threading import Timer
 from string import Formatter
 import sys
@@ -71,12 +72,13 @@ class ProgressPrinter():
         self._reset_state()
 
     def _reset_state(self):
-        """ reset the varibale state """
+        """ reset the variable state """
         self.current = None
         self.last = None
         self.at_previous_ring = None
         self.timer = None
         self.timer_running = False
+        self.time_zero = datetime.now()
 
     def _init_template(self, template):
         """
@@ -131,21 +133,24 @@ class ProgressPrinter():
             # turn on
             self._start_timer()
 
-    def inc(self):
+    def inc(self, step=1):
         """
         Assume we're progressing by counting integers and increment
         """
         count = self.current
         if count is None:
-            count = 1
+            count = step
         else:
-            count += 1
+            count += step
         self.update(count)
 
     def finish(self):
         """ Stop the timer but print a final result """
         self.stop()
-        self.print_progress(end='\n')  # print a last time
+        total_seconds = (datetime.now() - self.time_zero).total_seconds()
+        avg_txt = (f'(total: {total_seconds:.1f}s '
+                   f'avg: {self.current / total_seconds:.1f}/s)')
+        self.print_progress(avg_txt=avg_txt, end='\n')  # print with totals/avg
         self._reset_state()
 
     def _ring(self):
@@ -161,14 +166,17 @@ class ProgressPrinter():
         self.at_previous_ring = self.current
         self._start_timer()
 
-    def print_progress(self, end=''):
+    def print_progress(self, avg_txt='', end=''):
         """ Do the progress printing """
         if self.template_var is None:
             txt = self.template.format(self.current)
         else:
             txt = self.template.format(**{self.template_var: self.current})
 
-        if self.show_rate:
+        if avg_txt:
+            # called by finish()
+            txt += ' ' + avg_txt
+        elif self.show_rate:
             prev = self.at_previous_ring
             if prev is None:
                 prev = 0
