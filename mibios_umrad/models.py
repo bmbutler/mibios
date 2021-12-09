@@ -36,6 +36,7 @@ class TaxName(Model):
 
     class Meta:
         unique_together = (('rank', 'name'),)
+        verbose_name = 'taxonomic name'
 
     def __str__(self):
         return f'{self.get_rank_display()} {self.name}'
@@ -120,6 +121,9 @@ class Taxon(Model):
         TaxName, **fk_opt,
         related_name='tax_str_rel',
     )
+
+    class Meta:
+        verbose_name_plural = 'taxa'
 
     def __str__(self):
         return f'{self.taxid} {self.format_lineage(self.get_lineage())}'
