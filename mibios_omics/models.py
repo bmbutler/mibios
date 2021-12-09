@@ -166,6 +166,10 @@ class BinMAX(Bin):
         path = settings.OMICS_DATA_ROOT / 'BINS' / 'MAX_BIN'
         return path.glob(pat)
 
+    class Meta:
+        verbose_name = 'MaxBin'
+        verbose_name_plural = 'MaxBin bins'
+
 
 class BinMetaBat(Bin):
 
@@ -185,13 +189,25 @@ class BinMetaBat(Bin):
 class BinMET93(BinMetaBat):
     method = 'MET_P97S93E300'
 
+    class Meta:
+        verbose_name = 'MetaBin 97/93'
+        verbose_name_plural = 'MetaBin 97/93 bins'
+
 
 class BinMET97(BinMetaBat):
     method = 'MET_P99S97E300'
 
+    class Meta:
+        verbose_name = 'MetaBin 99/97'
+        verbose_name_plural = 'MetaBin 99/97 bins'
+
 
 class BinMET99(BinMetaBat):
     method = 'MET_P99S99E300'
+
+    class Meta:
+        verbose_name = 'MetaBin 99/99'
+        verbose_name_plural = 'MetaBin 99/99 bins'
 
 
 class CheckM(Model):
@@ -222,6 +238,10 @@ class CheckM(Model):
     n50_contigs = models.PositiveIntegerField(verbose_name='N50 (contigs)')
     coding_density = models.FloatField(verbose_name='Coding density')
     mean_contig_length = models.FloatField(verbose_name='Mean contig length')
+
+    class Meta:
+        verbose_name = 'CheckM'
+        verbose_name_plural = 'CheckM records'
 
     @classmethod
     def import_all(cls):
@@ -792,6 +812,9 @@ class ReadLibrary(Model):
     rev_qc1_fastq = DataPathField(base='READS')
     raw_read_count = models.PositiveIntegerField(**opt)
     qc_read_count = models.PositiveIntegerField(**opt)
+
+    class Meta:
+        verbose_name_plural = 'read libraries'
 
     def __str__(self):
         return self.sample.accession
