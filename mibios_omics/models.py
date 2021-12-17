@@ -1107,33 +1107,6 @@ class Sample(Model):
                 / 'bin_stats.analyze.tsv')
 
 
-class Taxonomy(Model):
-    SOURCE_DB_CHOICES = (
-        (0, 'ncbi'),
-    )
-    accession = models.CharField(
-        max_length=32,
-        unique=True,
-        verbose_name='taxonomy ID',
-    )
-    source_db = models.PositiveSmallIntegerField(
-        choices=SOURCE_DB_CHOICES,
-    )
-    rank = models.CharField(max_length=32)
-    name = models.CharField(max_length=255)
-    name_type = models.CharField(
-        max_length=32, blank=True,
-        help_text='NCBI taxnonomy name type',
-    )
-    parent = models.ForeignKey('self', **fk_opt)
-
-    class Meta:
-        unique_together = (
-            ('source_db', 'rank', 'name', 'name_type'),
-        )
-        verbose_name_plural = 'taxa'
-
-
 def load_all(**kwargs):
     """
     Load all data
