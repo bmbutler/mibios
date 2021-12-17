@@ -1,3 +1,4 @@
+from itertools import zip_longest
 from pathlib import Path
 
 from django.db import models
@@ -91,6 +92,9 @@ class NCBITaxModel(Model):
                         skip_row = True
                         break
 
+                if f.choices:
+                    value = cls.lookup_choice(f, value)
+
                 kw[attr_name] = value
 
             if skip_row:
@@ -162,6 +166,24 @@ class NCBITaxModel(Model):
             if i.unique:
                 return i
         return None
+
+    @classmethod
+    def lookup_choice(cls, field, value):
+        """ Get a field's choices db value from give human-readable value """
+        if not hasattr(cls, '_field_choice_map'):
+            cls._field_choice_map = {}
+
+        if isinstance(field, str):
+            field = cls._meta.get_field(field)
+
+        if not field.choices:
+            raise ValueError(f'field {field} choices must not be empty')
+
+        if field not in cls._field_choice_map:
+            cls._field_choice_map[field] = \
+                dict(((b, a) for a, b in field.choices))
+
+        return cls._field_choice_map[field][value]
 
 
 class Citation(NCBITaxModel):
@@ -322,6 +344,22 @@ class MergedNodes(NCBITaxModel):
 
 
 class TaxName(NCBITaxModel):
+    NAME_CLASS_SCI = 11
+    NAME_CLASSES = (
+        (1, 'acronym'),
+        (2, 'authority'),
+        (3, 'blast name'),
+        (4, 'common name'),
+        (5, 'equivalent name'),
+        (6, 'genbank acronym'),
+        (7, 'genbank common name'),
+        (8, 'genbank synonym'),
+        (9, 'in-part'),
+        (10, 'includes'),
+        (NAME_CLASS_SCI, 'scientific name'),
+        (12, 'synonym'),
+    )
+
     node = models.ForeignKey(
         'TaxNode',
         **fk_req,
@@ -332,9 +370,8 @@ class TaxName(NCBITaxModel):
         max_length=128,
         help_text='the unique variant of this name if name not unique',
     )
-    name_class = models.CharField(
-        max_length=32,
-        db_index=True,
+    name_class = models.PositiveSmallIntegerField(
+        choices=NAME_CLASSES,
         help_text='synonym, common name, ...',
     )
 
@@ -345,6 +382,9 @@ class TaxName(NCBITaxModel):
             # don't need the unique_name? Ha!
             ('node', 'name', 'name_class'),
         )
+        indexes = [
+            models.Index(fields=['node', 'name_class']),
+        ]
 
     def __str__(self):
         return self.name
@@ -355,7 +395,7 @@ class TaxNode(NCBITaxModel):
         unique=True,
         verbose_name='taxonomy ID',
     )
-    parent = models.ForeignKey('self', **fk_opt)
+    parent = models.ForeignKey('self', **fk_opt, related_name='children')
     rank = models.CharField(max_length=32, db_index=True)
     embl_code = models.CharField(max_length=2, **ch_opt)
     division = models.ForeignKey(Division, **fk_req)
@@ -404,6 +444,25 @@ class TaxNode(NCBITaxModel):
     def __str__(self):
         return f'{self.taxid}'
 
+    @property
+    def name(self):
+        """
+        Get the scientific name of node
+
+        This works because (and as long as) each node has exactly one
+        scientific name
+        """
+        return self.taxname_set.get(name_class=TaxName.NAME_CLASS_SCI)
+
+    def is_root(self):
+        """ Say if node is the root of the taxonomic tree """
+        return self.taxid == 1
+
+    STANDARD_RANKS = (
+        'superkingdom', 'phylum', 'class', 'order', 'family', 'genus',
+        'species',
+    )
+
     @classmethod
     def load(cls):
         rest = super().load()
@@ -422,30 +481,95 @@ class TaxNode(NCBITaxModel):
         # save
         cls.objects.bulk_update(objs.values(), ['parent'])
 
-    def lineage_list(self, names=True):
-        lineage = []
-        cur = self
-        while True:
-            if cur.taxid == 1:
-                break
-            lineage.append(cur)
-            cur = cur.parent
-
-        lineage = list(reversed(lineage))
+    def lineage_list(self, full=True, names=True):
+        lineage = list(reversed(list(self.ancestors(all_ranks=full))))
         if names:
-            f = dict(node__in=lineage, name_class='scientific name')
+            f = dict(node_id__in=lineage, name_class=TaxName.NAME_CLASS_SCI)
             qs = TaxName.objects.filter(**f)
             name_map = dict(qs.values_list('node__taxid', 'name'))
             lineage = [(i, name_map[i.taxid]) for i in lineage]
 
         return lineage
 
-    def lineage(self):
+    def lineage(self, full=True):
         lin = [
             f'{i.rank}:{name}'
-            for i, name in self.lineage_list(names=True)
+            for i, name in self.lineage_list(full=full, names=True)
         ]
         return ';'.join(lin)
+
+    def ancestors(self, all_ranks=True):
+        """
+        Generate a node's ancestor nodes starting with itself, towards the root
+
+        Will always yield self even if all_ranks is False.
+        """
+        cur = self
+        while True:
+            if all_ranks or cur.rank in self.STANDARD_RANKS or cur is self:
+                yield cur
+            if cur.is_root():
+                break
+            cur = cur.parent
+
+    def lca(self, other, all_ranks=True):
+        seen_a = set()
+        seen_b = set()
+        a_anc = self.ancestors(all_ranks=all_ranks)
+        b_anc = other.ancestors(all_ranks=all_ranks)
+        for a, b in zip_longest(a_anc, b_anc):
+            if a is not None:
+                seen_a.add(a)
+            if b is not None:
+                seen_b.add(b)
+
+            if a in seen_b:
+                return a
+            if b in seen_a:
+                return b
+
+        # all_ranks == False but lca is above superkingdom
+        return None
+
+    def __eq__(self, other):
+        # It's taxid or nothing
+        return self.taxid == other.taxid
+
+    def is_ancestor_of(self, other):
+        """
+        Check if self is ancestor of other
+
+        This method is the base of the rich comparison method
+        """
+        # TODO: optimize by checking on rank?
+        for i in other.ancestors(all_ranks=True):
+            if self == i:
+                return True
+        return False
+
+    def __lt__(self, other):
+        return self.is_ancestor_of(other) and not self == other
+
+    def __le__(self, other):
+        return self.is_ancestor_of(other)
+
+    def __gt__(self, other):
+        return other.is_ancestor_of(self) and not self == other
+
+    def __ge__(self, other):
+        return other.is_ancestor_of(self)
+
+    @classmethod
+    def search(cls, query, any_name_class=False):
+        """ convenience method to get nodes from a (partial) name """
+        f = {}
+        if not any_name_class:
+            f['taxname__name_class'] = TaxName.NAME_CLASS_SCI
+        if query[0].isupper():
+            f['taxname__name__startswith'] = query
+        else:
+            f['taxname__name__icontains'] = query
+        return cls.objects.filter(**f)  # FIXME: distinct()?
 
 
 class TypeMaterial(NCBITaxModel):
