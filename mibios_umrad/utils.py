@@ -1,4 +1,5 @@
 from datetime import datetime
+from itertools import zip_longest
 from threading import Timer
 from string import Formatter
 import sys
@@ -192,3 +193,26 @@ class ProgressPrinter():
             txt = '\r' + txt
 
         print(txt, end=end, flush=True, file=self.output_file)
+
+
+def grouper(iterable, n, fillvalue=None):
+    """
+    Collect data into non-overlapping groups of n elements
+
+    This is the grouper from the stdlib's itertools' recipe book.
+    """
+    args = [iter(iterable)] * n
+    return zip_longest(*args, fillvalue=fillvalue)
+
+
+def chunker(iterable, n):
+    """
+    Group iterable in chunks of equal size, except possibly for the last chunk
+    """
+    sentinel = object()
+    for grp in grouper(iterable, n, fillvalue=sentinel):
+        # grp is a n-tuple
+        if grp[-1] is sentinel:
+            yield tuple(i for i in grp if i is not sentinel)
+        else:
+            yield grp
