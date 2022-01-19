@@ -5,6 +5,10 @@ from string import Formatter
 import sys
 
 
+class DryRunRollback(Exception):
+    pass
+
+
 class ReturningGenerator:
     """
     A wrapper to catch return values of generators
@@ -71,6 +75,12 @@ class ProgressPrinter():
         self.to_terminal = output_file.isatty()
 
         self._reset_state()
+
+    def __call__(self,  it):
+        for elem in it:
+            yield elem
+            self.inc()
+        self.finish()
 
     def _reset_state(self):
         """ reset the variable state """

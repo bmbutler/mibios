@@ -1,6 +1,7 @@
 from collections import OrderedDict
-from itertools import islice, zip_longest
+from itertools import groupby, islice, zip_longest
 from logging import getLogger
+from operator import itemgetter
 import os
 from pathlib import Path
 
@@ -10,33 +11,20 @@ from django.db.transaction import atomic
 from django.utils.functional import cached_property
 
 from mibios import get_registry
-from mibios.models import Model
+
 
 from .fields import AccessionField
 from .model_utils import (
-    ch_opt, fk_opt, VocabularyModel, delete_all_objects_quickly,
+    ch_opt, fk_opt, fk_req, VocabularyModel, delete_all_objects_quickly,
+    LoadMixin, Model,
 )
-from .utils import ProgressPrinter, chunker
+from .utils import ProgressPrinter, chunker, DryRunRollback
 
 
 log = getLogger(__name__)
 
 
-class DryRunRollback(Exception):
-    pass
-
-
-class Biocyc(Model):
-    history = None
-    name = models.CharField(max_length=64, unique=True)
-
-    class Meta:
-        verbose_name = 'BioCyc'
-        verbose_name_plural = verbose_name
-
-
 class COG(Model):
-    history = None
     accession = AccessionField()
 
     class Meta:
@@ -47,14 +35,196 @@ class COG(Model):
         return self.accession
 
 
+class CompoundEntry(Model, LoadMixin):
+    """ Reference DB's entry for chemical compound, reactant, or product """
+    DB_BIOCYC = 'b'
+    DB_CHEBI = 'c'
+    DB_HMDB = 'h'
+    DB_INCHI = 'i'
+    DB_KEGG = 'k'
+    DB_PUBCHEM = 'p'
+    DB_CHOICES = (
+        ('Biocyc', DB_BIOCYC),
+        ('ChEBI', DB_CHEBI),
+        ('HMDB', DB_HMDB),
+        ('InChI', DB_INCHI),
+        ('KEGG', DB_KEGG),
+        ('PubChem', DB_PUBCHEM),
+    )
+
+    accession = models.CharField(max_length=40, unique=True)
+    db = models.CharField(max_length=1, choices=DB_CHOICES, db_index=True)
+    formula = models.CharField(max_length=32, blank=True)
+    charge = models.SmallIntegerField(blank=True, null=True)
+    mass = models.CharField(max_length=16, blank=True)  # TODO: decimal??
+    name = models.ManyToManyField('CompoundName')
+    compound = models.ForeignKey('Compound', **fk_req)
+
+    def __str__(self):
+        return self.accession
+
+
 class Compound(Model):
-    """ Chemical compound, reactant, or product """
-    history = None
-    name = models.CharField(max_length=32, unique=True)  # can be CHEBI id
+    """ Unique source-DB-independent compounds """
+
+    @classmethod
+    def get_file(cls):
+        return Path(
+            '/geomicro/data22/teals_pipeline/BOSS/REFDB2_COMPOUNDS_REACTIONS'
+            '/all_compound_info_SEP_2021.txt'
+        )
+
+    # spec: 2nd item is either base compound field name or compound model name
+    # for the reverse relation
+    import_file_spec = (
+        ('id', 'accession'),
+        ('form', 'formula'),
+        ('char', 'charge'),
+        ('mass', 'mass'),
+        ('hmdb', CompoundEntry.DB_HMDB),
+        ('inch', CompoundEntry.DB_INCHI),
+        ('bioc', CompoundEntry.DB_BIOCYC),
+        ('kegg', CompoundEntry.DB_KEGG),
+        ('pubc', CompoundEntry.DB_PUBCHEM),
+        ('cheb', CompoundEntry.DB_CHEBI),
+        ('name', 'name'),
+    )
+
+    @classmethod
+    @atomic
+    def load(cls, max_rows=None, dry_run=True):
+        refdb_names = [
+            i for _, i in CompoundEntry.DB_CHOICES
+            if i in [j[1] for j in cls.import_file_spec]
+        ]
+
+        # get data and split m2m fields
+        data = []
+        for row in super().load(max_rows=max_rows, parse_only=True):
+            for i in refdb_names + ['name']:
+                row[i] = cls._split_m2m_input(row[i])
+            data.append(row)
+
+        unicomps = []  # collector for unique compounds (this model)
+        name_data = {}  # accession/id to names association
+
+        grpk = itemgetter(*refdb_names)  # sort/group by related IDs columns
+        data = sorted(data, key=grpk)
+        pp = ProgressPrinter('compound records processed')
+        data = pp(data)
+        extra_ids_count = 0
+        for key, grp in groupby(data, grpk):
+            grp = list(grp)
+            all_ids = {i for j in key for i in j}  # flatten list-of-list
+            cgroup = []
+
+            if len(grp) < len(all_ids):
+                # NOTE: there are extra IDs in the xref columns for which we
+                # don't have a row, they will not enter the compound group, and
+                # get lost here
+                # print(f'WARNING: skipping for group size inconsistency: '
+                #       f'{len(grp)=} {len(all_ids)=} {key=}')
+
+                # TODO: make this raise when fixed in the source dataa?
+                # raise RuntimeError(
+                #     f'expected to have one group member per unique ID, but: '
+                #     f'{key=} {grp=}'
+                # )
+                extra_ids_count += 1
+
+            elif len(grp) > len(all_ids):
+                # this case has not happend yet
+                raise RuntimeError(
+                    f'more group members ({len(grp)=}) than IDs '
+                    f'({len(all_ids)})? {key=} {grp=}'
+                )
+
+            for row in grp:
+                acc = row['accession']
+
+                # get the ref db for this row:
+                for refdb, ids in zip(refdb_names, key):
+                    if acc in ids:
+                        break
+                else:
+                    raise RuntimeError(
+                        f'accession {acc} not found in other ID fields: {grp}'
+                    )
+                del ids
+
+                comp_obj = CompoundEntry(
+                    accession=acc,
+                    db=refdb,
+                    formula=row['formula'],
+                    charge=None if row['charge'] == '' else row['charge'],
+                    mass=row['mass']
+                )
+                cgroup.append(comp_obj)
+                name_data[acc] = row['name']
+
+            unicomps.append(cgroup)
+
+        if extra_ids_count:
+            print(f'WARNING: {extra_ids_count} compound groups with (ignored) '
+                  f'extra IDs')
+
+        # create Compound objects and get PKs
+        objs = (Compound() for _ in range(len(unicomps)))
+        cls.objects.bulk_create(objs, batch_size=500)
+        pks = cls.objects.values_list('pk', flat=True)
+
+        # cross-link compound entries (and re-pack to one list)
+        comps = []
+        for pk, group in zip(pks, unicomps):
+            for i in group:
+                i.compound_id = pk
+                comps.append(i)
+        del pk, unicomps
+
+        # store compound entries
+        CompoundEntry.objects.bulk_create(comps)
+        del comps
+
+        # store names
+        uniq_names = set()
+        for items in name_data.values():
+            uniq_names.update(items)
+
+        name_objs = (CompoundName(entry=i) for i in uniq_names)
+        CompoundName.objects.bulk_create(name_objs)
+
+        # read back names with PKs
+        name_pk_map = dict(
+            CompoundName.objects.values_list('entry', 'pk').iterator()
+        )
+
+        # Set name relations
+        pk_map = dict(
+            CompoundEntry.objects.values_list('accession', 'pk').iterator()
+        )
+        # comp->name relation:
+        rels = (
+            (comp_pk, name_pk_map[name_entry])
+            for acc, comp_pk in pk_map.items()
+            for name_entry in name_data[acc]
+        )
+        through = CompoundEntry._meta.get_field('name').remote_field.through
+        through_objs = [
+            through(
+                **{'compoundentry_id': i, 'compoundname_id': j}
+            )
+            for i, j in rels
+        ]
+        pp = ProgressPrinter('compound entry vs. name relations')
+        through_objs = pp(through_objs)
+        through.objects.bulk_create(through_objs)
+
+
+class CompoundName(VocabularyModel):
+    max_length = 128
 
 
 class EC(Model):
-    history = None
     accession = AccessionField()
 
     class Meta:
@@ -66,12 +236,10 @@ class EC(Model):
 
 
 class Function(Model):
-    history = None
     name = models.CharField(max_length=128, unique=True)
 
 
 class GeneOntology(Model):
-    history = None
     accession = AccessionField(prefix='GO:')
 
     class Meta:
@@ -83,23 +251,10 @@ class GeneOntology(Model):
 
 
 class Interpro(Model):
-    history = None
     accession = AccessionField(prefix='IPR')
 
     class Meta:
         verbose_name = 'Interpro'
-        verbose_name_plural = verbose_name
-
-    def __str__(self):
-        return self.accession
-
-
-class KEGG(Model):
-    history = None
-    accession = AccessionField(prefix='R')
-
-    class Meta:
-        verbose_name = 'KEGG'
         verbose_name_plural = verbose_name
 
     def __str__(self):
@@ -118,7 +273,6 @@ class Metal(VocabularyModel):
 
 
 class PFAM(Model):
-    history = None
     accession = AccessionField(prefix='PF')
 
     class Meta:
@@ -128,20 +282,240 @@ class PFAM(Model):
         return self.accession
 
 
-class RHEA(Model):
-    history = None
-    accession = AccessionField()  # numbers
+class ReactionEntry(Model):
+    DB_BIOCYC = 'b'
+    DB_KEGG = 'k'
+    DB_RHEA = 'r'
+    DB_CHOICES = (
+        ('Biocyc', DB_BIOCYC),
+        ('KEGG', DB_KEGG),
+        ('RHEA', DB_RHEA),
+    )
 
-    class Meta:
-        verbose_name = 'RHEA'
-        verbose_name_plural = 'RHEA'
+    accession = AccessionField()
+    db = models.CharField(max_length=1, choices=DB_CHOICES, db_index=True)
+    bi_directional = models.BooleanField()
+    left = models.ManyToManyField(
+        CompoundEntry, related_name='to_reaction',
+    )
+    right = models.ManyToManyField(
+        CompoundEntry, related_name='from_reaction',
+    )
+    reaction = models.ForeignKey('Reaction', **fk_req)
 
     def __str__(self):
         return self.accession
 
 
+class Reaction(Model):
+    """ unique DB-independent reaction """
+
+    import_file_spec = (
+        ('ID', 'accession'),
+        ('dir', 'dir'),
+        ('left_kegg', 'left_kegg'),
+        ('left_biocyc', 'left_biocyc'),
+        ('left_rhea', 'left_rhea'),
+        ('right_kegg', 'right_kegg'),
+        ('right_biocyc', 'right_biocyc'),
+        ('right_rhea', 'right_rhea'),
+        ('kegg_rxn', ReactionEntry.DB_KEGG),
+        ('biocyc_rxn', ReactionEntry.DB_BIOCYC),
+        ('rhea_rxn', ReactionEntry.DB_RHEA),
+    )
+
+    @classmethod
+    def get_file(cls):
+        return Path(
+            '/geomicro/data22/teals_pipeline/BOSS/REFDB2_COMPOUNDS_REACTIONS/'
+            'all_reaction_info_SEP_2021.txt'
+        )
+
+    @classmethod
+    @atomic
+    def load(cls, max_rows=None, dry_run=True):
+        refdbs = [
+            i for _, i in ReactionEntry.DB_CHOICES
+            if i in [j[1] for j in cls.import_file_spec]
+        ]
+        comp_cols = {
+            ReactionEntry.DB_KEGG: ('left_kegg', 'right_kegg'),
+            ReactionEntry.DB_BIOCYC: ('left_biocyc', 'right_biocyc'),
+            ReactionEntry.DB_RHEA: ('left_rhea', 'right_rhea'),
+        }
+
+        # get data and split m2m fields
+        data = []
+        for row in super().load(max_rows=max_rows, parse_only=True):
+            m2mcols = [i for _, i in cls.import_file_spec if i not in ['accession', 'dir']]  # noqa:E501
+            for i in m2mcols:
+                row[i] = cls._split_m2m_input(row[i])
+            data.append(row)
+
+        urxns = []
+
+        # sort/group and process by reaction group
+        grpk = itemgetter(*refdbs)
+        data = sorted(data, key=grpk)
+        pp = ProgressPrinter('reaction entry records processed')
+        data = pp(data)
+        extra_ids_count = 0
+        compounds = {}
+        for key, grp in groupby(data, grpk):
+            grp = list(grp)
+            all_ids = {i for j in key for i in j}  # flatten list-of-list
+            rxngroup = []
+
+            if len(grp) < len(all_ids):
+                # NOTE: see this check in Compound
+                extra_ids_count += 1
+
+            elif len(grp) > len(all_ids):
+                # this case has not happend yet ?
+                raise RuntimeError(
+                    f'more group members ({len(grp)=}) than IDs '
+                    f'({len(all_ids)})? {key=} {grp=}'
+                )
+
+            for row in grp:
+                acc = row['accession']
+
+                # get the ref db for this row:
+                for refdb, ids in zip(refdbs, key):
+                    if acc in ids:
+                        break
+                else:
+                    raise RuntimeError(
+                        f'accession {acc} not found in other ID fields: {grp}'
+                    )
+                del ids
+
+                rxn_obj = ReactionEntry(
+                    accession=acc,
+                    db=refdb,
+                    bi_directional=True if row['dir'] == 'BOTH' else False
+                )
+                rxngroup.append(rxn_obj)
+
+                for i, (left_col, right_col) in comp_cols.items():
+                    if i == refdb:
+                        compounds[acc] = refdb, row[left_col], row[right_col]
+                        break
+                    # TODO: account for what we miss here?
+                else:
+                    raise RuntimeError('logic bug: no match for db key')
+
+            urxns.append(rxngroup)
+
+        del key, grp, row, acc, rxn_obj, left_col, right_col
+
+        if extra_ids_count:
+            print(f'WARNING: {extra_ids_count} reaction groups with (ignored) '
+                  f'extra IDs')
+
+        # create Reaction objects and get PKs
+        objs = (cls() for _ in range(len(urxns)))
+        cls.objects.bulk_create(objs, batch_size=500)
+        pks = cls.objects.values_list('pk', flat=True)
+
+        # cross-link reaction entries (and re-pack to one list)
+        rxns = []
+        for pk, group in zip(pks, urxns):
+            for i in group:
+                i.reaction_id = pk
+                rxns.append(i)
+        del pk, group, urxns
+
+        # store reaction entries
+        ReactionEntry.objects.bulk_create(rxns)
+        del rxns
+
+        # deal with unknown compounds
+        qs = CompoundEntry.objects.values_list('accession', flat=True)
+        known_cpd_accs = set(qs.iterator())
+        del qs
+        unknown_cpd_accs = {}
+        for rxndb, left, right in compounds.values():
+            for i in left + right:
+                if i in known_cpd_accs:
+                    continue
+                if i in unknown_cpd_accs:
+                    # just check dbkey
+                    if rxndb != unknown_cpd_accs[i]:
+                        raise RuntimeError('inconsistent db key: {i=} {dbkey=}'
+                                           '{unknown_cpd_accs[i]=}')
+                else:
+                    # add
+                    unknown_cpd_accs[i] = rxndb
+        del rxndb, left, right, known_cpd_accs
+        if unknown_cpd_accs:
+            print(f'Found {len(unknown_cpd_accs)} unknown compound IDs in '
+                  'reaction data!')
+            max_pk = Compound.objects.order_by('pk').last().pk
+            unicomp_objs = (Compound() for _ in range(len(unknown_cpd_accs)))
+            Compound.objects.bulk_create(unicomp_objs, batch_size=500)
+            uni_pks = Compound.objects.filter(pk__gt=max_pk)\
+                              .values_list('pk', flat=True)
+            CompoundEntry.objects.bulk_create((
+                CompoundEntry(
+                    accession=acc,
+                    db=CompoundEntry.DB_CHEBI if rxndb == ReactionEntry.DB_RHEA else rxndb,  # noqa: E501
+                    compound_id=pk
+                )
+                for (acc, rxndb), pk in zip(unknown_cpd_accs.items(), uni_pks)
+            ))
+            del uni_pks, max_pk
+        del unknown_cpd_accs
+
+        # get reaction entry accession to PK mapping (with db info)
+        rxn_qs = ReactionEntry.objects.values_list('accession', 'db', 'pk')
+
+        # get compound acc->pk mapping (with db info)
+        qs = CompoundEntry.objects.values_list('accession', 'db', 'pk')
+        comp_acc2pk = {acc: (db, pk) for acc, db, pk in qs.iterator()}
+
+        # compile rxn<->compound relations
+        lefts, rights = [], []
+        for rxn_acc, rxndb, rxn_pk in rxn_qs.iterator():
+            cpddb, left_accs, right_accs = compounds[rxn_acc]
+            left = [(i, j) for i, j in (comp_acc2pk[k] for k in left_accs)]
+            right = [(i, j) for i, j in (comp_acc2pk[k] for k in right_accs)]
+            if not left and not right:
+                continue
+
+            # check db field aggreement
+            comp_db = {i for i, _ in left + right}
+            if len(comp_db) > 1:
+                raise RuntimeError(
+                    f'multiple compound DBs: {comp_db=} {rxn_acc=} {rxndb=} '
+                    f'{left_accs=} {right_accs=} {left=} {right=}'
+                )
+            comp_db = comp_db.pop()
+            if comp_db == rxndb or rxndb == ReactionEntry.DB_RHEA and comp_db == CompoundEntry.DB_CHEBI:  # noqa: E501
+                # DBs match
+                pass
+            else:
+                raise RuntimeError(
+                    f'db field inconsistency: {comp_db=} {rxn_acc=} {rxndb=} '
+                    f'{left_accs=} {right_accs=} {left=} {right=}'
+                )
+            lefts += [(rxn_pk, j) for _, j in left]
+            rights += [(rxn_pk, j) for _, j in right]
+
+        # save rxn<->compound relations
+        for direc, rels in [('left', lefts), ('right', rights)]:
+            through = ReactionEntry._meta.get_field(direc).remote_field.through
+            print(f'Setting {len(rels)} {direc} reaction<->compound relations',
+                  flush=True, end='')
+            through_objs = [
+                through(**{'reactionentry_id': i, 'compoundentry_id': j})
+                for i, j in rels
+            ]
+            through.objects.bulk_create(through_objs)
+            print(' [OK]')
+
+
 class TaxName(Model):
-    history = None
 
     RANKS = (
         (0, 'root'),
@@ -210,8 +584,6 @@ class TaxName(Model):
 
 
 class Taxon(Model):
-    history = None
-
     taxid = models.PositiveIntegerField(unique=True)
     domain = models.ForeignKey(
         TaxName, **fk_opt,
@@ -386,7 +758,6 @@ class Taxon(Model):
 
 
 class TIGR(Model):
-    history = None
     accession = AccessionField(prefix='TIGR')
 
     class Meta:
@@ -398,7 +769,6 @@ class TIGR(Model):
 
 
 class Uniprot(Model):
-    history = None
     accession = AccessionField(verbose_name='uniprot id')
 
     class Meta:
@@ -410,8 +780,6 @@ class Uniprot(Model):
 
 
 class UniRef100(Model):
-    history = None
-
     # The fields below are based on the columns in UNIREF100_INFO_DEC_2021.txt
     # in order.  To ensure update_m2m() works, the related models of all m2m
     # fields are assumed to have the unique key used in the source table as the
@@ -455,11 +823,11 @@ class UniRef100(Model):
     # 18 EC
     ec = models.ManyToManyField(EC)
     # 19 KEGG
-    kegg = models.ManyToManyField(KEGG)
+    kegg = models.ManyToManyField(ReactionEntry, related_name='kegg_rxn')
     # 20 RHEA
-    rhea = models.ManyToManyField(RHEA)
+    rhea = models.ManyToManyField(ReactionEntry, related_name='rhea_rxn')
     # 21 BIOCYC
-    biocyc = models.ManyToManyField(Biocyc)
+    biocyc = models.ManyToManyField(ReactionEntry, related_name='bioc_rxn')
     # 22 REACTANTS
     reactant = models.ManyToManyField(Compound, related_name='reactant_of')
     # 23 PRODUCTS
@@ -508,7 +876,7 @@ class UniRef100(Model):
             try:
                 return cls.load_lines(file_it, dry_run=dry_run)
             except DryRunRollback:
-                print('[dry run rollback]')
+                print('[dry-run rollback]')
 
     @classmethod
     @atomic
