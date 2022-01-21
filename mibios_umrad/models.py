@@ -1,11 +1,11 @@
-from collections import OrderedDict
-from itertools import groupby, islice, zip_longest
+from collections import OrderedDict, defaultdict
+from itertools import groupby, zip_longest
 from logging import getLogger
 from operator import itemgetter
-import os
 from pathlib import Path
 
 from django.conf import settings
+from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 from django.db.transaction import atomic
 from django.utils.functional import cached_property
@@ -16,26 +16,43 @@ from mibios import get_registry
 from .fields import AccessionField
 from .model_utils import (
     ch_opt, fk_opt, fk_req, VocabularyModel, delete_all_objects_quickly,
-    LoadMixin, Model,
+    Manager, Model,
 )
-from .utils import ProgressPrinter, chunker, DryRunRollback
+from .utils import ProgressPrinter, DryRunRollback
 
 
 log = getLogger(__name__)
 
 
-class COG(Model):
-    accession = AccessionField()
+class CompoundEntryManager(Manager):
+    def create_from_m2m_input(self, values, source_model, source_field_name):
+        if source_model is UniRef100 and source_field_name == 'trans_compound':
+            pass
+        else:
+            raise NotImplementedError(
+                'is only implemented for field UniRef100.trans_compound'
+            )
 
-    class Meta:
-        verbose_name = 'COG'
-        verbose_name_plural = 'COGs'
+        # create one unique reaction group per value
+        try:
+            last_pk = Compound.objects.order_by('pk').latest('pk').pk
+        except Compound.DoesNotExist:
+            last_pk = -1
+        Compound.objects.bulk_create((Compound() for _ in range(len(values))))
+        cpd_pks = Compound.objects.filter(pk__gt=last_pk)\
+                          .values_list('pk', flat=True)
+        if len(values) != len(cpd_pks):
+            # just checking
+            raise RuntimeError('a bug making right number of Compound objects')
 
-    def __str__(self):
-        return self.accession
+        model = self.model
+        db = CompoundEntry.DB_CHEBI
+        objs = (model(accession=i, db=db, compound_id=j)
+                for i, j in zip(values, cpd_pks))
+        return self.bulk_create(objs)
 
 
-class CompoundEntry(Model, LoadMixin):
+class CompoundEntry(Model):
     """ Reference DB's entry for chemical compound, reactant, or product """
     DB_BIOCYC = 'b'
     DB_CHEBI = 'c'
@@ -59,6 +76,8 @@ class CompoundEntry(Model, LoadMixin):
     mass = models.CharField(max_length=16, blank=True)  # TODO: decimal??
     name = models.ManyToManyField('CompoundName')
     compound = models.ForeignKey('Compound', **fk_req)
+
+    objects = CompoundEntryManager()
 
     def __str__(self):
         return self.accession
@@ -224,41 +243,8 @@ class CompoundName(VocabularyModel):
     max_length = 128
 
 
-class EC(Model):
-    accession = AccessionField()
-
-    class Meta:
-        verbose_name = 'EC'
-        verbose_name_plural = verbose_name
-
-    def __str__(self):
-        return self.accession
-
-
-class Function(Model):
-    name = models.CharField(max_length=128, unique=True)
-
-
-class GeneOntology(Model):
-    accession = AccessionField(prefix='GO:')
-
-    class Meta:
-        verbose_name = 'GeneOntology'
-        verbose_name_plural = verbose_name
-
-    def __str__(self):
-        return self.accession
-
-
-class Interpro(Model):
-    accession = AccessionField(prefix='IPR')
-
-    class Meta:
-        verbose_name = 'Interpro'
-        verbose_name_plural = verbose_name
-
-    def __str__(self):
-        return self.accession
+class FunctionName(VocabularyModel):
+    max_length = 128
 
 
 class Location(VocabularyModel):
@@ -272,14 +258,41 @@ class Metal(VocabularyModel):
     pass
 
 
-class PFAM(Model):
-    accession = AccessionField(prefix='PF')
+class ReactionEntryManager(Manager):
+    def create_from_m2m_input(self, values, source_model, source_field_name):
+        if source_model is not UniRef100:
+            raise NotImplementedError(
+                'can only create instance on behalf of UniRef100'
+            )
+        if source_field_name == 'kegg_reaction':
+            db = self.model.DB_KEGG
+        elif source_field_name == 'rhea_reaction':
+            db = self.model.DB_RHEA
+        elif source_field_name == 'biocyc_reaction':
+            db = self.model.DB_BIOCYC
+        else:
+            raise ValueError(f'unknown source field name: {source_field_name}')
 
-    class Meta:
-        verbose_name = 'PFAM'
+        # create one unique reaction group per value
+        try:
+            last_pk = Reaction.objects.order_by('pk').latest('pk').pk
+        except Reaction.DoesNotExist:
+            last_pk = -1
+        Reaction.objects.bulk_create(
+            (Reaction() for _ in range(len(values))),
+            # FIXME: keep getting "too many terms in compound SELECT" for >500
+            batch_size=500,
+        )
+        reaction_pks = Reaction.objects.filter(pk__gt=last_pk)\
+                               .values_list('pk', flat=True)
+        if len(values) != len(reaction_pks):
+            # just checking
+            raise RuntimeError('a bug making right number of Reaction objects')
 
-    def __str__(self):
-        return self.accession
+        model = self.model
+        objs = (model(accession=i, db=db, reaction_id=j)
+                for i, j in zip(values, reaction_pks))
+        return self.bulk_create(objs)
 
 
 class ReactionEntry(Model):
@@ -294,7 +307,7 @@ class ReactionEntry(Model):
 
     accession = AccessionField()
     db = models.CharField(max_length=1, choices=DB_CHOICES, db_index=True)
-    bi_directional = models.BooleanField()
+    bi_directional = models.BooleanField(blank=True, null=True)
     left = models.ManyToManyField(
         CompoundEntry, related_name='to_reaction',
     )
@@ -302,6 +315,8 @@ class ReactionEntry(Model):
         CompoundEntry, related_name='from_reaction',
     )
     reaction = models.ForeignKey('Reaction', **fk_req)
+
+    objects = ReactionEntryManager()
 
     def __str__(self):
         return self.accession
@@ -346,8 +361,8 @@ class Reaction(Model):
 
         # get data and split m2m fields
         data = []
+        m2mcols = [i for _, i in cls.import_file_spec if i not in ['accession', 'dir']]  # noqa:E501
         for row in super().load(max_rows=max_rows, parse_only=True):
-            m2mcols = [i for _, i in cls.import_file_spec if i not in ['accession', 'dir']]  # noqa:E501
             for i in m2mcols:
                 row[i] = cls._split_m2m_input(row[i])
             data.append(row)
@@ -513,6 +528,34 @@ class Reaction(Model):
             ]
             through.objects.bulk_create(through_objs)
             print(' [OK]')
+
+
+class RefDBEntry(Model):
+    DB_COG = 'cog'
+    DB_EC = 'ec'
+    DB_GO = 'go'
+    DB_IPR = 'ipr'
+    DB_PFAM = 'pfam'
+    DB_TCDB = 'tcdb'
+    DB_TIGR = 'tigr'
+    DB_CHOICES = (
+        (DB_COG, DB_COG),
+        (DB_EC, DB_EC),
+        (DB_GO, DB_GO),
+        (DB_IPR, DB_IPR),
+        (DB_PFAM, DB_PFAM),
+        (DB_TCDB, DB_TCDB),
+        (DB_TIGR, DB_TIGR),
+    )
+    accession = AccessionField()
+    db = models.CharField(max_length=4, db_index=True)
+
+    class Meta:
+        verbose_name = 'Ref DB Entry'
+        verbose_name_plural = 'Ref DB Entries'
+
+    def __str__(self):
+        return self.accession
 
 
 class TaxName(Model):
@@ -757,17 +800,6 @@ class Taxon(Model):
         return ret
 
 
-class TIGR(Model):
-    accession = AccessionField(prefix='TIGR')
-
-    class Meta:
-        verbose_name = 'TIGR'
-        verbose_name_plural = verbose_name
-
-    def __str__(self):
-        return self.accession
-
-
 class Uniprot(Model):
     accession = AccessionField(verbose_name='uniprot id')
 
@@ -780,60 +812,59 @@ class Uniprot(Model):
 
 
 class UniRef100(Model):
-    # The fields below are based on the columns in UNIREF100_INFO_DEC_2021.txt
-    # in order.  To ensure update_m2m() works, the related models of all m2m
-    # fields are assumed to have the unique key used in the source table as the
-    # first unique, non-pk field
+    """
+    Model for UniRef100 clusters
+    """
+    # The field comments below are based on the columns in
+    # UNIREF100_INFO_DEC_2021.txt in order.
 
-    #  0 UNIREF100
+    #  1 UNIREF100
     accession = AccessionField(prefix='UNIREF100_')
-    #  1 NAME
-    function = models.ManyToManyField(Function)
-    #  2 LENGTH
+    #  2 NAME
+    function_name = models.ManyToManyField(FunctionName)
+    #  3 LENGTH
     length = models.PositiveIntegerField(blank=True, null=True)
-    #  3 UNIPROT_IDS
+    #  4 UNIPROT_IDS
     uniprot = models.ManyToManyField(Uniprot)
-    #  4 UNIREF90
+    #  5 UNIREF90
     uniref90 = AccessionField(prefix='UNIREF90_', unique=False)
-    #  5 TAXON_IDS
+    #  6 TAXON_IDS
     taxon = models.ManyToManyField(Taxon)
-    #  6 LINEAGE (method)
-    #  7 SIGALPEP
+    #  7 LINEAGE (method)
+    #  8 SIGALPEP
     signal_peptide = models.CharField(max_length=32, **ch_opt)
-    #  8 TMS
+    #  9 TMS
     tms = models.CharField(max_length=128, **ch_opt)
-    #  9 DNA
+    # 10 DNA
     dna_binding = models.CharField(max_length=128, **ch_opt)
-    # 10 METAL
+    # 11 METAL
     metal_binding = models.ManyToManyField(Metal)
-    # 11 TCDB
-    tcdb = models.CharField(max_length=128, **ch_opt)
-    # 12 LOCATION
+    # 12 TCDB
+    tcdb = models.CharField(max_length=128, **ch_opt)  # TODO: what is this?
+    # 13 LOCATION
     subcellular_location = models.ManyToManyField(Location)
-    # 13 COG
-    cog_kog = models.ManyToManyField(COG)
-    # 14 PFAM
-    pfam = models.ManyToManyField(PFAM)
-    # 15 TIGR
-    tigr = models.ManyToManyField(TIGR)
-    # 16 GO
-    gene_ontology = models.ManyToManyField(GeneOntology)
-    # 17 IPR
-    interpro = models.ManyToManyField(Interpro)
-    # 18 EC
-    ec = models.ManyToManyField(EC)
-    # 19 KEGG
-    kegg = models.ManyToManyField(ReactionEntry, related_name='kegg_rxn')
-    # 20 RHEA
-    rhea = models.ManyToManyField(ReactionEntry, related_name='rhea_rxn')
-    # 21 BIOCYC
-    biocyc = models.ManyToManyField(ReactionEntry, related_name='bioc_rxn')
-    # 22 REACTANTS
-    reactant = models.ManyToManyField(Compound, related_name='reactant_of')
-    # 23 PRODUCTS
-    product = models.ManyToManyField(Compound, related_name='product_of')
-    # 24 TRANS_CPD
-    trans_cpd = models.ManyToManyField(Compound, related_name='trans_of')
+    # 14-19 COG PFAM TIGR GO IPR EC
+    function_ref = models.ManyToManyField(RefDBEntry)
+    # 20-22 KEGG RHEA BIOCYC
+    kegg_reaction = models.ManyToManyField(
+        ReactionEntry,
+        related_name='uniref_kegg',
+    )
+    rhea_reaction = models.ManyToManyField(
+        ReactionEntry,
+        related_name='uniref_rhea',
+    )
+    biocyc_reaction = models.ManyToManyField(
+        ReactionEntry,
+        related_name='uniref_biocyc',
+    )
+    # 23 REACTANTS
+    # 24 PRODUCTS
+    # 25 TRANS_CPD
+    trans_compound = models.ManyToManyField(
+        CompoundEntry,
+        related_name='uniref_trans',
+    )
 
     class Meta:
         verbose_name = 'UniRef100'
@@ -841,6 +872,34 @@ class UniRef100(Model):
 
     def __str__(self):
         return self.accession
+
+    import_file_spec = (
+        ('UNIREF100', 'accession'),
+        ('NAME', 'function_name'),
+        ('LENGTH', 'length'),
+        ('UNIPROT_IDS', 'uniprot'),
+        ('UNIREF90', 'uniref90'),
+        ('TAXON_IDS', None),  # 'taxon'),
+        ('LINEAGE', None),
+        ('SIGALPEP', 'signal_peptide'),
+        ('TMS', 'tms'),
+        ('DNA', 'dna_binding'),
+        ('METAL', 'metal_binding'),
+        ('TCDB', 'tcdb'),
+        ('LOCATION', 'subcellular_location'),
+        ('COG',  RefDBEntry.DB_COG),
+        ('PFAM', RefDBEntry.DB_PFAM),
+        ('TIGR', RefDBEntry.DB_TIGR),
+        ('GO', RefDBEntry.DB_GO),
+        ('IPR', RefDBEntry.DB_IPR),
+        ('EC', RefDBEntry.DB_EC),
+        ('KEGG', 'kegg_reaction',),
+        ('RHEA', 'rhea_reaction'),
+        ('BIOCYC', 'biocyc_reaction'),
+        ('REACTANTS', None),
+        ('PRODUCTS', None),
+        ('TRANS_CPD', 'trans_compound'),
+    )
 
     def lineage(self):
         return ';'.join(Taxon.lcs_lineage(self.taxon_set.all()))
@@ -851,195 +910,111 @@ class UniRef100(Model):
                 / 'UNIREF100_INFO_DEC_2021.txt')
 
     @classmethod
-    def load_file(cls, max_rows=None, dry_run=True):
-        cols = (
-            'UNIREF100', 'NAME', 'LENGTH', 'UNIPROT_IDS', 'UNIREF90',
-            'TAXON_IDS', 'LINEAGE', 'SIGALPEP', 'TMS', 'DNA', 'METAL', 'TCDB',
-            'LOCATION', 'COG', 'PFAM', 'TIGR', 'GO', 'IPR', 'EC', 'KEGG',
-            'RHEA', 'BIOCYC', 'REACTANTS', 'PRODUCTS', 'TRANS_CPD'
-        )
-        with cls.get_file().open() as f:
-            os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
-            first = f.readline().strip().split('\t')
-            for i, (a, b) in enumerate(zip(first, cols), start=1):
-                if a != b:
-                    raise ValueError(
-                        f'Unexpected header row: first mispatch in column {i}:'
-                        f'got "{a}", expected "{b}"'
-                    )
-
-            if max_rows is None:
-                file_it = f
-            else:
-                file_it = islice(f, max_rows)
-
-            try:
-                return cls.load_lines(file_it, dry_run=dry_run)
-            except DryRunRollback:
-                print('[dry-run rollback]')
-
-    @classmethod
     @atomic
-    def load_lines(cls, lines, dry_run=True):
+    def load(cls, max_rows=None, dry_run=True):
+        # get data and split m2m fields
+        refdb_keys = [i for _, i in RefDBEntry.DB_CHOICES]
+        rxndb_keys = [i for _, i in ReactionEntry.DB_CHOICES]
+        field_names = [i.name for i in cls._meta.get_fields()]
+        accession_field_name = cls.get_accession_field().name
+
+        m2mcols = []
+        for _, i in cls.import_file_spec:
+            try:
+                field = cls._meta.get_field(i)
+            except FieldDoesNotExist:
+                if i in refdb_keys or i in rxndb_keys:
+                    m2mcols.append(i)
+            else:
+                if field.many_to_many:
+                    m2mcols.append(i)
+        del field
+
         objs = []
         m2m_data = {}
-        split = cls._split_m2m_input
-        pp = ProgressPrinter('UniRef100 records read')
-        for line in lines:
+        xref_data = defaultdict(list)  # maps a ref DB references to UniRef100s
+
+        for row in super().load(max_rows=max_rows, parse_only=True):
             obj = cls()
             m2m = {}
-            row = line.rstrip('\n').split('\t')
+            xrefs = []  # a list of pairs: (db, xref list)
+            for key, value in row.items():
 
-            if len(row) != 25:
-                raise ValueError(
-                    f'bad num of cols ({len(row)}), {pp.current=} {row=}'
-                )
+                if key in field_names:
+                    # regular fields
+                    if key in m2mcols:
+                        m2m[key] = value
+                    elif value != '':
+                        setattr(obj, key, value)
+                elif key in m2mcols and key in refdb_keys:
+                    # ref DB references
+                    xrefs.append((key, cls._split_m2m_input(value)))
+                else:
+                    raise RuntimeError(
+                        f'a bug, other cases were supposed to be'
+                        f'exhaustive: {key=}'
+                    )
 
-            obj.accession = row[0]
-            m2m['function'] = split(row[1])
-            obj.length = int(row[2]) if row[2] else None
-            m2m['uniprot'] = split(row[3])
-            obj.uniref90 = row[4]
-            m2m['taxon'] = split(row[5], int)
-            obj.signal_peptide = row[7]
-            obj.tms = row[8]
-            obj.dna_binding = row[9]
-            m2m['metal_binding'] = split(row[10])
-            obj.tcdb = row[11]
-            m2m['subcellular_location'] = split(row[12])
-            m2m['cog_kog'] = split(row[13])
-            m2m['pfam'] = split(row[14])
-            m2m['tigr'] = split(row[15])
-            m2m['gene_ontology'] = split(row[16])
-            m2m['interpro'] = split(row[17])
-            m2m['ec'] = split(row[18])
-            m2m['kegg'] = split(row[19])
-            m2m['rhea'] = split(row[20])
-            m2m['biocyc'] = split(row[21])
-            m2m['reactant'] = split(row[22])
-            m2m['product'] = split(row[23])
-            m2m['trans_cpd'] = split(row[24])
+            acc = getattr(obj, accession_field_name)
+            if acc in m2m_data:
+                # duplicate row !!?!??
+                print(f'WARNING: skipping row with duplicate UniRef100 '
+                      f'accession: {acc}')
+                continue
 
+            m2m_data[acc] = m2m
             objs.append(obj)
-            m2m_data[obj.accession] = m2m
-            pp.inc()
+            for dbkey, values in xrefs:
+                for i in values:
+                    xref_data[(i, dbkey)].append(acc)
 
-        pp.finish()
-        if not objs:
-            # empty file?
-            return
+        del row, key, value, values, xrefs, acc, dbkey
 
         m2m_fields = list(m2m.keys())
         del m2m
 
-        batch_size = 990  # sqlite3 max is around 999 ?
-        pp = ProgressPrinter('UniRef100 records written to DB')
-        for batch in chunker(objs, batch_size):
-            try:
-                batch = cls.objects.bulk_create(batch)
-            except Exception:
-                print(f'ERROR saving UniRef100: batch 1st: {vars(batch[0])=}')
-                raise
-            pp.inc(len(batch))
-            if batch[0].pk is not None:
-                print(batch[0], batch[0].pk)
-
-        del objs
-        pp.finish()
+        cls.objects.bulk_create(objs)
 
         # get accession -> pk map
-        accpk = dict(cls.objects.values_list('accession', 'pk').iterator())
+        acc2pk = dict(
+            cls.objects.values_list(accession_field_name, 'pk').iterator()
+        )
 
         # replace accession with pk in m2m data keys
-        m2m_data = {accpk[i]: data for i, data in m2m_data.items()}
-        del accpk
+        m2m_data = {acc2pk[i]: data for i, data in m2m_data.items()}
 
         # collecting all m2m entries
         for i in m2m_fields:
-            cls.update_m2m(i, m2m_data)
+            cls._update_m2m(i, m2m_data)
+        del m2m_data
+
+        # store xref entries (assume none exist yet)
+        xref_objs = (RefDBEntry(accession=i, db=db)
+                     for (i, db) in xref_data.keys())
+        RefDBEntry.objects.bulk_create(xref_objs)
+
+        # get PKs for xref objects
+        xref2pk = dict(
+            RefDBEntry.objects.values_list('accession', 'pk').iterator()
+        )
+
+        # store UniRef100 <-> RefDBEntry relations
+        rels = (
+            (acc2pk[i], xref2pk[xref])
+            for (xref, _), accs in xref_data.items()
+            for i in accs
+        )
+        through = cls._meta.get_field('function_ref').remote_field.through
+        through_objs = (
+            through(uniref100_id=i, refdbentry_id=j)
+            for i, j in rels
+        )
+        through_objs = list(through_objs)
+        through.objects.bulk_create(through_objs)
+        print(f'created {len(through_objs)} UniRef100 vs xref entry relations')
 
         if dry_run:
             raise DryRunRollback
-
-    @classmethod
-    def update_m2m(cls, field_name, m2m_data):
-        """
-        Update M2M data for one field
-
-        :param str field_name: Name of m2m field
-        :param dict m2m_data:
-            A dict with all fields' m2m data as produced in the load_lines
-            method.
-        """
-        print(f'm2m {field_name}: ', end='', flush=True)
-        field = cls._meta.get_field(field_name)
-        model = field.related_model
-        # get the first unique, non-pk field (and be hopeful)
-        rel_key_field = [
-            i for i in model._meta.get_fields()
-            if hasattr(i, 'unique') and i.unique and not i.primary_key
-        ][0]
-
-        # extract and flatten all keys for field in m2m data
-        keys = {i for objdat in m2m_data.values() for i in objdat[field_name]}
-        print(f'{len(keys)} unique keys in data - ', end='', flush=True)
-        if not keys:
-            print()
-            return
-
-        # get existing
-        qs = model.objects.all()
-        qs = qs.values_list(rel_key_field.name, 'pk')
-        old = dict(qs.iterator())
-        print(f'known: {len(old)} ', end='', flush=True)
-
-        # save new
-        new_keys = [i for i in keys if i not in old]
-        print(f'new: {len(new_keys)} ', end='', flush=True)
-        if new_keys:
-            if field_name == 'taxon':
-                print()
-                raise RuntimeError(
-                    f'no auto-adding new {field_name} entries: '
-                    + ' '.join([f'"{i}"' for i in new_keys[:20]])
-                    + '...'
-                )
-            new_related = (model(**{rel_key_field.name: i}) for i in new_keys)
-            new_related = model.objects.bulk_create(new_related)
-            print('(saved)', end='', flush=True)
-
-        # get m2m field's key -> pk mapping
-        accpk = dict(
-            model.objects.values_list(rel_key_field.name, 'pk').iterator()
-        )
-
-        # set relationships
-        rels = []  # pairs of UniRef100 and Uniprot PKs
-        for i, other in m2m_data.items():
-            rels.extend(((i, accpk[j]) for j in other[field_name]))
-        Through = field.remote_field.through  # the intermediate model
-        fk_id_name = model._meta.model_name + '_id'
-        through_objs = [
-            Through(
-                **{'uniref100_id': i, fk_id_name: j}
-            )
-            for i, j in rels
-        ]
-        Through.objects.bulk_create(through_objs)
-
-        print(f' ({len(through_objs)} relations saved)', end='', flush=True)
-        print()
-
-    @classmethod
-    def _split_m2m_input(cls, value, type_conv=lambda x: x):
-        """
-        Helper to split semi-colon-separated list-field values in import file
-        """
-        # filters for '' from empty values
-        items = [type_conv(i) for i in value.split(';') if i]
-        # TODO: duplicates in input data (NAME/function column), tell Teal?
-        items = list(set(items))
-        return items
 
 
 # development stuff

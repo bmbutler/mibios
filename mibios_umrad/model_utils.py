@@ -93,7 +93,7 @@ class LoadMixin:
         m2m_data = {}
         split = cls._split_m2m_input
         # TODO: allow fields to be skipped
-        fields = [cls._meta.get_field(i[1]) for i in cls.import_file_spec]
+        fields = [cls._meta.get_field(i) for _, i in cls.import_file_spec]
         accession_field_name = cls.get_accession_field().name
         pp = ProgressPrinter(f'{cls._meta.model_name} records read')
         for line in pp(lines):
@@ -166,6 +166,9 @@ class LoadMixin:
         :param dict m2m_data:
             A dict with all fields' m2m data as produced in the load_lines
             method.
+        :param callable create_fun:
+            Callback function that creates a missing instance on the other side
+            of the relation.
         """
         print(f'm2m {field_name}: ', end='', flush=True)
         field = cls._meta.get_field(field_name)
@@ -190,28 +193,23 @@ class LoadMixin:
         a2pk = dict(qs.iterator())
         print(f'known: {len(a2pk)} ', end='', flush=True)
 
-        # save new
         new_accs = [i for i in accs if i not in a2pk]
         if new_accs:
-            if model.get_fields().names == ['id', acc_field_name]:
-                # model is UID/accession stub, we have all the info right here
-                print(f'new: {len(new_accs)} ', end='', flush=True)
-                new_related = (model(**{acc_field_name: i}) for i in new_accs)
-                new_related = model.objects.bulk_create(new_related)
-                print('(saved)', end='', flush=True)
-            else:
-                # data needs to have been added already, from other source
-                print()
-                raise RuntimeError(
-                    f'no auto-adding new {field_name} entries: '
-                    + ' '.join([f'"{i}"' for i in new_accs[:20]])
-                    + '...'
-                )
+            # save additional remote side objects
+            # NOTE: this will only work for those models for which the supplied
+            # information (accession, source model and field) is sufficient,
+            # might require overriding create_from_m2m_input().
+            print(f'new: {len(new_accs)} ')
+            model.objects.create_from_m2m_input(
+                new_accs,
+                source_model=cls,
+                source_field_name=field_name,
+            )
 
             # get m2m field's key -> pk mapping
-            a2pk = dict(
-                model.objects.values_list(acc_field_name, 'pk').iterator()
-            )
+            a2pk = dict(qs.iterator())
+        else:
+            print()
 
         # set relationships
         rels = []  # pairs of ours and other's PKs
@@ -265,7 +263,7 @@ class LoadMixin:
         data = []
         split = cls._split_m2m_input
         # TODO: allow fields to be skipped
-        fieldnames = [i[1] for i in cls.import_file_spec]
+        col_keys = [i for _, i in cls.import_file_spec]
 
         pp = ProgressPrinter(f'{cls._meta.model_name} records read')
         for line in pp(lines):
@@ -278,9 +276,11 @@ class LoadMixin:
                 )
 
             rec = {}
-            for fname, value in zip(fieldnames, row):
+            for key, value in zip(col_keys, row):
+                if key is None:
+                    continue
                 try:
-                    field = cls._meta.get_field(fname)
+                    field = cls._meta.get_field(key)
                 except FieldDoesNotExist:
                     # caller must handle values from m2m field (if any)
                     pass
@@ -288,7 +288,7 @@ class LoadMixin:
                     if field.many_to_many:
                         value = split(value)
 
-                rec[fname] = value
+                rec[key] = value
 
             data.append(rec)
         return data
@@ -297,7 +297,11 @@ class LoadMixin:
 class Manager(MibiosManager):
     def bulk_create(self, objs, batch_size=None, ignore_conflicts=False,
                     progress_text=None, progress=True):
-        # Value-added bulk_create with proggress metering
+        """
+        Value-added bulk_create with batching and progress metering
+
+        Does not return the object list like super().bulk_create() does.
+        """
         if batch_size is None:
             batch_size = 990  # sqlite3 bulk max size is just below 1000?
 
@@ -322,6 +326,32 @@ class Manager(MibiosManager):
 
         if progress:
             pp.finish()
+
+    def create_from_m2m_input(self, values, source_model, source_field_name):
+        """
+        Store objects from accession or similar value (and context, as needed)
+
+        :param list values:
+            List of accessions
+        :param Model source_model:
+            The calling model, the model on the far side of the m2m relation.
+        :param str source_field_name:
+            Name of the m2m field pointing to us
+
+        Inheriting classes should overwrite this method if more that the
+        accession or other unique ID field is needed to create the instances.
+        The basic implementation will assign the given value to the accession
+        field, if one exists, or to the first declared unique field, other
+        that the standard id AutoField.
+
+        This method is responsible to set all required fields of the model,
+        hence the default version should only be used with controlled
+        vocabulary or similarly simple models.
+        """
+        accession_field_name = self.model.get_accession_field().name
+        model = self.model
+        objs = (model(**{accession_field_name: i}) for i in values)
+        return self.bulk_create(objs)
 
 
 class Model(MibiosModel, LoadMixin):
