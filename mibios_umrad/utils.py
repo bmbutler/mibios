@@ -84,7 +84,7 @@ class ProgressPrinter():
 
     def _reset_state(self):
         """ reset the variable state """
-        self.current = None
+        self.current = 0
         self.last = None
         self.at_previous_ring = None
         self.timer = None
@@ -166,7 +166,7 @@ class ProgressPrinter():
 
     def _ring(self):
         """ Print and restart timer """
-        if self.current is None:
+        if self.current == 0:
             return
 
         if self.current == self.last:
