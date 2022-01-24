@@ -11,7 +11,7 @@ from django.db import connection, models
 from django.db.transaction import atomic
 
 from mibios.models import Model as MibiosModel, Manager as MibiosManager
-from .utils import DryRunRollback, ProgressPrinter, chunker
+from .utils import DryRunRollback, ProgressPrinter
 
 
 # standard data field options
@@ -78,6 +78,9 @@ class LoadMixin:
                         'in header row'
                     )
 
+            pp = ProgressPrinter(f'{cls._meta.model_name} records read')
+            f = pp(f)
+
             if max_rows is None and start == 0:
                 file_it = f
             else:
@@ -102,15 +105,14 @@ class LoadMixin:
         # TODO: allow fields to be skipped
         fields = [cls._meta.get_field(i) for _, i in cls.import_file_spec]
         accession_field_name = cls.get_accession_field().name
-        pp = ProgressPrinter(f'{cls._meta.model_name} records read')
-        for line in pp(lines):
+        for line in lines:
             obj = cls()
             m2m = {}
             row = line.rstrip('\n').split(sep)
 
             if len(row) != ncols:
                 raise ValueError(
-                    f'bad num of cols ({len(row)}), {pp.current=} {row=} '
+                    f'bad num of cols ({len(row)}), {row=} '
                     f'{ncols=}'
                 )
 
@@ -133,20 +135,8 @@ class LoadMixin:
         m2m_fields = list(m2m.keys())
         del m2m
 
-        batch_size = 990  # sqlite3 max is around 999 ?
-        pp = ProgressPrinter(f'{cls._meta.model_name} records written to DB')
-        for batch in chunker(objs, batch_size):
-            try:
-                batch = cls.objects.bulk_create(batch)
-            except Exception:
-                print(f'ERROR saving to {cls}: batch 1st: {vars(batch[0])=}')
-                raise
-            pp.inc(len(batch))
-            if batch[0].pk is not None:
-                print(batch[0], batch[0].pk)
-
+        cls.objects.bulk_create(objs)
         del objs
-        pp.finish()
 
         # get accession -> pk map
         accpk = dict(
@@ -275,13 +265,12 @@ class LoadMixin:
         # TODO: allow fields to be skipped
         col_keys = [i for _, i in cls.import_file_spec]
 
-        pp = ProgressPrinter(f'{cls._meta.model_name} records read')
-        for line in pp(lines):
+        for line in lines:
             row = line.rstrip('\n').split(sep)
 
             if len(row) != ncols:
                 raise ValueError(
-                    f'bad num of cols ({len(row)}), {pp.current=} {row=} '
+                    f'bad num of cols ({len(row)}), {row=} '
                     f'{ncols=}'
                 )
 
@@ -312,18 +301,34 @@ class Manager(MibiosManager):
 
         Does not return the object list like super().bulk_create() does.
         """
+        if not progress:
+            super().bulk_create(
+                objs,
+                ignore_conflicts=ignore_conflicts,
+                batch_size=batch_size,
+            )
+            return
+
         if batch_size is None:
-            batch_size = 990  # sqlite3 bulk max size is just below 1000?
+            # sqlite has a variable-per-query limit of 999; it's not clear how
+            # one runs against that; it seems that multiple smaller INSERTs are
+            # being used automatically.  So, until further notice, only have a
+            # default batch size for progress metering here.
+            batch_size = 999
 
-        if progress:
-            if progress_text is None:
-                progress_text = \
-                    f'{self.model._meta.verbose_name} records created'
-            pp = ProgressPrinter(progress_text)
+        if progress_text is None:
+            progress_text = \
+                f'{self.model._meta.verbose_name} records created'
 
-        for batch in chunker(objs, batch_size):
+        pp = ProgressPrinter(progress_text)
+        objs = iter(objs)
+
+        while True:
+            batch = list(islice(objs, batch_size))
+            if not batch:
+                break
             try:
-                batch = super().bulk_create(
+                super().bulk_create(
                     batch,
                     ignore_conflicts=ignore_conflicts,
                 )
@@ -331,11 +336,9 @@ class Manager(MibiosManager):
                 print(f'ERROR saving to {self.model}: batch 1st: '
                       f'{vars(batch[0])=}')
                 raise
-            if progress:
-                pp.inc(len(batch))
+            pp.inc(len(batch))
 
-        if progress:
-            pp.finish()
+        pp.finish()
 
     def create_from_m2m_input(self, values, source_model, source_field_name):
         """
