@@ -38,7 +38,10 @@ class CompoundEntryManager(Manager):
             last_pk = Compound.objects.order_by('pk').latest('pk').pk
         except Compound.DoesNotExist:
             last_pk = -1
-        Compound.objects.bulk_create((Compound() for _ in range(len(values))))
+        Compound.objects.bulk_create(
+            (Compound() for _ in range(len(values))),
+            batch_size=500  # runs up at SQLITE_MAX_COMPOUND_SELECT,django bug?
+        )
         cpd_pks = Compound.objects.filter(pk__gt=last_pk)\
                           .values_list('pk', flat=True)
         if len(values) != len(cpd_pks):
@@ -280,8 +283,7 @@ class ReactionEntryManager(Manager):
             last_pk = -1
         Reaction.objects.bulk_create(
             (Reaction() for _ in range(len(values))),
-            # FIXME: keep getting "too many terms in compound SELECT" for >500
-            batch_size=500,
+            batch_size=500,  # runs up at SQLITE_MAX_COMPOUND_SELECT
         )
         reaction_pks = Reaction.objects.filter(pk__gt=last_pk)\
                                .values_list('pk', flat=True)
