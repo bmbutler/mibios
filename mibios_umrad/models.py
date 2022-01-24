@@ -564,7 +564,7 @@ class TaxName(Model):
         (0, 'root'),
         (1, 'domain'),
         (2, 'phylum'),
-        (3, 'class', 'klass'),
+        (3, 'klass'),
         (4, 'order'),
         (5, 'family'),
         (6, 'genus'),
@@ -574,7 +574,7 @@ class TaxName(Model):
     RANK_CHOICE = ((i[0], i[1]) for i in RANKS)
 
     rank = models.PositiveSmallIntegerField(choices=RANK_CHOICE)
-    name = models.CharField(max_length=64)
+    name = models.CharField(max_length=64, db_index=True)
 
     class Meta:
         unique_together = (('rank', 'name'),)
@@ -585,9 +585,15 @@ class TaxName(Model):
 
     @classmethod
     @atomic
-    def load(cls, path=None):
+    def _load(cls, path=None):
+        """
+        Reads TAXONOMY_DB and populates TaxName\
+
+        Returns the rows for further processing.  Method should be called via
+        Taxon.load().
+        """
         if path is None:
-            path = cls.get_taxonomy_path()
+            path = cls.get_file()
 
         data = []
         with path.open() as f:
@@ -622,12 +628,16 @@ class TaxName(Model):
         return data
 
     @classmethod
-    def get_taxonomy_path(cls):
+    def get_file(cls):
         return settings.UMRAD_ROOT / 'TAXON' / 'TAXONOMY_DB_DEC_2021.txt'
 
 
-class Taxon(Model):
-    taxid = models.PositiveIntegerField(unique=True)
+class Lineage(Model):
+    """
+    Models taxonomic lineages
+
+    TaxName fields must be declared in order of ranks from highest to lowest.
+    """
     domain = models.ForeignKey(
         TaxName, **fk_opt,
         related_name='tax_dom_rel',
@@ -639,6 +649,7 @@ class Taxon(Model):
     klass = models.ForeignKey(
         TaxName, **fk_opt,
         related_name='tax_cls_rel',
+        verbose_name='class',
     )
     order = models.ForeignKey(
         TaxName, **fk_opt,
@@ -662,23 +673,92 @@ class Taxon(Model):
     )
 
     class Meta:
-        verbose_name_plural = 'taxa'
+        unique_together = (
+            ('domain', 'phylum', 'klass', 'order', 'family', 'genus',
+             'species', 'strain'),
+        )
 
     def __str__(self):
-        return f'{self.taxid} {self.lineage}'
+        return f'{self.lineage}'
 
-    def get_lineage(self):
-        lineage = []
-        for i in TaxName.RANKS[1:]:
-            attr = i[-1]
-            name = getattr(self, attr, None)
+    @classmethod
+    def get_name_fields(cls):
+        """Return list of tax name fields in order"""
+        return [
+            i for i in cls._meta.get_fields()
+            if i.many_to_one and i.related_model is TaxName
+        ]
+
+    @classmethod
+    def get_parse_and_lookup_fun(cls):
+        """
+        Returns a funtion that parses a lineage str and returns the object
+
+        More precisely, the return value is a tuple (lineage, key) where
+        exactly one value is None, depending on the outcome.  If a lineage is
+        found, key is None, if no lineage is found (returning None for it),
+        then the key returned is a tuple of TaxName PKs, representing the
+        missing lineage.
+        """
+        rank2key = {j: i for i, j in TaxName.RANKS}
+        rankkeys = [rank2key[i.name] for i in cls.get_name_fields()]  # 1..8
+        name2pk = {
+            (name, rank): pk
+            for name, rank, pk
+            in TaxName.objects.values_list('name', 'rank', 'pk').iterator()
+        }
+        key2obj = {i.get_name_pks(): i for i in cls.objects.all().iterator()}
+
+        def parse_and_lookup(value):
+            try:
+                key = tuple((
+                    None if i is None else name2pk[(i, j)]
+                    for i, j in zip_longest(value.split(';'), rankkeys)
+                ))
+            except KeyError as e:
+                # e.args[0] should be (name, rankid)
+                raise TaxName.DoesNotExist(e.args[0]) from e
+            try:
+                return key2obj[key], None
+            except KeyError:
+                return None, key
+
+        return parse_and_lookup
+
+    def get_name_pks(self):
+        """
+        Return tuple of all names' PK (incl. Nones)
+        """
+        return tuple((
+            getattr(self, i.name + '_id')
+            for i in self.get_name_fields()
+        ))
+
+    @classmethod
+    def from_name_pks(cls, name_pks):
+        """
+        Return a new instance from list of TaxName PKs
+
+        The instance is not saved on the database.
+        """
+        obj = cls()
+        for field, pk in zip_longest(cls.get_name_fields(), name_pks):
+            setattr(obj, field.name + '_id', pk)
+        return obj
+
+    def as_list_of_tuples(self):
+        """
+        Return instance as list of (rank, name) tuples
+        """
+        ret = []
+        for i in self.get_name_fields():
+            name = getattr(self, i.name, None)
             if name is None:
-                break
-            else:
-                lineage.append(name.name)
-        return lineage
+                continue
+            ret.append((i.name, name))
+        return ret
 
-    lineage_list = cached_property(get_lineage, name='lineage_list')
+    lineage_list = cached_property(as_list_of_tuples, name='lineage_list')
 
     def names(self, with_missing_ranks=True):
         """ return dict of taxnames """
@@ -702,7 +782,7 @@ class Taxon(Model):
 
     @property
     def lineage(self):
-        return self.format_lineage(self.lineage_list)
+        return self.format_lineage((i.name for _, i in self.lineage_list))
 
     @classmethod
     def lca_lineage(cls, taxa):
@@ -755,36 +835,70 @@ class Taxon(Model):
         return [names[i[1]] for i in lca]
 
     @classmethod
-    @atomic
-    def load(cls, path=None):
-        data = TaxName.load(path)
+    def _load(cls, path=None):
+        """
+        Upload data to table
 
-        # reloading names to get the ids, depends on order the fields are
-        # declared
-        names = {
-            (rank, name): pk for pk, rank, name
-            in TaxName.objects.values_list().iterator()
+        Returns list of (taxid, pk) tuples.
+        Method should be called from Taxon._load()
+        """
+        rows = TaxName._load(path)
+        name2pk = {
+            (i, j): k for i, j, k
+            in TaxName.objects.values_list('name', 'rank', 'pk').iterator()
+        }
+        rankid = {
+            j: i for i, j in TaxName.RANKS if j != 'root'
+        }
+        lin2taxids = defaultdict(list)  # maps name PK tuples to list of taxids
+        objs = []
+        fields = cls.get_name_fields()
+        for row in rows:
+            obj = cls()
+            # NOTE: row may have variable length
+            for f, val in zip_longest(fields, row[1:]):
+                if val:
+                    pk = name2pk[(val, rankid[f.name])]
+                    setattr(obj, f.name + '_id', pk)
+
+            if obj.get_name_pks() not in lin2taxids:
+                # first time seen
+                objs.append(obj)
+
+            lin2taxids[obj.get_name_pks()].append(row[0])
+
+        cls.objects.bulk_create(objs)
+        objs = cls.objects.all()  # get with PKs
+
+        # one to many mapping taxid -> lineage PK
+        return {
+            tid: obj.pk
+            for obj in cls.objects.all().iterator()
+            for tid in lin2taxids[obj.get_name_pks()]
         }
 
-        pp = ProgressPrinter('taxa processed')
-        objs = []
-        # ranks: get pairs of rank id and rank field attribute name
-        ranks = [(i[0], i[-1]) for i in TaxName.RANKS[1:]]
-        for row in data:
-            taxid = row[0]
-            kwargs = dict(taxid=taxid)
-            for (rid, attr), name in zip_longest(ranks, row[1:]):
-                # we should always have rid, attr here since we went through
-                # data before, name may be None for missing low ranks
-                if name is not None:
-                    # assign ids directly
-                    kwargs[attr + '_id'] = names[(rid, name)]
 
-            objs.append(cls(**kwargs))
-            pp.inc()
+class Taxon(Model):
+    taxid = models.PositiveIntegerField(
+        unique=True, verbose_name='NCBI taxid',
+    )
+    lineage = models.ForeignKey(Lineage, **fk_opt)
 
-        pp.finish()
-        log.info(f'Storing {len(objs)} taxa in DB...')
+    class Meta:
+        verbose_name_plural = 'taxa'
+
+    def __str__(self):
+        return f'{self.taxid} {self.lineage}'
+
+    @classmethod
+    @atomic
+    def load(cls, path=None):
+        taxid2linpk = Lineage._load(path)
+
+        objs = (
+            cls(taxid=i, lineage_id=j)
+            for i, j in taxid2linpk.items()
+        )
         cls.objects.bulk_create(objs)
 
     @classmethod
@@ -831,6 +945,7 @@ class UniRef100(Model):
     #  6 TAXON_IDS
     taxon = models.ManyToManyField(Taxon)
     #  7 LINEAGE (method)
+    lineage = models.ForeignKey(Lineage, **fk_req)
     #  8 SIGALPEP
     signal_peptide = models.CharField(max_length=32, **ch_opt)
     #  9 TMS
@@ -879,8 +994,8 @@ class UniRef100(Model):
         ('LENGTH', 'length'),
         ('UNIPROT_IDS', 'uniprot'),
         ('UNIREF90', 'uniref90'),
-        ('TAXON_IDS', None),  # 'taxon'),
-        ('LINEAGE', None),
+        ('TAXON_IDS', 'taxon'),
+        ('LINEAGE', 'lineage'),
         ('SIGALPEP', 'signal_peptide'),
         ('TMS', 'tms'),
         ('DNA', 'dna_binding'),
@@ -901,9 +1016,6 @@ class UniRef100(Model):
         ('TRANS_CPD', 'trans_compound'),
     )
 
-    def lineage(self):
-        return ';'.join(Taxon.lcs_lineage(self.taxon_set.all()))
-
     @classmethod
     def get_file(cls):
         return (Path(settings.UMRAD_ROOT) / 'UNIPROT'
@@ -911,7 +1023,7 @@ class UniRef100(Model):
 
     @classmethod
     @atomic
-    def load(cls, max_rows=None, dry_run=True):
+    def load(cls, max_rows=None, start=0, dry_run=True):
         # get data and split m2m fields
         refdb_keys = [i for _, i in RefDBEntry.DB_CHOICES]
         rxndb_keys = [i for _, i in ReactionEntry.DB_CHOICES]
@@ -930,21 +1042,45 @@ class UniRef100(Model):
                     m2mcols.append(i)
         del field
 
+        # get lookups for FK PKs
+        get_lineage = Lineage.get_parse_and_lookup_fun()
+
         objs = []
         m2m_data = {}
         xref_data = defaultdict(list)  # maps a ref DB references to UniRef100s
+        new_lineages = defaultdict(list)
+        unknown_names = set()
 
-        for row in super().load(max_rows=max_rows, parse_only=True):
+        data = super().load(max_rows=max_rows, start=start, parse_only=True)
+        for row in data:
             obj = cls()
             m2m = {}
             xrefs = []  # a list of pairs: (db, xref list)
             for key, value in row.items():
 
+                if value == '':
+                    continue
+
                 if key in field_names:
-                    # regular fields
                     if key in m2mcols:
+                        # regular m2m fields
                         m2m[key] = value
-                    elif value != '':
+                    elif key == 'lineage':
+                        try:
+                            lineage, name_pks = get_lineage(value)
+                        except TaxName.DoesNotExist as e:
+                            # unknown taxname encountered
+                            unknown_names.add(e.args[0])
+                            obj.lineage_id = 1  # quiddam FIXME
+                        else:
+                            if lineage is None:
+                                # lineage not found in DB
+                                # save with index so we find the obj later
+                                new_lineages[name_pks].append(len(objs))
+                            else:
+                                obj.lineage = lineage
+                    else:
+                        # regular field (length, dna_binding, ...)
                         setattr(obj, key, value)
                 elif key in m2mcols and key in refdb_keys:
                     # ref DB references
@@ -970,6 +1106,23 @@ class UniRef100(Model):
 
         del row, key, value, values, xrefs, acc, dbkey
 
+        if unknown_names:
+            print(f'WARNING: {len(unknown_names)} unique unknown tax names')
+
+        if new_lineages:
+            # create+save+reload new lineages, then set missing PKs in unirefs
+            try:
+                maxpk = Lineage.objects.latest('pk').pk
+            except Lineage.DoesNotExist:
+                maxpk = 0
+            Lineage.objects.bulk_create(
+                (Lineage.from_name_pks(i) for i in new_lineages.keys())
+            )
+            for i in Lineage.objects.filter(pk__gt=maxpk):
+                for j in new_lineages[i.get_name_pks()]:
+                    objs[j].lineage_id = i.pk  # set lineage PK to UniRef obj
+            del maxpk
+
         m2m_fields = list(m2m.keys())
         del m2m
 
@@ -988,10 +1141,15 @@ class UniRef100(Model):
             cls._update_m2m(i, m2m_data)
         del m2m_data
 
-        # store xref entries (assume none exist yet)
+        # store new xref entries
+        existing_xrefs = set(
+            RefDBEntry.objects.values_list('accession', flat=True).iterator()
+        )
         xref_objs = (RefDBEntry(accession=i, db=db)
-                     for (i, db) in xref_data.keys())
+                     for (i, db) in xref_data.keys()
+                     if i not in existing_xrefs)
         RefDBEntry.objects.bulk_create(xref_objs)
+        del existing_xrefs
 
         # get PKs for xref objects
         xref2pk = dict(

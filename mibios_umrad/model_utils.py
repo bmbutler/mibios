@@ -42,11 +42,18 @@ class LoadMixin:
     """
 
     @classmethod
-    def load(cls, max_rows=None, dry_run=True, sep='\t', parse_only=False):
+    def load(cls, max_rows=None, start=0, dry_run=True, sep='\t',
+             parse_only=False):
         """
         Load data from file
 
-        Assumes empty table
+        :param int start:
+            0-based input file line (not counting any header) from which to
+            start loading, equivalent to number of non-header lines skipped.
+        :param bool parse_only:
+            Return each row as a dict and don't use the general loader logic.
+
+        May assume empty table ?!?
         """
         with cls.get_file().open() as f:
             print(f'File opened: {f.name}')
@@ -71,10 +78,10 @@ class LoadMixin:
                         'in header row'
                     )
 
-            if max_rows is None:
+            if max_rows is None and start == 0:
                 file_it = f
             else:
-                file_it = islice(f, max_rows)
+                file_it = islice(f, start, start + max_rows)
 
             if parse_only:
                 return cls._parse_lines(file_it, sep=sep)
@@ -214,7 +221,10 @@ class LoadMixin:
         # set relationships
         rels = []  # pairs of ours and other's PKs
         for i, other in m2m_data.items():
-            rels.extend(((i, a2pk[j]) for j in other[field_name]))
+            rels.extend((
+                (i, a2pk[acc_field.to_python(j)])
+                for j in other[field_name]
+            ))
         Through = field.remote_field.through  # the intermediate model
         our_id_name = cls._meta.model_name + '_id'
         other_id_name = model._meta.model_name + '_id'
@@ -308,7 +318,7 @@ class Manager(MibiosManager):
         if progress:
             if progress_text is None:
                 progress_text = \
-                    f'{self.model._meta.verbose_name_plural} records created'
+                    f'{self.model._meta.verbose_name} records created'
             pp = ProgressPrinter(progress_text)
 
         for batch in chunker(objs, batch_size):
