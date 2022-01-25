@@ -237,9 +237,7 @@ class Compound(Model):
             )
             for i, j in rels
         ]
-        pp = ProgressPrinter('compound entry vs. name relations')
-        through_objs = pp(through_objs)
-        through.objects.bulk_create(through_objs)
+        Manager.bulk_create_wrapper(through.objects.bulk_create)(through_objs)
 
         if dry_run:
             set_rollback(True)
@@ -525,14 +523,12 @@ class Reaction(Model):
         # save rxn<->compound relations
         for direc, rels in [('left', lefts), ('right', rights)]:
             through = ReactionEntry._meta.get_field(direc).remote_field.through
-            print(f'Setting {len(rels)} {direc} reaction<->compound relations',
-                  flush=True, end='')
             through_objs = [
                 through(**{'reactionentry_id': i, 'compoundentry_id': j})
                 for i, j in rels
             ]
-            through.objects.bulk_create(through_objs)
-            print(' [OK]')
+            bc = Manager.bulk_create_wrapper(through.objects.bulk_create)
+            bc(through_objs)
 
         if dry_run:
             set_rollback(True)
@@ -1179,8 +1175,7 @@ class UniRef100(Model):
             for i, j in rels
         )
         through_objs = list(through_objs)
-        through.objects.bulk_create(through_objs)
-        print(f'created {len(through_objs)} UniRef100 vs xref entry relations')
+        Manager.bulk_create_wrapper(through.objects.bulk_create)(through_objs)
 
         if dry_run:
             set_rollback(True)

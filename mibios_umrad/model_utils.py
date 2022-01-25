@@ -221,10 +221,7 @@ class LoadMixin:
             )
             for i, j in rels
         ]
-        Through.objects.bulk_create(through_objs)
-
-        print(f' ({len(through_objs)} relations saved)', end='', flush=True)
-        print()
+        Manager.bulk_create_wrapper(Through.objects.bulk_create)(through_objs)
 
     @classmethod
     def _split_m2m_input(cls, value):
@@ -291,6 +288,69 @@ class LoadMixin:
 
 
 class Manager(MibiosManager):
+    @staticmethod
+    def bulk_create_wrapper(wrappee_bc):
+        """
+        A wrapper to add batching and progress metering to bulk_create()
+
+        :param bound method wrappee_bc: A create_bulk method bound to a manager
+
+        This static wrapper method allows us to still (1) override the usual
+        Manager.bulk_create() but also (2) offer a wrapper to be used for cases
+        in which we are unable or don't want to override the model's manager,
+        e.g. the implicit through model of a many-to-many relation.
+        """
+        def bulk_create(objs, batch_size=None, ignore_conflicts=False,
+                        progress_text=None, progress=True):
+            """
+            Value-added bulk_create
+
+            Does not return the object list like super().bulk_create() does.
+            """
+            if not progress:
+                wrappee_bc(
+                    objs,
+                    ignore_conflicts=ignore_conflicts,
+                    batch_size=batch_size,
+                )
+                return
+
+            if batch_size is None:
+                # sqlite has a variable-per-query limit of 999; it's not clear
+                # how one runs against that; it seems that multiple smaller
+                # INSERTs are being used automatically.  So, until further
+                # notice, only have a default batch size for progress metering
+                # here.
+                batch_size = 999
+
+            # get model name from manager (wrappee_bc.__self__ is the manager)
+            model_name = wrappee_bc.__self__.model._meta.verbose_name
+
+            if progress_text is None:
+                progress_text = f'{model_name} records created'
+
+            pp = ProgressPrinter(progress_text)
+            objs = iter(objs)
+
+            while True:
+                batch = list(islice(objs, batch_size))
+                if not batch:
+                    break
+                try:
+                    wrappee_bc(
+                        batch,
+                        ignore_conflicts=ignore_conflicts,
+                    )
+                except Exception:
+                    print(f'ERROR saving to {model_name or "?"}: batch 1st: '
+                          f'{vars(batch[0])=}')
+                    raise
+                pp.inc(len(batch))
+
+            pp.finish()
+
+        return bulk_create
+
     def bulk_create(self, objs, batch_size=None, ignore_conflicts=False,
                     progress_text=None, progress=True):
         """
@@ -298,44 +358,14 @@ class Manager(MibiosManager):
 
         Does not return the object list like super().bulk_create() does.
         """
-        if not progress:
-            super().bulk_create(
-                objs,
-                ignore_conflicts=ignore_conflicts,
-                batch_size=batch_size,
-            )
-            return
-
-        if batch_size is None:
-            # sqlite has a variable-per-query limit of 999; it's not clear how
-            # one runs against that; it seems that multiple smaller INSERTs are
-            # being used automatically.  So, until further notice, only have a
-            # default batch size for progress metering here.
-            batch_size = 999
-
-        if progress_text is None:
-            progress_text = \
-                f'{self.model._meta.verbose_name} records created'
-
-        pp = ProgressPrinter(progress_text)
-        objs = iter(objs)
-
-        while True:
-            batch = list(islice(objs, batch_size))
-            if not batch:
-                break
-            try:
-                super().bulk_create(
-                    batch,
-                    ignore_conflicts=ignore_conflicts,
-                )
-            except Exception:
-                print(f'ERROR saving to {self.model}: batch 1st: '
-                      f'{vars(batch[0])=}')
-                raise
-            pp.inc(len(batch))
-
-        pp.finish()
+        wrapped_bc = self.bulk_create_wrapper(super().bulk_create)
+        wrapped_bc(
+            objs=objs,
+            batch_size=batch_size,
+            ignore_conflicts=ignore_conflicts,
+            progress_text=None,
+            progress=True,
+        )
 
     def create_from_m2m_input(self, values, source_model, source_field_name):
         """
