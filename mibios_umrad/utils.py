@@ -5,10 +5,6 @@ from string import Formatter
 import sys
 
 
-class DryRunRollback(Exception):
-    pass
-
-
 class ReturningGenerator:
     """
     A wrapper to catch return values of generators

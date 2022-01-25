@@ -8,10 +8,10 @@ import os
 
 from django.core.exceptions import FieldDoesNotExist
 from django.db import connection, models
-from django.db.transaction import atomic
+from django.db.transaction import atomic, set_rollback
 
 from mibios.models import Model as MibiosModel, Manager as MibiosManager
-from .utils import DryRunRollback, ProgressPrinter
+from .utils import ProgressPrinter
 
 
 # standard data field options
@@ -42,7 +42,7 @@ class LoadMixin:
     """
 
     @classmethod
-    def load(cls, max_rows=None, start=0, dry_run=True, sep='\t',
+    def load(cls, max_rows=None, start=0, dry_run=False, sep='\t',
              parse_only=False):
         """
         Load data from file
@@ -89,14 +89,11 @@ class LoadMixin:
             if parse_only:
                 return cls._parse_lines(file_it, sep=sep)
 
-            try:
-                return cls._load_lines(file_it, sep=sep, dry_run=dry_run)
-            except DryRunRollback:
-                print('[dry run rollback]')
+            return cls._load_lines(file_it, sep=sep, dry_run=dry_run)
 
     @classmethod
     @atomic
-    def _load_lines(cls, lines, sep='\t', dry_run=True):
+    def _load_lines(cls, lines, sep='\t', dry_run=False):
         ncols = len(cls.import_file_spec)
 
         objs = []
@@ -152,7 +149,7 @@ class LoadMixin:
             cls._update_m2m(i, m2m_data)
 
         if dry_run:
-            raise DryRunRollback
+            set_rollback(True)
 
     @classmethod
     def _update_m2m(cls, field_name, m2m_data):

@@ -7,7 +7,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.exceptions import FieldDoesNotExist
 from django.db import models
-from django.db.transaction import atomic
+from django.db.transaction import atomic, set_rollback
 from django.utils.functional import cached_property
 
 from mibios import get_registry
@@ -18,7 +18,7 @@ from .model_utils import (
     ch_opt, fk_opt, fk_req, VocabularyModel, delete_all_objects_quickly,
     Manager, Model,
 )
-from .utils import ProgressPrinter, DryRunRollback
+from .utils import ProgressPrinter
 
 
 log = getLogger(__name__)
@@ -114,7 +114,7 @@ class Compound(Model):
 
     @classmethod
     @atomic
-    def load(cls, max_rows=None, dry_run=True):
+    def load(cls, max_rows=None, dry_run=False):
         refdb_names = [
             i for _, i in CompoundEntry.DB_CHOICES
             if i in [j[1] for j in cls.import_file_spec]
@@ -241,6 +241,9 @@ class Compound(Model):
         through_objs = pp(through_objs)
         through.objects.bulk_create(through_objs)
 
+        if dry_run:
+            set_rollback(True)
+
 
 class CompoundName(VocabularyModel):
     max_length = 128
@@ -350,7 +353,7 @@ class Reaction(Model):
 
     @classmethod
     @atomic
-    def load(cls, max_rows=None, dry_run=True):
+    def load(cls, max_rows=None, dry_run=False):
         refdbs = [
             i for _, i in ReactionEntry.DB_CHOICES
             if i in [j[1] for j in cls.import_file_spec]
@@ -530,6 +533,9 @@ class Reaction(Model):
             ]
             through.objects.bulk_create(through_objs)
             print(' [OK]')
+
+        if dry_run:
+            set_rollback(True)
 
 
 class RefDBEntry(Model):
@@ -894,7 +900,7 @@ class Taxon(Model):
 
     @classmethod
     @atomic
-    def load(cls, path=None):
+    def load(cls, path=None, dry_run=False):
         taxid2linpk = Lineage._load(path)
 
         objs = (
@@ -902,6 +908,9 @@ class Taxon(Model):
             for i, j in taxid2linpk.items()
         )
         cls.objects.bulk_create(objs)
+
+        if dry_run:
+            set_rollback(True)
 
     @classmethod
     def classified(cls, lineage):
@@ -1025,7 +1034,7 @@ class UniRef100(Model):
 
     @classmethod
     @atomic
-    def load(cls, max_rows=None, start=0, dry_run=True):
+    def load(cls, max_rows=None, start=0, dry_run=False):
         # get data and split m2m fields
         refdb_keys = [i for _, i in RefDBEntry.DB_CHOICES]
         rxndb_keys = [i for _, i in ReactionEntry.DB_CHOICES]
@@ -1174,7 +1183,7 @@ class UniRef100(Model):
         print(f'created {len(through_objs)} UniRef100 vs xref entry relations')
 
         if dry_run:
-            raise DryRunRollback
+            set_rollback(True)
 
 
 # development stuff
