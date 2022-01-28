@@ -713,6 +713,21 @@ class Lineage(Model):
         key2obj = {i.get_name_pks(): i for i in cls.objects.all().iterator()}
 
         def parse_and_lookup(value):
+            """
+            Get lineage object from string value
+
+            :param str value:
+                A string lineage, e.g. 'BACTERIA;BACTEROIDETES;FLAVOBACTERIIA'
+
+            Returns a tuple (obj, missing_key), where obj is a Lineage instance
+            and missing_key is None if a lineage corresponing to the passed
+            value exists.  If no such lineage is in the database, then obj is
+            None and missing_key contains the name-PK-key corresponding to the
+            given lineage string.
+
+            Raises TaxName.DoesNotExist if the given lineage string contains an
+            unknown tax name.
+            """
             try:
                 key = tuple((
                     None if i is None else name2pk[(i, j)]
