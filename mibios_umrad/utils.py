@@ -72,7 +72,7 @@ class ProgressPrinter():
 
         self._reset_state()
 
-    def __call__(self,  it):
+    def __call__(self, it):
         for elem in it:
             yield elem
             self.inc()

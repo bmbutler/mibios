@@ -224,8 +224,7 @@ class Compound(Model):
         pk_map = dict(
             CompoundEntry.objects.values_list('accession', 'pk').iterator()
         )
-        # comp->name relation:
-        rels = (
+        rels = (  # the comp->name relation
             (comp_pk, name_pk_map[name_entry])
             for acc, comp_pk in pk_map.items()
             for name_entry in name_data[acc]
@@ -1009,7 +1008,7 @@ class UniRef100(Model):
         ('METAL', 'metal_binding'),
         ('TCDB', 'tcdb'),
         ('LOCATION', 'subcellular_location'),
-        ('COG',  RefDBEntry.DB_COG),
+        ('COG', RefDBEntry.DB_COG),
         ('PFAM', RefDBEntry.DB_PFAM),
         ('TIGR', RefDBEntry.DB_TIGR),
         ('GO', RefDBEntry.DB_GO),
