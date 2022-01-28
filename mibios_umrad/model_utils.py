@@ -287,7 +287,7 @@ class LoadMixin:
         return data
 
 
-class Manager(MibiosManager):
+class BaseManager(MibiosManager):
     @staticmethod
     def bulk_create_wrapper(wrappee_bc):
         """
@@ -367,6 +367,9 @@ class Manager(MibiosManager):
             progress=True,
         )
 
+
+class Manager(BaseManager):
+    """ Manager class for UMRAD models """
     def create_from_m2m_input(self, values, source_model, source_field_name):
         """
         Store objects from accession or similar value (and context, as needed)
