@@ -1064,7 +1064,9 @@ class UniRef100(Model):
         del field
 
         # get lookups for FK PKs
+        print('Retrieving lineage data... ', end='', flush=True)
         get_lineage = Lineage.get_parse_and_lookup_fun()
+        print('[OK]')
 
         objs = []
         m2m_data = {}
