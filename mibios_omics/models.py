@@ -1,32 +1,21 @@
 from logging import getLogger
-from itertools import chain, zip_longest
-import os
 from subprocess import PIPE, Popen, TimeoutExpired
-import sys
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.transaction import atomic
 
-from mibios.models import Model
 from mibios_umrad.fields import AccessionField
-from mibios_umrad.model_utils import opt, fk_req, fk_opt
-from mibios_umrad.models import Taxon
-from mibios_umrad.utils import ProgressPrinter, ReturningGenerator
+from mibios_umrad.model_utils import opt, fk_req, fk_opt, Model
+from mibios_umrad.models import Taxon, Lineage, UniRef100
+from mibios_umrad.utils import ProgressPrinter
 
 from .fields import DataPathField
+from .managers import ContigClusterManager, GeneManager, SampleManager
 
 
 log = getLogger(__name__)
-
-
-class EOF():
-    """
-    End-of-file marker for file iteration
-    """
-    def __len__(self):
-        return 0
 
 
 class Bin(Model):
@@ -368,7 +357,7 @@ class SequenceLike(Model):
         abstract = True
 
     def get_sequence(self, fasta_format=False):
-        with self.get_fasta_path(self.sample).open('rb') as fa:
+        with self.objects.get_fasta_path(self.sample).open('rb') as fa:
             fa.seek(self.seq_offset)
             seq = b''
             for line in fa:
@@ -386,108 +375,6 @@ class SequenceLike(Model):
         else:
             head = ''
         return head + seq.decode()
-
-    @classmethod
-    def get_fasta_path(self, sample):
-        """
-        return path to fasta file that contains our sequence
-        """
-        # must be implemented by inheriting class
-        # should return Path
-        raise NotImplementedError
-
-    @classmethod
-    def have_sample_data(cls, sample, set_to=None):
-        """ Check or set if a sample's data is loaded or not """
-        # must be implemented by inheriting class
-        # should return True or False
-        raise NotImplementedError
-
-    @classmethod
-    def get_load_sample_fasta_extra_kw(cls, sample):
-        """
-        Return extra kwargs for from_sample_fasta()
-
-        Should be overwritten by inherinting class if needed
-        """
-        return {}
-
-    @classmethod
-    def load(cls, verbose=False):
-        """ Load sequence-like data for all samples """
-        for i in Sample.objects.all():
-            with atomic():
-                if cls.have_sample_data(i):
-                    log.info(f'sample {i} has assembly/mapping, skipping')
-                    continue
-                error = cls.load_sample(i, verbose=verbose)
-                if error is not None:
-                    return (i, *error)
-
-                cls.have_sample_data(i, set_to=True)
-                log.info(f'{i}: loaded {cls._meta.verbose_name_plural}')
-
-    @classmethod
-    @atomic
-    def load_sample(cls, sample, limit=None, verbose=False):
-        """
-        import sequence data for one sample
-
-        limit - limit to that many contigs, for testing only
-        """
-        extra = cls.get_load_sample_fasta_extra_kw(sample)
-        objs = cls.from_sample_fasta(sample, limit=limit, verbose=verbose,
-                                     **extra)
-        cls.objects.bulk_create(objs)
-
-    @classmethod
-    def from_sample_fasta(cls, sample, limit=None, verbose=False, **extra):
-        """
-        Generate instances for given sample
-        """
-        print_count = verbose and sys.stdout.isatty()
-
-        with cls.get_fasta_path(sample).open('r') as fa:
-            os.posix_fadvise(fa.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
-            if verbose:
-                print(f'reading {fa.name} ...')
-            obj = None
-            pp = ProgressPrinter(f'{cls._meta.verbose_name_plural} found')
-            count = 0
-            pos = 0
-            end = EOF()
-            for line in chain(fa, [end]):
-                if limit and count >= limit:
-                    break
-                pos += len(line)
-                if line is end or line.startswith('>'):
-                    if obj is not None:
-                        obj.seq_bytes = pos - obj.seq_offset
-                        # obj.full_clean()  # way too slow
-                        if print_count:
-                            pp.update(count)
-                        yield obj
-                        count += 1
-
-                    if line is end:
-                        break
-
-                    obj = cls(
-                        sample=sample,
-                        seq_offset=pos,
-                    )
-                    try:
-                        obj.set_from_fa_head(line, **extra)
-                    except Exception as e:
-                        raise RuntimeError(
-                            f'failed parsing fa head in file {fa.name}: '
-                            f'{e.__class__.__name__}: {e}, line:\n{line}'
-                        ) from e
-
-            pp.finish()
-
-        if verbose:
-            print(f'{count} {cls._meta.verbose_name_plural} loaded')
 
 
 class ContigLike(SequenceLike):
@@ -512,104 +399,15 @@ class ContigLike(SequenceLike):
     rpkm = models.DecimalField(decimal_places=4, max_digits=10, **opt)
     frags_mapped = models.PositiveIntegerField(**opt)
     fpkm = models.DecimalField(decimal_places=4, max_digits=10, **opt)
+    # taxon + lca from contigs file
+    taxon = models.ManyToManyField(Taxon)
+    lca = models.ForeignKey(Lineage, **fk_req)
 
     class Meta:
         abstract = True
 
     # Name of the (per-sample) id field, must be set in inheriting class
     id_field_name = None
-
-    @classmethod
-    def process_coverage_header_data(cls, sample):
-        """ Add header data to sample """
-        # must be implemented by inheriting class
-        return  # FIXME: !!!
-        raise NotImplementedError
-
-    @classmethod
-    @atomic
-    def load_sample(cls, sample, limit=None, verbose=False):
-        """
-        import sequence/coverage data for one sample
-
-        limit - limit to that many contigs, for testing only
-        """
-        # assumes that contigs are ordered the same in objs and cov
-        extra = cls.get_load_sample_fasta_extra_kw(sample)
-        objs = cls.from_sample_fasta(sample, limit=limit, verbose=verbose,
-                                     **extra)
-        cov = cls.read_coverage(sample, limit=limit, verbose=verbose)
-        cov = ReturningGenerator(cov)
-        cls.objects.bulk_create(cls._join_cov_data(objs, cov))
-        cls.process_coverage_header_data(cov.value)
-
-    @classmethod
-    def read_coverage(cls, sample, limit=None, verbose=False):
-        """
-        load coverage data
-
-        This is a generator, yielding each row.  The return value is a dict
-        with the header data.
-        """
-        print_count = verbose and sys.stdout.isatty()
-        rpkm_cols = ['Name', 'Length', 'Bases', 'Coverage', 'Reads', 'RPKM',
-                     'Frags', 'FPKM']
-
-        head_data = {}
-
-        with cls.get_coverage_path(sample).open('r') as f:
-            os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
-            # 1. read header
-            for line in f:
-                if not line.startswith('#'):
-                    raise ValueError(
-                        '{sample}/{f}: expected header but got: {line}'
-                    )
-                row = line.strip().lstrip('#').split('\t')
-                if row[0] == 'Name':
-                    if not row == rpkm_cols:
-                        raise ValueError(
-                            '{sample}/{f}: unexpected column names'
-                        )
-                    # table starts
-                    break
-
-                # expecting key/value pairs
-                key, value = row
-                head_data[key] = value
-
-            # 2. read rows
-            count = 0
-            for line in f:
-                if limit and count >= limit:
-                    break
-                yield line.rstrip().split('\t')
-                count += 1
-            if print_count:
-                print(f'{count} coverage rows processed')
-
-            return head_data
-
-    @classmethod
-    def _join_cov_data(cls, objs, cov):
-        """ populate instances with coverage data """
-        # zip_longest: ensures (over just zip) that cov.value gets populated
-        for obj, row in zip_longest(objs, cov):
-            myid = getattr(obj, cls.id_field_name)
-            if myid not in row[0]:  # check name/id
-                raise RuntimeError(
-                    f'seq and cov data is out of order: {myid=} {row[0]=}'
-                )
-
-            obj.length = row[1]
-            obj.bases = row[2]
-            obj.coverage = row[3]
-            obj.reads_mapped = row[4]
-            obj.rpkm = row[5]
-            obj.frags_mapped = row[6]
-            obj.fpkm = row[7]
-
-            yield obj
 
 
 class ContigCluster(ContigLike):
@@ -620,6 +418,9 @@ class ContigCluster(ContigLike):
     bin_m93 = models.ForeignKey(BinMET93, **fk_opt, related_name='members')
     bin_m97 = models.ForeignKey(BinMET97, **fk_opt, related_name='members')
     bin_m99 = models.ForeignKey(BinMET99, **fk_opt, related_name='members')
+    lca = models.ForeignKey(Lineage, **fk_opt)  # opt. for contigs w/o genes
+
+    objects = ContigClusterManager()
 
     class Meta:
         unique_together = (
@@ -635,23 +436,8 @@ class ContigCluster(ContigLike):
     def accession(self):
         return f'{self.sample}:{self.cluster_id}'
 
-    @classmethod
-    def have_sample_data(cls, sample, set_to=None):
-        if set_to is None:
-            return sample.contigs_ok
-        else:
-            sample.contigs_ok = set_to
-            sample.save()
-
-    @classmethod
-    def get_fasta_path(cls, sample):
-        return sample.get_contig_fasta_path()
-
-    @classmethod
-    def get_coverage_path(cls, sample):
-        return sample.get_contig_coverage_path()
-
     def set_from_fa_head(self, fasta_head_line):
+
         # parsing ">foo\n" -> "foo"
         self.cluster_id = fasta_head_line.lstrip('>').rstrip()
 
@@ -666,6 +452,9 @@ class Gene(ContigLike):
     start = models.PositiveIntegerField()
     end = models.PositiveIntegerField()
     strand = models.CharField(choices=STRAND_CHOICE, max_length=1)
+    besthit = models.ForeignKey(UniRef100, **fk_opt)
+
+    objects = GeneManager()
 
     class Meta:
         unique_together = (
@@ -681,34 +470,7 @@ class Gene(ContigLike):
     def accession(self):
         return f'{self.sample}:{self.gene_id}'
 
-    @classmethod
-    def have_sample_data(cls, sample, set_to=None):
-        if set_to is None:
-            return sample.genes_ok
-        else:
-            sample.genes_ok = set_to
-            sample.save()
-
-    @classmethod
-    def get_fasta_path(cls, sample):
-        return sample.get_gene_fasta_path()
-
-    @classmethod
-    def get_coverage_path(cls, sample):
-        return sample.get_gene_coverage_path()
-
-    @classmethod
-    def get_load_sample_fasta_extra_kw(cls, sample):
-        # returns a dict of the sample's contig clusters
-        qs = sample.contigcluster_set.values_list('cluster_id', 'pk')
-        return dict(contig_ids=dict(qs.iterator()))
-
-    def set_from_fa_head(self, line, **kwargs):
-        if 'contig_ids' in kwargs:
-            contig_ids = kwargs['contig_ids']
-        else:
-            raise ValueError('Expect "contig_ids" in kw args')
-
+    def set_from_fa_head(self, line, contig_ids, **kwargs):
         # parsing prodigal info
         name, start, end, strand, misc = line.lstrip('>').rstrip().split(' # ')
         cont_id, _, num = name.rpartition('_')
@@ -779,8 +541,8 @@ class Protein(SequenceLike):
 
     @classmethod
     def get_fasta_path(cls, sample):
-        return (settings.OMICS_DATA_ROOT / 'PROTEINS' /
-                f'{sample.accession}_PROTEINS.faa')
+        return (settings.OMICS_DATA_ROOT / 'PROTEINS'
+                / f'{sample.accession}_PROTEINS.faa')
 
     @classmethod
     def get_load_sample_fasta_extra_kw(cls, sample):
@@ -980,64 +742,10 @@ class Sample(Model):
         help_text='RefSequences number in coverage file header',
     )
 
+    objects = SampleManager()
+
     def __str__(self):
         return self.accession
-
-    @classmethod
-    @atomic
-    def sync(cls, sample_list='sample_list.txt', **kwargs):
-        src = settings.OMICS_DATA_ROOT / sample_list
-        with open(src) as f:
-            seen = []
-            for line in f:
-                obj, isnew = cls.objects.get_or_create(
-                    accession=line.strip()
-                )
-                seen.append(obj.pk)
-                if isnew:
-                    log.info(f'new sample: {obj}')
-
-        not_in_src = cls.objects.exclude(pk__in=seen)
-        if not_in_src.exists():
-            log.warning(f'Have {not_in_src.count()} extra samples in DB not '
-                        f'found in {src}')
-
-    @classmethod
-    def status(cls):
-        if not cls.objects.exists():
-            print('no samples in database yet')
-            return
-
-        print(' ' * 10, 'contigs', 'bins', 'checkm', 'genes', sep='\t')
-        for i in cls.objects.all():
-            print(
-                f'{i}:',
-                'OK' if i.contigs_ok else '',
-                'OK' if i.binning_ok else '',
-                'OK' if i.checkm_ok else '',
-                'OK' if i.genes_ok else '',
-                sep='\t'
-            )
-
-    @classmethod
-    def status_long(cls):
-        if not cls.objects.exists():
-            print('no samples in database yet')
-            return
-
-        print(' ' * 10, 'cont cl', 'MAX', 'MET93', 'MET97', 'MET99', 'genes',
-              sep='\t')
-        for i in cls.objects.all():
-            print(
-                f'{i}:',
-                i.contigcluster_set.count(),
-                i.binmax_set.count(),
-                i.binmet93_set.count(),
-                i.binmet97_set.count(),
-                i.binmet99_set.count(),
-                i.gene_set.count(),
-                sep='\t'
-            )
 
     def load_bins(self):
         if not self.binning_ok:
@@ -1064,34 +772,6 @@ class Sample(Model):
             self.binning_ok = False
             self.checkm_ok = False  # was cascade-deleted
             self.save()
-
-    def get_contig_fasta_path(self):
-        return (
-            settings.OMICS_DATA_ROOT / 'ASSEMBLIES' / 'MERGED'
-            / (self.accession + '_MCDD.fa')
-        )
-
-    def get_gene_fasta_path(self):
-        return (
-            settings.OMICS_DATA_ROOT / 'GENES'
-            / (self.accession + '_GENES.fna')
-        )
-
-    def get_contig_coverage_path(self, filetype='rpkm'):
-        fnames = {
-            'rpkm': f'{self.accession}_READSvsCONTIGS.rpkm',
-            'max': f'{self.accession}_MAX_coverage.txt',
-            'met': f'{self.accession}_MET_coverage.txt',
-        }
-        base = settings.OMICS_DATA_ROOT / 'ASSEMBLIES' / 'COVERAGE'
-        try:
-            return base / fnames[filetype.casefold()]
-        except KeyError as e:
-            raise ValueError(f'unknown filetype: {filetype}') from e
-
-    def get_gene_coverage_path(self):
-        return (settings.OMICS_DATA_ROOT / 'GENES' / 'COVERAGE'
-                / f'{self.accession}_READSvsGENES.rpkm')
 
     def get_fq_paths(self):
         base = settings.OMICS_DATA_ROOT / 'READS'
