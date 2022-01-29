@@ -1039,8 +1039,11 @@ class UniRef100(Model):
 
     @classmethod
     def get_file(cls):
-        return (Path(settings.UMRAD_ROOT) / 'UNIPROT'
-                / 'UNIREF100_INFO_DEC_2021.txt')
+        if 'UNIREF100_INFO_PATH' in dir(settings):
+            return settings.UNIREF100_INFO_PATH
+        else:
+            return (Path(settings.UMRAD_ROOT) / 'UNIPROT'
+                    / 'UNIREF100_INFO_DEC_2021.txt')
 
     @classmethod
     @atomic
