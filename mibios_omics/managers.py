@@ -188,7 +188,7 @@ class ContigLikeManager(SequenceLikeManager):
         # zip_longest: ensures (over just zip) that cov.value gets populated
         for obj, row in zip_longest(objs, cov):
             obj_id = getattr(obj, self.model.id_field_name)
-            if obj_id not in row[0]:  # check name/id
+            if obj_id != row[0].split(maxsplit=1)[0].upper():  # check name/id
                 raise RuntimeError(
                     f'seq and cov data is out of order: {obj_id=} {row[0]=}'
                 )

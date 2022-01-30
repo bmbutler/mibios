@@ -438,8 +438,8 @@ class ContigCluster(ContigLike):
 
     def set_from_fa_head(self, fasta_head_line):
 
-        # parsing ">foo\n" -> "foo"
-        self.cluster_id = fasta_head_line.lstrip('>').rstrip()
+        # parsing ">foo\n" -> "foo"  /  FIXME: varying case issue
+        self.cluster_id = fasta_head_line.lstrip('>').rstrip().upper()
 
 
 class Gene(ContigLike):
@@ -473,9 +473,11 @@ class Gene(ContigLike):
     def set_from_fa_head(self, line, contig_ids, **kwargs):
         # parsing prodigal info
         name, start, end, strand, misc = line.lstrip('>').rstrip().split(' # ')
-        cont_id, _, num = name.rpartition('_')
+
+        # figure out what the contig is:
+        cont_id, _, gene_num = name.rpartition('_')
         try:
-            int(num)
+            int(gene_num)
         except ValueError:
             raise
 
@@ -486,8 +488,8 @@ class Gene(ContigLike):
         else:
             raise ValueError('expected strand to be "1" or "-1"')
 
-        self.gene_id = name
-        self.contig_id = contig_ids[cont_id]
+        self.gene_id = name.upper()  # FIXME: solve varying case issue
+        self.contig_id = contig_ids[cont_id.upper()]  # FIXME: case issue again
         self.start = start
         self.end = end
         self.strand = strand
