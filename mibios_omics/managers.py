@@ -178,8 +178,13 @@ class ContigLikeManager(SequenceLikeManager):
         """
         populate instances with coverage data and other
 
-        other must be FK data (maps: contig/gene id -> PK)
+        other: must be FK data (maps: contig/gene id -> PK)
         """
+        null_allowed = {
+            field: self.model._meta.get_field(field).null
+            for field in other
+        }
+
         # zip_longest: ensures (over just zip) that cov.value gets populated
         for obj, row in zip_longest(objs, cov):
             obj_id = getattr(obj, self.model.id_field_name)
@@ -196,12 +201,17 @@ class ContigLikeManager(SequenceLikeManager):
             obj.frags_mapped = row[6]
             obj.fpkm = row[7]
 
+            # set FKs from contigs file data:
             for fk_field_name, id2value in other.items():
                 try:
                     setattr(obj, fk_field_name + '_id', id2value[obj_id])
-                except KeyError:
-                    # assumes null FKs are allowed
-                    pass
+                except KeyError as e:
+                    if null_allowed[fk_field_name]:
+                        pass
+                    else:
+                        raise RuntimeError(
+                            f'{obj=} {fk_field_name=} {obj_id=}'
+                        ) from e
 
             yield obj
 
