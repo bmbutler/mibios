@@ -341,10 +341,10 @@ class BaseManager(MibiosManager):
                         batch,
                         ignore_conflicts=ignore_conflicts,
                     )
-                except Exception:
+                except Exception as e:
                     print(f'ERROR saving to {model_name or "?"}: batch 1st: '
                           f'{vars(batch[0])=}')
-                    raise
+                    raise RuntimeError('error saving batch', batch) from e
                 pp.inc(len(batch))
 
             pp.finish()
