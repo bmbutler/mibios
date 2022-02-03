@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.transaction import atomic
 
+from mibios.data import TableConfig
 from mibios_umrad.fields import AccessionField
 from mibios_umrad.model_utils import opt, fk_req, fk_opt, Model
 from mibios_umrad.models import Taxon, Lineage, UniRef100
@@ -16,6 +17,152 @@ from .managers import ContigClusterManager, GeneManager, SampleManager
 
 
 log = getLogger(__name__)
+
+
+class AbstractSample(Model):
+    accession = AccessionField()
+    group = models.ForeignKey(
+        settings.SAMPLE_GROUP_MODEL,
+        **fk_opt,
+    )
+
+    # data accounting
+    contigs_ok = models.BooleanField(
+        default=False,
+        help_text='Contig cluster data and coverage loaded',
+    )
+    binning_ok = models.BooleanField(
+        default=False,
+        help_text='Binning data loaded',
+    )
+    checkm_ok = models.BooleanField(
+        default=False,
+        help_text='Binning stats loaded',
+    )
+    genes_ok = models.BooleanField(
+        default=False,
+        help_text='Gene data and coverage loaded',
+    )
+    proteins_ok = models.BooleanField(
+        default=False,
+        help_text='Protein data loaded',
+    )
+
+    # mapping data (from ASSEMBLIES/COVERAGE)
+    read_count = models.PositiveIntegerField(
+        **opt,
+        help_text='number of reads used for assembly mapping',
+    )
+    reads_mapped = models.PositiveIntegerField(
+        **opt,
+        help_text='number of reads mapped to assembly',
+    )
+    reads_mapped_gene = models.PositiveIntegerField(
+        **opt,
+        help_text='number of reads mapped to genes',
+    )
+    num_ref_sequences = models.PositiveIntegerField(
+        **opt,
+        help_text='RefSequences number in coverage file header',
+    )
+
+    objects = SampleManager()
+
+    class Meta:
+        abstract = True
+
+    def __str__(self):
+        return self.accession
+
+    def load_bins(self):
+        if not self.binning_ok:
+            with atomic():
+                Bin.import_sample_bins(self)
+                self.binning_ok = True
+                self.save()
+        if self.binning_ok and not self.checkm_ok:
+            with atomic():
+                CheckM.import_sample(self)
+                self.checkm_ok = True
+                self.save()
+
+    @atomic
+    def delete_bins(self):
+        with atomic():
+            qslist = [self.binmax_set, self.binmet93_set, self.binmet97_set,
+                      self.binmet99_set]
+            for qs in qslist:
+                print(f'{self}: deleting {qs.model.method} bins ...', end='',
+                      flush=True)
+                counts = qs.all().delete()
+                print('\b\b\bOK', counts)
+            self.binning_ok = False
+            self.checkm_ok = False  # was cascade-deleted
+            self.save()
+
+    def get_fq_paths(self):
+        base = settings.OMICS_DATA_ROOT / 'READS'
+        fname = f'{self.accession}_{{infix}}.fastq.gz'
+        return {
+            infix: base / fname.format(infix=infix)
+            for infix in ['dd_fwd', 'dd_rev', 'ddtrnhnp_fwd', 'ddtrnhnp_rev']
+        }
+
+    def get_checkm_stats_path(self):
+        return (settings.OMICS_DATA_ROOT / 'BINS' / 'CHECKM'
+                / f'{self.accession}_CHECKM' / 'storage'
+                / 'bin_stats.analyze.tsv')
+
+
+class AbstractSampleGroup(Model):
+    """
+    Abstract base model for collections of samples
+
+    To be used by apps that implement meta data models.
+    """
+    class Meta:
+        abstract = True
+
+    def __init__(self, *args, orphan_group=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.orphan_group = orphan_group
+
+    _orphan_group_obj = None
+    orphan_group_description = 'samples without a group'
+
+    def samples(self):
+        """
+        Return samples in a way that also works for the orphan set
+        """
+        if self.orphan_group:
+            return Sample.objects.filter(group=None)
+        else:
+            return self.sample_set.all()
+
+    def get_samples_url(self):
+        """
+        Returns mibios table interface URL for table of the group's samples
+        """
+        conf = TableConfig(Sample)
+        if self.orphan_group:
+            conf.filter['group'] = None
+        else:
+            conf.filter['group__pk'] = self.pk
+        return conf.url()
+
+    @classmethod
+    @property
+    def orphans(cls):
+        """
+        Return the fake group for samples without a data set
+
+        The returned instance is for display purpose only, should not be saved.
+        Implementing classes may want to set any useful attributes such as the
+        group's name or description.
+        """
+        if cls._orphan_group_obj is None:
+            cls._orphan_group_obj = cls(orphan_group=True)
+        return cls._orphan_group_obj
 
 
 class Bin(Model):
@@ -705,88 +852,20 @@ class RNACentralRep(Model):
     history = None
 
 
-class Sample(Model):
-    accession = AccessionField()
+class Sample(AbstractSample):
+    """
+    Placeholder model for samples
+    """
+    class Meta:
+        swappable = 'OMICS_SAMPLE_MODEL'
 
-    # data accounting
-    contigs_ok = models.BooleanField(
-        default=False,
-        help_text='Contig cluster data and coverage loaded',
-    )
-    binning_ok = models.BooleanField(
-        default=False,
-        help_text='Binning data loaded',
-    )
-    checkm_ok = models.BooleanField(
-        default=False,
-        help_text='Binning stats loaded',
-    )
-    genes_ok = models.BooleanField(
-        default=False,
-        help_text='Gene data and coverage loaded',
-    )
-    proteins_ok = models.BooleanField(
-        default=False,
-        help_text='Protein data loaded',
-    )
 
-    # mapping data (from ASSEMBLIES/COVERAGE)
-    read_count = models.PositiveIntegerField(
-        **opt,
-        help_text='number of reads used for assembly mapping',
-    )
-    reads_mapped = models.PositiveIntegerField(
-        **opt,
-        help_text='number of reads mapped to assembly',
-    )
-    num_ref_sequences = models.PositiveIntegerField(
-        **opt,
-        help_text='RefSequences number in coverage file header',
-    )
-
-    objects = SampleManager()
-
-    def __str__(self):
-        return self.accession
-
-    def load_bins(self):
-        if not self.binning_ok:
-            with atomic():
-                Bin.import_sample_bins(self)
-                self.binning_ok = True
-                self.save()
-        if self.binning_ok and not self.checkm_ok:
-            with atomic():
-                CheckM.import_sample(self)
-                self.checkm_ok = True
-                self.save()
-
-    @atomic
-    def delete_bins(self):
-        with atomic():
-            qslist = [self.binmax_set, self.binmet93_set, self.binmet97_set,
-                      self.binmet99_set]
-            for qs in qslist:
-                print(f'{self}: deleting {qs.model.method} bins ...', end='',
-                      flush=True)
-                counts = qs.all().delete()
-                print('\b\b\bOK', counts)
-            self.binning_ok = False
-            self.checkm_ok = False  # was cascade-deleted
-            self.save()
-
-    def get_fq_paths(self):
-        base = settings.OMICS_DATA_ROOT / 'READS'
-        fname = f'{self.accession}_{{infix}}.fastq.gz'
-        return {
-            infix: base / fname.format(infix=infix)
-            for infix in ['dd_fwd', 'dd_rev', 'ddtrnhnp_fwd', 'ddtrnhnp_rev']
-        }
-
-    def get_checkm_stats_path(self):
-        return (settings.OMICS_DATA_ROOT / 'BINS' / 'CHECKM'
-                / f'{self.accession}_CHECKM' / 'storage'
-                / 'bin_stats.analyze.tsv')
+class SampleGroup(AbstractSampleGroup):
+    """
+    Placeholder model implementing groups of samples
+    """
+    class Meta:
+        swappable = 'OMICS_SAMPLE_GROUP_MODEL'
 
 
 def load_all(**kwargs):
