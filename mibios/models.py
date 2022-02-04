@@ -1591,6 +1591,10 @@ class Model(models.Model):
         """
         first, _, rest = accessor.partition('__')
 
+        if first == 'pk':
+            # tolerate pk as synonym of id
+            first = 'id'
+
         try:
             field = cls._meta.get_field(first)
         except FieldDoesNotExist as e:
