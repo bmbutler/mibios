@@ -77,6 +77,7 @@ setuptools.setup(
             'static/' + NAME + '/js/*.js',
         ],
         'mibios_seq': ['templates/mibios_seq/*.html'],
+        'mibios_glamr': ['templates/mibios_glamr/*.html'],
     },
     entry_points={
         'console_scripts': [

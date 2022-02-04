@@ -1,0 +1,14 @@
+{% load render_table from django_tables2 %}
+{% load static %}
+<!doctype html>
+<html>
+    <head>
+        <title>GLARM</title>
+        <link rel="stylesheet" href="{% static 'mibios/css/bootstrap.min.css' %}">
+    </head>
+    <body>
+        <h3>Available data sets</h3>
+        {% render_table table %}
+        <p><a href="{% url 'top' %}">table interface</a></p>
+    </body>
+</html>
