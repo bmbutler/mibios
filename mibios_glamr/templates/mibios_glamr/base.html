@@ -1,0 +1,62 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>{% block title %}{{ page_title | join:" | " | default:'GLAMR' }}{% endblock %}</title>
+    {% block link %}
+    <link rel="icon" type="image/png" href="{% static 'mibios_glamr/img/GLMA_Logo_Icon.png' %}">
+    <link rel="stylesheet" href="{% static 'mibios_glamr/css/bootstrap.min.css' %}">
+    <link rel="stylesheet" href="{% static 'django_tables2/bootstrap.css' %}">
+    {% endblock %}
+</head>
+<body>
+<!-- version info:
+{% for k, v in version_info.items %}{{ k }}: {{ v|default:'(not available)' }}
+{% endfor %}-->
+<script src="{% static 'mibios_glamr/js/bootstrap.min.js' %}" defer></script>
+<div class="container-fluid">
+    <nav class="navbar navbar-expand-sm navbar-dark bg-primary">
+    <div class="container-fluid">
+        <ul class="navbar-nav">
+            <li class="nav-item">
+                <a class="navbar-brand" href="{{ view.request.META.SCRIPT_NAME }}">GLAMR</a>
+            </li>
+            <li class="nav-item">
+                <a class="navbar-brand" href="{{ view.request.META.SCRIPT_NAME }}"><img src="{% static 'mibios_glamr/img/GLMA_Logo_Icon.png' %}" alt="GLAMR logo" style="width:110px;vertical-align:bottom;margin-top:-30px;margin-bottom:-50px;padding:0;"></a>
+            </li>
+        </ul>
+    </div>
+    <div class="container-fluid">
+        <ul class="navbar-nav">
+            <li class="nav-item"><a class="nav-link" href="#">Search</a>
+            <li class="nav-item"><a class="nav-link" href="#">Contact</a>
+            <li class="nav-item"><a class="nav-link" href="#">About</a>
+        </ul>
+        <ul class="navbar-nav">
+            <li class="nav-item navbar-text">Internal:</li>
+            <li class="nav-item"><a class="nav-link" href="{% url 'top' %}">table interface</a>
+        </ul>
+    </div>
+    </nav>
+
+
+
+<div class="container-fluid pt-4">
+<!-- begin notifications block -->
+{% block notifications %}{% if messages %}                                                       
+    <ul class="messages">                                                                            
+        {% for message in messages %}                                                                
+        <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message | linebreaks}}</li>
+        {% endfor %}                                                                                 
+    </ul>                                                                                            
+    <hr>                                                                                             
+{% endif %}{% endblock %}                                                                        
+<!-- end notifications block ** begin content block -->
+{% block content %}{% endblock %}                                                                
+<!-- end content block -->
+</div>
+</div>
+</body>
+</html>

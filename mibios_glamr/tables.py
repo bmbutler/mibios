@@ -21,7 +21,8 @@ class DatasetTable(Table):
     )
 
     class Meta:
-        template_name = 'django_tables2/bootstrap.html'
+        template_name = 'django_tables2/bootstrap4.html'
+        pass
 
     def render_scheme(self, value, record):
         if record.material_type:
