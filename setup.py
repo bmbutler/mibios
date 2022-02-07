@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os.path
+from pathlib import Path
 import subprocess
 
 import setuptools
@@ -34,10 +34,10 @@ class SetVersionCmd(setuptools.Command):
         self.set_undefined_options('build', ('build_lib', 'build_lib'))
 
     def run(self):
-        path = os.path.sep.join([self.build_lib, NAME, '__init__.py'])
+        path = Path(self.build_lib) / NAME / '__init__.py'
         self.announce('Patching version "{}" into: {}'
                       ''.format(get_version(), path))
-        with open(path, 'a') as f:
+        with path.open('a') as f:
             f.write(self.template.format(get_version()))
 
 
@@ -45,6 +45,31 @@ class BuildPyCmd(build_py):
     def run(self):
         super().run()
         self.run_command('set_version')
+
+
+def get_package_data():
+    """
+    Return a dict top-level-package -> list of globs of data files
+    """
+    # get top-level packages:
+    plist = [i for i in setuptools.find_packages() if '.' not in i]
+    data = {}
+    paths = [  # django app data files / normal directory layout
+        'templates/*.html',
+        'templates/{app}/*.html',
+        'static/{app}/css/*.css',
+        'static/{app}/js/*.js',
+        'static/{app}/img/*.png',
+    ]
+    for app in plist:
+        # assume app is django app
+        for p in paths:
+            p = p.format(app=app)
+            if list(Path(app).glob(p)):
+                if app not in data:
+                    data[app] = []
+                data[app].append(p)
+    return data
 
 
 with open('README.md', 'r') as fh:
@@ -69,16 +94,7 @@ setuptools.setup(
         'zipstream',
     ],
     packages=setuptools.find_packages(),
-    package_data={
-        NAME: [
-            'templates/' + NAME + '/*.html',
-            'templates/*.html',
-            'static/' + NAME + '/css/*.css',
-            'static/' + NAME + '/js/*.js',
-        ],
-        'mibios_seq': ['templates/mibios_seq/*.html'],
-        'mibios_glamr': ['templates/mibios_glamr/*.html'],
-    },
+    package_data=get_package_data(),
     entry_points={
         'console_scripts': [
             'manage_' + NAME + '=' + NAME + '.ops:manage',
@@ -94,7 +110,7 @@ setuptools.setup(
         'Topic :: Scientific/Engineering :: Bio-Informatics',
     ],
     cmdclass={
-       'set_version': SetVersionCmd,
-       'build_py': BuildPyCmd,
+        'set_version': SetVersionCmd,
+        'build_py': BuildPyCmd,
     },
 )
