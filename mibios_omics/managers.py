@@ -34,7 +34,7 @@ class SequenceLikeManager(BaseManager):
         return {}
 
     @atomic
-    def load_sample(self, sample, limit=None, verbose=False):
+    def load_sample(self, sample, limit=None, verbose=False, dry_run=False):
         """
         import sequence data for one sample
 
@@ -44,6 +44,7 @@ class SequenceLikeManager(BaseManager):
         objs = self.from_sample_fasta(sample, limit=limit, verbose=verbose,
                                       **extra)
         self.bulk_create(objs)
+        set_rollback(dry_run)
 
     def from_sample_fasta(self, sample, limit=None, **extra):
         """
@@ -106,7 +107,7 @@ class ContigLikeManager(SequenceLikeManager):
         raise NotImplementedError
 
     @atomic
-    def load_sample(self, sample, limit=None, dry_run=True):
+    def load_sample(self, sample, limit=None, dry_run=False):
         """
         import sequence/coverage data for one sample
 
@@ -421,12 +422,12 @@ class GeneManager(ContigLikeManager):
 
 
 class SampleManager(BaseManager):
-    """ Manager for the Sample model """
+    """ Manager for the Sample """
     def get_file(self):
         return settings.OMICS_DATA_ROOT / 'sample_list.txt'
 
     @atomic
-    def sync(self, source_file=None, **kwargs):
+    def sync(self, source_file=None, dry_run=False, **kwargs):
         if source_file is None:
             source_file = self.get_file()
 
@@ -444,6 +445,7 @@ class SampleManager(BaseManager):
         if not_in_src.exists():
             log.warning(f'Have {not_in_src.count()} extra samples in DB not '
                         f'found in {source_file}')
+        set_rollback(dry_run)
 
     def status(self):
         if not self.exists():
