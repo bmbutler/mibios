@@ -1,20 +1,20 @@
+"""
+Module for data load managers
+"""
 from collections import defaultdict
-from logging import getLogger
+from itertools import chain, groupby, zip_longest
 from operator import itemgetter
 import os
-from itertools import chain, groupby, zip_longest
 
 from django.conf import settings
 from django.db.transaction import atomic, set_rollback
 
-from mibios_umrad.models import Taxon, Lineage, UniRef100
+from mibios_umrad.models import Lineage, Taxon, UniRef100
 from mibios_umrad.model_utils import BaseManager
-from mibios_umrad.utils import ReturningGenerator, ProgressPrinter
-
-log = getLogger(__name__)
+from mibios_umrad.utils import ProgressPrinter, ReturningGenerator
 
 
-class SequenceLikeManager(BaseManager):
+class SequenceLikeLoader(BaseManager):
     """ Manager for the SequenceLike abstrasct model """
 
     def get_fasta_path(self, sample):
@@ -86,14 +86,8 @@ class SequenceLikeManager(BaseManager):
                             f'{e.__class__.__name__}: {e}, line:\n{line}'
                         ) from e
 
-    def have_sample_data(self, sample, set_to=None):
-        """ Check or set if a sample's data is loaded or not """
-        # must be implemented by inheriting class
-        # should return True or False
-        raise NotImplementedError
 
-
-class ContigLikeManager(SequenceLikeManager):
+class ContigLikeLoader(SequenceLikeLoader):
     """ Manager for ContigLike abstract model """
 
     def get_contigs_file_path(self, sample):
@@ -339,7 +333,7 @@ class ContigLikeManager(SequenceLikeManager):
         BaseManager.bulk_create_wrapper(through.objects.bulk_create)(objs)
 
 
-class ContigClusterManager(ContigLikeManager):
+class ContigClusterLoader(ContigLikeLoader):
     """ Manager for the ContigCluster model """
     def get_fasta_path(self, sample):
         return settings.OMICS_DATA_ROOT / 'ASSEMBLIES' / 'MERGED' \
@@ -365,15 +359,8 @@ class ContigClusterManager(ContigLikeManager):
 
         return {'lca': lca_data}, {'taxon': taxid_data}
 
-    def have_sample_data(self, sample, set_to=None):
-        if set_to is None:
-            return sample.contigs_ok
-        else:
-            sample.contigs_ok = set_to
-            sample.save()
 
-
-class GeneManager(ContigLikeManager):
+class GeneLoader(ContigLikeLoader):
     """ Manager for the Gene model """
     def get_fasta_path(self, sample):
         return (
@@ -412,72 +399,3 @@ class GeneManager(ContigLikeManager):
 
         return ({'lca': lca_data, 'besthit': besthit_data},
                 {'taxon': taxid_data})
-
-    def have_sample_data(self, sample, set_to=None):
-        if set_to is None:
-            return sample.genes_ok
-        else:
-            sample.genes_ok = set_to
-            sample.save()
-
-
-class SampleManager(BaseManager):
-    """ Manager for the Sample """
-    def get_file(self):
-        return settings.OMICS_DATA_ROOT / 'sample_list.txt'
-
-    @atomic
-    def sync(self, source_file=None, dry_run=False, **kwargs):
-        if source_file is None:
-            source_file = self.get_file()
-
-        with open(source_file) as f:
-            seen = []
-            for line in f:
-                obj, isnew = self.get_or_create(
-                    accession=line.strip()
-                )
-                seen.append(obj.pk)
-                if isnew:
-                    log.info(f'new sample: {obj}')
-
-        not_in_src = self.exclude(pk__in=seen)
-        if not_in_src.exists():
-            log.warning(f'Have {not_in_src.count()} extra samples in DB not '
-                        f'found in {source_file}')
-        set_rollback(dry_run)
-
-    def status(self):
-        if not self.exists():
-            print('no samples in database yet')
-            return
-
-        print(' ' * 10, 'contigs', 'bins', 'checkm', 'genes', sep='\t')
-        for i in self.all():
-            print(
-                f'{i}:',
-                'OK' if i.contigs_ok else '',
-                'OK' if i.binning_ok else '',
-                'OK' if i.checkm_ok else '',
-                'OK' if i.genes_ok else '',
-                sep='\t'
-            )
-
-    def status_long(self):
-        if not self.exists():
-            print('no samples in database yet')
-            return
-
-        print(' ' * 10, 'cont cl', 'MAX', 'MET93', 'MET97', 'MET99', 'genes',
-              sep='\t')
-        for i in self.all():
-            print(
-                f'{i}:',
-                i.contigcluster_set.count(),
-                i.binmax_set.count(),
-                i.binmet93_set.count(),
-                i.binmet97_set.count(),
-                i.binmet99_set.count(),
-                i.gene_set.count(),
-                sep='\t'
-            )
