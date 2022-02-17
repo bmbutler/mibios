@@ -49,22 +49,19 @@ class AbstractSample(Model):
         help_text='Protein data loaded',
     )
 
-    # mapping data (from ASSEMBLIES/COVERAGE)
+    # mapping data / header items from bbmap output:
     read_count = models.PositiveIntegerField(
         **opt,
-        help_text='number of reads used for assembly mapping',
+        help_text='number of reads (post-QC, fwd+rev) used for assembly '
+                  'mapping',
     )
-    reads_mapped = models.PositiveIntegerField(
+    reads_mapped_contigs = models.PositiveIntegerField(
         **opt,
-        help_text='number of reads mapped to assembly',
+        help_text='number of reads mapped to contigs',
     )
-    reads_mapped_gene = models.PositiveIntegerField(
+    reads_mapped_genes = models.PositiveIntegerField(
         **opt,
         help_text='number of reads mapped to genes',
-    )
-    num_ref_sequences = models.PositiveIntegerField(
-        **opt,
-        help_text='RefSequences number in coverage file header',
     )
 
     objects = SampleManager()

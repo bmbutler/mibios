@@ -2,6 +2,7 @@
 Module for data load managers
 """
 from collections import defaultdict
+from functools import wraps
 from itertools import chain, groupby, zip_longest
 from operator import itemgetter
 import os
@@ -89,15 +90,15 @@ class SequenceLikeLoader(BaseManager):
 
 class ContigLikeLoader(SequenceLikeLoader):
     """ Manager for ContigLike abstract model """
+    is_loaded_attr = None  # set in inheriting class
 
     def get_contigs_file_path(self, sample):
         return settings.OMICS_DATA_ROOT / 'GENES' \
             / f'{sample.accession}_contigs_{settings.OMICS_DATA_VERSION}.txt'
 
-    def process_coverage_header_data(self, sample):
+    def process_coverage_header_data(self, sample, data):
         """ Add header data to sample """
         # must be implemented by inheriting class
-        return  # FIXME: !!!
         raise NotImplementedError
 
     @atomic
@@ -110,6 +111,11 @@ class ContigLikeLoader(SequenceLikeLoader):
         The method assumes that the fasta and coverage input both have the
         contigs/genes in the same order.
         """
+        if getattr(sample, self.is_loaded_attr):
+            raise RuntimeError(
+                f'Sample {sample}: data for {self.model} already loaded'
+            )
+
         extra = self.get_load_sample_fasta_extra_kw(sample)
         objs = self.from_sample_fasta(sample, limit=limit, **extra)
         cov = self.read_coverage(sample, limit=limit)
@@ -120,7 +126,9 @@ class ContigLikeLoader(SequenceLikeLoader):
         objs = self._join_cov_data(objs, cov, fk_data)
         self.bulk_create(objs)
         self.set_taxon_m2m_relations(sample, m2m_data['taxon'])
-        self.process_coverage_header_data(cov.value)
+        self.process_coverage_header_data(sample, cov.value)
+        setattr(sample, self.is_loaded_attr, True)
+        sample.save()
 
         if dry_run:
             set_rollback(True)
@@ -335,6 +343,8 @@ class ContigLikeLoader(SequenceLikeLoader):
 
 class ContigClusterLoader(ContigLikeLoader):
     """ Manager for the ContigCluster model """
+    is_loaded_attr = 'contigs_ok'
+
     def get_fasta_path(self, sample):
         return settings.OMICS_DATA_ROOT / 'ASSEMBLIES' / 'MERGED' \
             / (sample.accession + '_MCDD.fa')
@@ -359,9 +369,30 @@ class ContigClusterLoader(ContigLikeLoader):
 
         return {'lca': lca_data}, {'taxon': taxid_data}
 
+    def process_coverage_header_data(self, sample, data):
+        """ Add header data to sample """
+        attr_map = {
+            # 'File': None,  # TODO: only fwd reads here
+            'Reads': 'read_count',
+            'Mapped': 'reads_mapped_contigs',
+            # 'RefSequences': ??, ignore these, is # of contigs
+        }
+        for k, attr in attr_map.items():
+            setattr(sample, attr, data[k])
+            sample.full_clean()
+            sample.save()
+
 
 class GeneLoader(ContigLikeLoader):
     """ Manager for the Gene model """
+    is_loaded_attr = 'genes_ok'
+
+    @wraps(ContigLikeLoader.load_sample)
+    def load_sample(self, sample, *args, **kwargs):
+        if not sample.contigs_ok:
+            raise RuntimeError('require to have contigs before loading genes')
+        super().load_sample(sample, *args, **kwargs)
+
     def get_fasta_path(self, sample):
         return (
             settings.OMICS_DATA_ROOT / 'GENES'
@@ -399,3 +430,17 @@ class GeneLoader(ContigLikeLoader):
 
         return ({'lca': lca_data, 'besthit': besthit_data},
                 {'taxon': taxid_data})
+
+    def process_coverage_header_data(self, sample, data):
+        """ Add header data to sample """
+        attr_map = {
+            # 'File': None,  # TODO: only fwd reads here
+            # 'Reads': '',  ignore -- assumed same as for contigs
+            'Mapped': 'reads_mapped_genes',
+            # 'RefSequences': ??, ignore these, is # of genes
+        }
+        for k, attr in attr_map.items():
+            if k in data:
+                setattr(sample, attr, data[k])
+                sample.full_clean()
+                sample.save()
