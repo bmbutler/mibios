@@ -1,5 +1,5 @@
 from collections import OrderedDict, defaultdict
-from itertools import groupby, zip_longest
+from itertools import groupby, islice, zip_longest
 from logging import getLogger
 from operator import itemgetter
 from pathlib import Path
@@ -134,7 +134,7 @@ class Compound(Model):
         data = sorted(data, key=grpk)
         pp = ProgressPrinter('compound records processed')
         data = pp(data)
-        extra_ids_count = 0
+        extra_ids = set()
         for key, grp in groupby(data, grpk):
             grp = list(grp)
             all_ids = {i for j in key for i in j}  # flatten list-of-list
@@ -152,7 +152,9 @@ class Compound(Model):
                 #     f'expected to have one group member per unique ID, but: '
                 #     f'{key=} {grp=}'
                 # )
-                extra_ids_count += 1
+                grp_ids = [i['accession'] for i in grp]
+                extra_ids.update(all_ids.difference(grp_ids))
+                del grp_ids
 
             elif len(grp) > len(all_ids):
                 # this case has not happend yet
@@ -186,9 +188,11 @@ class Compound(Model):
 
             unicomps.append(cgroup)
 
-        if extra_ids_count:
-            print(f'WARNING: {extra_ids_count} compound groups with (ignored) '
-                  f'extra IDs')
+        if extra_ids:
+            print(f'WARNING: Found {len(extra_ids)} distinct compound IDs that'
+                  ' didn\'t have a row in their group) that will be ignored:',
+                  ', '.join([str(i) for i in islice(extra_ids, 5)]),
+                  '...')
 
         # create Compound objects and get PKs
         objs = (Compound() for _ in range(len(unicomps)))
@@ -376,7 +380,7 @@ class Reaction(Model):
         data = sorted(data, key=grpk)
         pp = ProgressPrinter('reaction entry records processed')
         data = pp(data)
-        extra_ids_count = 0
+        extra_ids = set()
         compounds = {}
         for key, grp in groupby(data, grpk):
             grp = list(grp)
@@ -384,8 +388,10 @@ class Reaction(Model):
             rxngroup = []
 
             if len(grp) < len(all_ids):
-                # NOTE: see this check in Compound
-                extra_ids_count += 1
+                # extra IDs / missing a row?  See similar check in Compounds
+                grp_ids = [i['accession'] for i in grp]
+                extra_ids.update(all_ids.difference(grp_ids))
+                del grp_ids
 
             elif len(grp) > len(all_ids):
                 # this case has not happend yet ?
@@ -426,9 +432,11 @@ class Reaction(Model):
 
         del key, grp, row, acc, rxn_obj, left_col, right_col
 
-        if extra_ids_count:
-            print(f'WARNING: {extra_ids_count} reaction groups with (ignored) '
-                  f'extra IDs')
+        if extra_ids:
+            print(f'WARNING: Found {len(extra_ids)} distinct reaction IDs that'
+                  ' didn\'t have a row in their group) that will be ignored:',
+                  ', '.join([str(i) for i in islice(extra_ids, 5)]),
+                  '...')
 
         # create Reaction objects and get PKs
         objs = (cls() for _ in range(len(urxns)))
@@ -467,7 +475,9 @@ class Reaction(Model):
         del rxndb, left, right, known_cpd_accs
         if unknown_cpd_accs:
             print(f'Found {len(unknown_cpd_accs)} unknown compound IDs in '
-                  'reaction data!')
+                  'reaction data:',
+                  ', '.join([str(i) for i in islice(unknown_cpd_accs, 5)]),
+                  '...')
             max_pk = Compound.objects.order_by('pk').last().pk
             unicomp_objs = (Compound() for _ in range(len(unknown_cpd_accs)))
             Compound.objects.bulk_create(unicomp_objs, batch_size=500)
@@ -1133,7 +1143,8 @@ class UniRef100(Model):
         del row, key, value, values, xrefs, acc, dbkey
 
         if unknown_names:
-            print(f'WARNING: {len(unknown_names)} unique unknown tax names')
+            print(f'WARNING: {len(unknown_names)} unique unknown tax names:',
+                  ' '.join([str(i) for i in islice(unknown_names, 5)]), '...')
 
         if new_lineages:
             # create+save+reload new lineages, then set missing PKs in unirefs

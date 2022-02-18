@@ -193,7 +193,15 @@ class LoadMixin:
             # NOTE: this will only work for those models for which the supplied
             # information (accession, source model and field) is sufficient,
             # might require overriding create_from_m2m_input().
-            print(f'new: {len(new_accs)} ')
+            print(f'new: {len(new_accs)}', end='')
+            if a2pk:
+                # if old ones exist, then display some of the new ones, this
+                # is for debugging, in case these ought to be known
+                print(' ', ', '.join([str(i) for i in islice(new_accs, 5)]),
+                      '...')
+            else:
+                print()
+
             model.objects.create_from_m2m_input(
                 new_accs,
                 source_model=cls,
