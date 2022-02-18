@@ -91,10 +91,8 @@ class Compound(Model):
 
     @classmethod
     def get_file(cls):
-        return Path(
-            '/geomicro/data22/teals_pipeline/BOSS/REFDB2_COMPOUNDS_REACTIONS'
-            '/all_compound_info_SEP_2021.txt'
-        )
+        return settings.UMRAD_ROOT \
+            / f'all_compound_info_{settings.UMRAD_VERSION}.txt'
 
     # spec: 2nd item is either base compound field name or compound model name
     # for the reverse relation
@@ -347,10 +345,8 @@ class Reaction(Model):
 
     @classmethod
     def get_file(cls):
-        return Path(
-            '/geomicro/data22/teals_pipeline/BOSS/REFDB2_COMPOUNDS_REACTIONS/'
-            'all_reaction_info_SEP_2021.txt'
-        )
+        return settings.UMRAD_ROOT \
+            / f'all_reaction_info_{settings.UMRAD_VERSION}.txt'
 
     @classmethod
     @atomic
@@ -642,7 +638,8 @@ class TaxName(Model):
 
     @classmethod
     def get_file(cls):
-        return settings.UMRAD_ROOT / 'TAXON' / 'TAXONOMY_DB_DEC_2021.txt'
+        return settings.UMRAD_ROOT / \
+            f'TAXONOMY_DB_{settings.UMRAD_VERSION}.txt'
 
 
 class Lineage(Model):
@@ -1052,6 +1049,7 @@ class UniRef100(Model):
         if 'UNIREF100_INFO_PATH' in dir(settings):
             return settings.UNIREF100_INFO_PATH
         else:
+            # FIXME
             return (Path(settings.UMRAD_ROOT) / 'UNIPROT'
                     / 'UNIREF100_INFO_DEC_2021.txt')
 
