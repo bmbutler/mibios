@@ -11,7 +11,7 @@ from django.conf import settings
 from django.db.transaction import atomic, set_rollback
 
 from mibios_umrad.models import Lineage, Taxon, UniRef100
-from mibios_umrad.model_utils import BaseManager
+from mibios_umrad.manager import BaseManager
 from mibios_umrad.utils import ProgressPrinter, ReturningGenerator
 
 

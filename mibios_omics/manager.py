@@ -3,7 +3,7 @@ from logging import getLogger
 from django.conf import settings
 from django.db.transaction import atomic, set_rollback
 
-from mibios_umrad.model_utils import BaseManager
+from mibios_umrad.manager import BaseManager
 
 log = getLogger(__name__)
 

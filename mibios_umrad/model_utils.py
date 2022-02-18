@@ -10,7 +10,8 @@ from django.core.exceptions import FieldDoesNotExist
 from django.db import connection, models
 from django.db.transaction import atomic, set_rollback
 
-from mibios.models import Model as MibiosModel, Manager as MibiosManager
+from mibios.models import Model as MibiosModel
+from .manager import Manager
 from .utils import ProgressPrinter
 
 
@@ -293,116 +294,6 @@ class LoadMixin:
 
             data.append(rec)
         return data
-
-
-class BaseManager(MibiosManager):
-    @staticmethod
-    def bulk_create_wrapper(wrappee_bc):
-        """
-        A wrapper to add batching and progress metering to bulk_create()
-
-        :param bound method wrappee_bc: A create_bulk method bound to a manager
-
-        This static wrapper method allows us to still (1) override the usual
-        Manager.bulk_create() but also (2) offer a wrapper to be used for cases
-        in which we are unable or don't want to override the model's manager,
-        e.g. the implicit through model of a many-to-many relation.
-        """
-        def bulk_create(objs, batch_size=None, ignore_conflicts=False,
-                        progress_text=None, progress=True):
-            """
-            Value-added bulk_create
-
-            Does not return the object list like super().bulk_create() does.
-            """
-            if not progress:
-                wrappee_bc(
-                    objs,
-                    ignore_conflicts=ignore_conflicts,
-                    batch_size=batch_size,
-                )
-                return
-
-            if batch_size is None:
-                # sqlite has a variable-per-query limit of 999; it's not clear
-                # how one runs against that; it seems that multiple smaller
-                # INSERTs are being used automatically.  So, until further
-                # notice, only have a default batch size for progress metering
-                # here.
-                batch_size = 999
-
-            # get model name from manager (wrappee_bc.__self__ is the manager)
-            model_name = wrappee_bc.__self__.model._meta.verbose_name
-
-            if progress_text is None:
-                progress_text = f'{model_name} records created'
-
-            pp = ProgressPrinter(progress_text)
-            objs = iter(objs)
-
-            while True:
-                batch = list(islice(objs, batch_size))
-                if not batch:
-                    break
-                try:
-                    wrappee_bc(
-                        batch,
-                        ignore_conflicts=ignore_conflicts,
-                    )
-                except Exception as e:
-                    print(f'ERROR saving to {model_name or "?"}: batch 1st: '
-                          f'{vars(batch[0])=}')
-                    raise RuntimeError('error saving batch', batch) from e
-                pp.inc(len(batch))
-
-            pp.finish()
-
-        return bulk_create
-
-    def bulk_create(self, objs, batch_size=None, ignore_conflicts=False,
-                    progress_text=None, progress=True):
-        """
-        Value-added bulk_create with batching and progress metering
-
-        Does not return the object list like super().bulk_create() does.
-        """
-        wrapped_bc = self.bulk_create_wrapper(super().bulk_create)
-        wrapped_bc(
-            objs=objs,
-            batch_size=batch_size,
-            ignore_conflicts=ignore_conflicts,
-            progress_text=None,
-            progress=True,
-        )
-
-
-class Manager(BaseManager):
-    """ Manager class for UMRAD models """
-    def create_from_m2m_input(self, values, source_model, source_field_name):
-        """
-        Store objects from accession or similar value (and context, as needed)
-
-        :param list values:
-            List of accessions
-        :param Model source_model:
-            The calling model, the model on the far side of the m2m relation.
-        :param str source_field_name:
-            Name of the m2m field pointing to us
-
-        Inheriting classes should overwrite this method if more that the
-        accession or other unique ID field is needed to create the instances.
-        The basic implementation will assign the given value to the accession
-        field, if one exists, or to the first declared unique field, other
-        that the standard id AutoField.
-
-        This method is responsible to set all required fields of the model,
-        hence the default version should only be used with controlled
-        vocabulary or similarly simple models.
-        """
-        accession_field_name = self.model.get_accession_field().name
-        model = self.model
-        objs = (model(**{accession_field_name: i}) for i in values)
-        return self.bulk_create(objs)
 
 
 class Model(MibiosModel, LoadMixin):
