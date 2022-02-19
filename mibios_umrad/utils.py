@@ -130,13 +130,12 @@ class ProgressPrinter():
         """
         Update current state
 
-        Print (for first time) turn on timer for non-boring progress
+        turns on timer if needed
         """
         self.last = self.current
         self.current = current
 
         if not self.timer_running and current != self.last:
-            self.print_progress()  # print on first update
             # turn on
             self._start_timer()
 
