@@ -206,7 +206,7 @@ class LoadMixin:
             model.objects.create_from_m2m_input(
                 new_accs,
                 source_model=cls,
-                source_field_name=field_name,
+                src_field_name=field_name,
             )
 
             # get m2m field's key -> pk mapping
@@ -245,21 +245,6 @@ class LoadMixin:
         return items
 
     @classmethod
-    def get_accession_field(cls):
-        """
-        Return the accession / human-facing UID field
-
-        Usually this is the first non-pk unique field, going by class
-        declaration order.
-
-        Raises KeyError if no such field exists.
-        """
-        return [
-            i for i in cls._meta.get_fields()
-            if hasattr(i, 'unique') and i.unique and not i.primary_key
-        ][0]
-
-    @classmethod
     def _parse_lines(cls, lines, sep='\t'):
         ncols = len(cls.import_file_spec)
 
@@ -296,12 +281,28 @@ class LoadMixin:
         return data
 
 
-class Model(MibiosModel, LoadMixin):
+class Model(MibiosModel):
     history = None
     objects = Manager()
 
     class Meta:
         abstract = True
+        default_manager_name = 'objects'
+
+    @classmethod
+    def get_accession_field(cls):
+        """
+        Return the accession / human-facing UID field
+
+        Usually this is the first non-pk unique field, going by class
+        declaration order.
+
+        Raises KeyError if no such field exists.
+        """
+        return [
+            i for i in cls._meta.get_fields()
+            if hasattr(i, 'unique') and i.unique and not i.primary_key
+        ][0]
 
 
 class VocabularyModel(Model):
@@ -311,7 +312,7 @@ class VocabularyModel(Model):
     max_length = 64
     entry = models.CharField(max_length=max_length, unique=True, blank=False)
 
-    class Meta:
+    class Meta(Model.Meta):
         abstract = True
         ordering = ['entry']
 

@@ -11,11 +11,11 @@ from django.conf import settings
 from django.db.transaction import atomic, set_rollback
 
 from mibios_umrad.models import Lineage, Taxon, UniRef100
-from mibios_umrad.manager import BaseManager
+from mibios_umrad.manager import Manager
 from mibios_umrad.utils import ProgressPrinter, ReturningGenerator
 
 
-class SequenceLikeLoader(BaseManager):
+class SequenceLikeLoader(Manager):
     """ Manager for the SequenceLike abstrasct model """
 
     def get_fasta_path(self, sample):
@@ -338,7 +338,7 @@ class ContigLikeLoader(SequenceLikeLoader):
         through = self.model.get_field('taxon').remote_field.through
         us = self.model._meta.model_name + '_id'
         objs = (through(**{us: i, 'taxon_id': j}) for i, j in rels)
-        BaseManager.bulk_create_wrapper(through.objects.bulk_create)(objs)
+        self.bulk_create_wrapper(through.objects.bulk_create)(objs)
 
 
 class ContigClusterLoader(ContigLikeLoader):

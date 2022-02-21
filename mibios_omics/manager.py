@@ -3,12 +3,12 @@ from logging import getLogger
 from django.conf import settings
 from django.db.transaction import atomic, set_rollback
 
-from mibios_umrad.manager import BaseManager
+from mibios_umrad.manager import Manager
 
 log = getLogger(__name__)
 
 
-class SampleManager(BaseManager):
+class SampleManager(Manager):
     """ Manager for the Sample """
     def get_file(self):
         return settings.OMICS_DATA_ROOT / 'sample_list.txt'
