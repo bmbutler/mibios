@@ -3,14 +3,14 @@ Module for data load managers
 """
 from collections import defaultdict
 from functools import wraps
-from itertools import chain, groupby, zip_longest
+from itertools import chain, groupby, islice, zip_longest
 from operator import itemgetter
 import os
 
 from django.conf import settings
 from django.db.transaction import atomic, set_rollback
 
-from mibios_umrad.models import Lineage, Taxon, UniRef100
+from mibios_umrad.models import Lineage, TaxName, Taxon, UniRef100
 from mibios_umrad.manager import Manager
 from mibios_umrad.utils import ProgressPrinter, ReturningGenerator
 
@@ -187,6 +187,7 @@ class ContigLikeLoader(SequenceLikeLoader):
             field: self.model._meta.get_field(field).null
             for field in other
         }
+        skip_count = 0
 
         # zip_longest: ensures (over just zip) that cov.value gets populated
         for obj, row in zip_longest(objs, cov):
@@ -212,11 +213,24 @@ class ContigLikeLoader(SequenceLikeLoader):
                     if null_allowed[fk_field_name]:
                         pass
                     else:
+                        # FIXME (error handling)
+                        # required FK missing? Comes probably from non-existing
+                        # LCA/Taxname/besthit or similar.  Now, in development,
+                        # this is to be expected, while source data is based on
+                        # a mix of different reference versions, we want to
+                        # skip these,later we might want to raise here
+                        skip_count += 1
+                        break  # skips yield below
+                        # alternatively raise:
                         raise RuntimeError(
                             f'{obj=} {fk_field_name=} {obj_id=}'
                         ) from e
 
-            yield obj
+            else:
+                yield obj
+
+        if skip_count > 0:
+            print(f'WARNING: (_join_cov_data): skipped {skip_count} objects')
 
     def parse_contigs_file(self, sample):
         """
@@ -279,15 +293,26 @@ class ContigLikeLoader(SequenceLikeLoader):
             root_lin = str(Taxon.objects.get(taxid=1).lineage)
             new = defaultdict(list)
             str2pk = {}
+            missing_taxnames = set()
             for i, val in data['lca'].items():
                 if val.startswith('NCA-') or val == 'NOVEL':
                     # FIXME: what to do with these?
                     val = root_lin
-                lin, missing_key = str2lin(val)
+                try:
+                    lin, missing_key = str2lin(val)
+                except TaxName.DoesNotExist as e:
+                    missing_taxnames.add(e.args[0])  # add (name, rankid) tuple
+                    continue
                 if lin is None:
                     new[missing_key].append(i)
                 else:
                     str2pk[i] = lin.pk
+
+            if missing_taxnames:
+                print(f'WARNING: got {len(missing_taxnames)} unknown taxnames '
+                      'in lca column:',
+                      ' '.join([str(i) for i in islice(missing_taxnames, 5)]))
+            del missing_taxnames
 
             # make missing LCA lineages
             if new:
@@ -311,10 +336,24 @@ class ContigLikeLoader(SequenceLikeLoader):
             uniref2pk = dict(
                 UniRef100.objects.values_list('accession', 'pk').iterator()
             )
-            data['besthit'] = {
-                i: uniref2pk[j]
-                for i, j in data['besthit'].items()
-            }
+            besthit_data = {}
+            missing_uniref100 = set()
+            for i, j in data['besthit'].items():
+                try:
+                    besthit_data[i] = uniref2pk[j]
+                except KeyError:
+                    # unknown uniref100 id
+                    missing_uniref100.add(j)
+
+            data['besthit'] = besthit_data
+            if missing_uniref100:
+                print(
+                    f'WARNING: besthit column had {len(missing_uniref100)} '
+                    'distinct unknown uniref100 IDs:',
+                    ' '.join([i for i in islice(missing_uniref100, 5)])
+                )
+            del besthit_data, missing_uniref100
+
         return data
 
     def set_taxon_m2m_relations(self, sample, taxon_m2m_data):
