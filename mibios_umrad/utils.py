@@ -1,6 +1,6 @@
 from datetime import datetime
 from itertools import zip_longest
-from threading import Timer
+from threading import Lock, Timer
 from string import Formatter
 import sys
 
@@ -50,9 +50,9 @@ class ProgressPrinter():
     restarting as long as the update() method is called with changing progress
     counts.
 
-    After the timer has stopped, even after calling finish() or stop() the
-    progress printing can be resumed by calling update() with a different state
-    than the last one.
+    After the timer has stopped, even after calling finish() the progress
+    printing can be resumed by calling update() with a different state than the
+    last one.
     """
     DEFAULT_TEMPLATE = '{progress}'
     DEFAULT_INTERVAL = 1.0  # seconds
@@ -69,22 +69,28 @@ class ProgressPrinter():
         self.output_file = output_file
         self.show_rate = show_rate
         self.to_terminal = output_file.isatty()
-
-        self._reset_state()
+        self.current = None
+        self.timer_lock = Lock()
+        self.timer = None
 
     def __call__(self, it):
+        self._reset_state()
         for elem in it:
             yield elem
             self.inc()
         self.finish()
 
     def _reset_state(self):
-        """ reset the variable state """
+        """
+        reset the variable state
+
+        Should be called once before anything interesting is done
+        """
         self.current = 0
         self.last = None
         self.at_previous_ring = None
-        self.timer = None
-        self.timer_running = False
+        self.timer_lock.acquire
+        self.ring_time = None
         self.time_zero = datetime.now()
 
     def _init_template(self, template):
@@ -113,47 +119,59 @@ class ProgressPrinter():
 
         return template, template_var
 
-    def _start_timer(self):
-        self.timer = Timer(self.interval, self._ring)
-        self.timer.start()
-        self.timer_running = True
+    def inc(self, step=1):
+        """
+        increment progress
 
-    def stop(self):
-        """ Stop the timer """
+        Turn on time if needed
+        """
+        if self.current is None:
+            self._reset_state()
+
+        if self.current == 0:
+            self._set_timer()
+
+        self.last = self.current
+        self.current += step
+
+    def _set_timer(self, reset=False):
+        """
+        Set or reset the timer
+
+        param: reset -- True if we were called via _ring(), assumed to be False
+                        for the initial call via inc()
+        """
+        # this can be called (1) by inc() of main thread and (2) by _ring() of
+        # timer thread.  In either case, we (re-)set the timer only if we get
+        # the non-blocking lock and think that no timer is currently running.
+        # If the lock it taken, assume the other thread will reset it.
+        if self.timer_lock.acquire(blocking=False):
+            if reset or self.timer is None:
+                self.timer = Timer(self.interval, self._ring)
+                self.timer.start()
+            else:
+                # never start a second timer, we shouldn't get here by normal
+                # use, but someone might call _set_timer() manually or so
+                pass
+            self.timer_lock.release()
+
+    def finish(self):
+        """ Stop the timer and print a final result """
+        if self.current is None:
+            # zero-length iterator?
+            # populate variables needed for printing
+            self._reset_state()
+        total_seconds = (datetime.now() - self.time_zero).total_seconds()
+
+        self.timer_lock.acquire()
+        # get lock so we don't cancel while also trying to re-set the timer in
+        # _set_timer()
         try:
             self.timer.cancel()
         except Exception:
             pass
-        self.timer_running = False
+        self.timer_lock.release()
 
-    def update(self, current):
-        """
-        Update current state
-
-        turns on timer if needed
-        """
-        self.last = self.current
-        self.current = current
-
-        if not self.timer_running and current != self.last:
-            # turn on
-            self._start_timer()
-
-    def inc(self, step=1):
-        """
-        Assume we're progressing by counting integers and increment
-        """
-        count = self.current
-        if count is None:
-            count = step
-        else:
-            count += step
-        self.update(count)
-
-    def finish(self):
-        """ Stop the timer but print a final result """
-        self.stop()
-        total_seconds = (datetime.now() - self.time_zero).total_seconds()
         avg_txt = (f'(total: {total_seconds:.1f}s '
                    f'avg: {self.current / total_seconds:.1f}/s)')
         self.print_progress(avg_txt=avg_txt, end='\n')  # print with totals/avg
@@ -162,15 +180,22 @@ class ProgressPrinter():
     def _ring(self):
         """ Print and restart timer """
         if self.current == 0:
+            # finish() called
             return
 
-        if self.current == self.last:
-            return
+        now = datetime.now()
+        self.ring_time = now
 
         self.print_progress()
-        self.last = self.current  # ensure we'll turn off without updates
+
+        if self.current == self.at_previous_ring:
+            # maybe we just iterate very slowly relative to the timer interval,
+            # but probably some exception occurred in the main thread; have to
+            # stop the timer or we'll get an infinite loop
+            return
+
         self.at_previous_ring = self.current
-        self._start_timer()
+        self._set_timer(reset=True)
 
     def print_progress(self, avg_txt='', end=''):
         """ Do the progress printing """
