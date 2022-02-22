@@ -63,21 +63,26 @@ class ProgressPrinter():
             interval=DEFAULT_INTERVAL,
             output_file=sys.stdout,
             show_rate=True,
+            end=None,
     ):
         self.template, self.template_var = self._init_template(template)
         self.interval = interval
         self.output_file = output_file
         self.show_rate = show_rate
         self.to_terminal = output_file.isatty()
+        self.end = end
+        self.it = None
         self.current = None
         self.timer_lock = Lock()
         self.timer = None
 
     def __call__(self, it):
+        self.it = it
         self._reset_state()
         for elem in it:
             yield elem
             self.inc()
+        self.it = None
         self.finish()
 
     def _reset_state(self):
@@ -92,6 +97,16 @@ class ProgressPrinter():
         self.timer_lock.acquire
         self.ring_time = None
         self.time_zero = datetime.now()
+        if self.end is None:
+            if self.it is None:
+                self._end = None
+            else:
+                if isinstance(self.it, list):
+                    self._end = len(self.it)
+                else:
+                    self._end = None
+        else:
+            self._end = self.end
 
     def _init_template(self, template):
         """
@@ -197,6 +212,20 @@ class ProgressPrinter():
         self.at_previous_ring = self.current
         self._set_timer(reset=True)
 
+    def estimate(self):
+        """
+        get current percentage and estimated finish time
+
+        Returns None if we havn't made any progress yet or we don't know the
+        length of the iterator.
+        """
+        if self._end in [None, 0] or self.current == 0:
+            return None
+
+        frac = self.current / self._end
+        remain = (self.ring_time - self.time_zero).total_seconds() * (self._end / self.current - 1)  # noqa:E501
+        return frac, remain
+
     def print_progress(self, avg_txt='', end=''):
         """ Do the progress printing """
         if self.template_var is None:
@@ -217,7 +246,13 @@ class ProgressPrinter():
                 # math errors if current is not a number?
                 pass
             else:
-                txt += f' ({rate:.0f}/s)'
+                est = self.estimate()
+                if est is None:
+                    # just the rate
+                    txt += f' ({rate:.0f}/s)'
+                else:
+                    frac, remain = est
+                    txt += f' ({frac:.0%} rate:{rate:.0f}/s remaining:{remain:.0f}s)'  # noqa:E501
 
         if self.to_terminal:
             txt = '\r' + txt
