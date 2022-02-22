@@ -13,8 +13,7 @@ from mibios_umrad.models import Taxon, Lineage, UniRef100
 from mibios_umrad.utils import ProgressPrinter
 
 from .fields import DataPathField
-from .manager import SampleManager
-from .load import ContigClusterLoader, GeneLoader
+from . import managers
 
 
 log = getLogger(__name__)
@@ -64,7 +63,7 @@ class AbstractSample(Model):
         help_text='number of reads mapped to genes',
     )
 
-    objects = SampleManager()
+    objects = managers.SampleManager()
 
     class Meta:
         abstract = True
@@ -565,7 +564,7 @@ class ContigCluster(ContigLike):
     bin_m99 = models.ForeignKey(BinMET99, **fk_opt, related_name='members')
     lca = models.ForeignKey(Lineage, **fk_opt)  # opt. for contigs w/o genes
 
-    loader = ContigClusterLoader()
+    loader = managers.ContigClusterLoader()
 
     class Meta:
         default_manager_name = 'objects'
@@ -600,7 +599,7 @@ class Gene(ContigLike):
     strand = models.CharField(choices=STRAND_CHOICE, max_length=1)
     besthit = models.ForeignKey(UniRef100, **fk_opt)
 
-    loader = GeneLoader()
+    loader = managers.GeneLoader()
 
     class Meta:
         default_manager_name = 'objects'
