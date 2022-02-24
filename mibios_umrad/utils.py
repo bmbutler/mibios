@@ -1,5 +1,7 @@
 from datetime import datetime
 from itertools import zip_longest
+from operator import length_hint
+import os
 from threading import Lock, Timer
 from string import Formatter
 import sys
@@ -63,14 +65,14 @@ class ProgressPrinter():
             interval=DEFAULT_INTERVAL,
             output_file=sys.stdout,
             show_rate=True,
-            end=None,
+            length=None,
     ):
         self.template, self.template_var = self._init_template(template)
         self.interval = interval
         self.output_file = output_file
         self.show_rate = show_rate
         self.to_terminal = output_file.isatty()
-        self.end = end
+        self.length = length
         self.it = None
         self.current = None
         self.timer_lock = Lock()
@@ -89,24 +91,32 @@ class ProgressPrinter():
         """
         reset the variable state
 
-        Should be called once before anything interesting is done
+        Must be called before inc() or the timer is started
         """
         self.current = 0
         self.last = None
         self.at_previous_ring = None
-        self.timer_lock.acquire
+        self.max_width = 0
         self.ring_time = None
         self.time_zero = datetime.now()
-        if self.end is None:
-            if self.it is None:
-                self._end = None
-            else:
-                if isinstance(self.it, list):
-                    self._end = len(self.it)
-                else:
-                    self._end = None
+
+        # get length is possible:
+        self._length = None
+        self.file_size = None
+        if self.length is None:
+            try:
+                self.file_size = os.stat(self.it.fileno()).st_size
+            except Exception:
+                self.file_size = None
+
+                hint = length_hint(self.it)
+                if hint > 0:
+                    # 0 is the default in case there is no length or length
+                    # hint, it seems we can't tell this from an actual length
+                    # of zero
+                    self._length = hint
         else:
-            self._end = self.end
+            self._length = self.length
 
     def _init_template(self, template):
         """
@@ -219,11 +229,31 @@ class ProgressPrinter():
         Returns None if we havn't made any progress yet or we don't know the
         length of the iterator.
         """
-        if self._end in [None, 0] or self.current == 0:
-            return None
+        if self.current == 0:
+            # too early for estimates (and div by zero)
+            return
 
-        frac = self.current / self._end
-        remain = (self.ring_time - self.time_zero).total_seconds() * (self._end / self.current - 1)  # noqa:E501
+        if self.file_size is not None and self.file_size > 0:
+            # best effort to get stream position, hopefully in bytes
+            try:
+                pos = self.it.tell()
+            except Exception:
+                # for iterating text io tell() is diabled?
+                # (which doesn't seem to be documented?)
+                try:
+                    pos = self.it.buffer.tell()
+                except Exception:
+                    return
+            frac = pos / self.file_size
+
+        elif self._length is not None and self._length > 0:
+            frac = self.current / self._length
+        else:
+            # no length info
+            return
+
+        cur_duration = (self.ring_time - self.time_zero).total_seconds()
+        remain = cur_duration / frac - cur_duration
         return frac, remain
 
     def print_progress(self, avg_txt='', end=''):
@@ -253,6 +283,9 @@ class ProgressPrinter():
                 else:
                     frac, remain = est
                     txt += f' ({frac:.0%} rate:{rate:.0f}/s remaining:{remain:.0f}s)'  # noqa:E501
+
+        self.max_width = max(self.max_width, len(txt))
+        txt = txt.ljust(self.max_width)
 
         if self.to_terminal:
             txt = '\r' + txt
