@@ -314,3 +314,41 @@ def chunker(iterable, n):
             yield tuple(i for i in grp if i is not sentinel)
         else:
             yield grp
+
+
+class SizedIterator:
+    """
+    a wrapper to attach a known length to an iterator
+
+    Example usage:
+
+    g = (do_something(i) for i in a_list)
+    g = SizedIterator(g, len(a_list))
+    len(g)
+
+    """
+    def __init__(self, obj, length):
+        self._it = iter(obj)
+        self._length = length
+
+    def __iter__(self):
+        return self._it
+
+    def __next__(self):
+        return next(self._it)
+
+    def __len__(self):
+        return self._length
+
+
+def siter(obj, length=None):
+    """
+    Return a sized iterator
+
+    Convenience function for using the SizedIterator.  If length is not given
+    then len(obj) must work.  Compare to the one-argument form of the built-in
+    iter() function
+    """
+    if length is None:
+        length = len(obj)
+    return SizedIterator(obj, length)

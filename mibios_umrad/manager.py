@@ -1,7 +1,7 @@
 from collections import defaultdict
 from itertools import groupby, islice, zip_longest
 from logging import getLogger
-from operator import itemgetter
+from operator import itemgetter, length_hint
 import os
 
 from django.conf import settings
@@ -12,7 +12,7 @@ from django.utils.module_loading import import_string
 
 from mibios.models import Manager as MibiosManager
 
-from .utils import ProgressPrinter
+from .utils import ProgressPrinter, siter
 
 
 log = getLogger(__name__)
@@ -60,8 +60,11 @@ class BulkCreateWrapperMixin:
             if progress_text is None:
                 progress_text = f'{model_name} records created'
 
-            pp = ProgressPrinter(progress_text)
             objs = iter(objs)
+            pp = ProgressPrinter(
+                progress_text,
+                length=length_hint(objs) or None,
+            )
 
             while True:
                 batch = list(islice(objs, batch_size))
@@ -838,10 +841,10 @@ class TaxonLoader(Loader):
         Lineage = import_string('mibios_umrad.models.Lineage')
         taxid2linpk = Lineage.loader.load(path)
 
-        self.bulk_create((
+        self.bulk_create(siter((
             self.model(taxid=i, lineage_id=j)
             for i, j in taxid2linpk.items()
-        ))
+        ), len(taxid2linpk)))
 
         set_rollback(dry_run)
 
