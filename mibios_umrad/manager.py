@@ -2,6 +2,7 @@ from collections import defaultdict
 from itertools import groupby, islice, zip_longest
 from logging import getLogger
 from operator import itemgetter, length_hint
+from pathlib import Path
 import os
 
 from django.conf import settings
@@ -12,7 +13,7 @@ from django.utils.module_loading import import_string
 
 from mibios.models import Manager as MibiosManager
 
-from .utils import ProgressPrinter, siter
+from .utils import CSV_Spec, ProgressPrinter, siter
 
 
 log = getLogger(__name__)
@@ -112,7 +113,7 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
         """
         raise NotImplementedError('must be implemented in inheriting model')
 
-    import_file_spec = None
+    spec = None
     """
     A list of field names or list of tuples matching file headers to field
     names.  Use list of tuples if import file has a header.  Otherwise use the
@@ -122,28 +123,14 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
     def contribute_to_class(self, model, name):
         super().contribute_to_class(model, name)
         # get spec from model if non is declared in loader class
-        if self.import_file_spec is None:
+        if self.spec is None:
             try:
-                self.import_file_spec = model.import_file_spec
+                self.spec = model.loader_spec
             except AttributeError:
                 pass
 
-    def get_col_names(self):
-        """ get input file column names from spec """
-        if isinstance(self.import_file_spec[0], tuple):
-            return tuple((i[0] for i in self.import_file_spec))
-        else:
-            return self.import_file_spec
-
-    def get_col_keys(self):
-        """ get column keys / fieldnames for import file columns """
-        if isinstance(self.import_file_spec[0], tuple):
-            return tuple((i[1] for i in self.import_file_spec))
-        else:
-            return self.import_file_spec
-
     def load(self, max_rows=None, start=0, dry_run=False, sep='\t',
-             parse_only=False):
+             parse_only=False, file=None, template={}):
         """
         Load data from file
 
@@ -155,16 +142,22 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
 
         May assume empty table ?!?
         """
-        with self.get_file().open() as f:
+        # ensure file is a Path
+        if file is None:
+            file = self.get_file()
+        elif isinstance(file, str):
+            file = Path(file)
+
+        with file.open() as f:
             print(f'File opened: {f.name}')
             os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
-            if self.import_file_spec is None:
-                raise NotImplementedError(f'{self}: import_file_spec not set')
+            if self.spec is None:
+                raise NotImplementedError(f'{self}: loader spec not set')
 
-            if isinstance(self.import_file_spec[0], tuple):
+            if self.spec.has_header:
                 # check header
                 head = f.readline().rstrip('\n').split(sep)
-                cols = self.get_col_names()
+                cols = self.spec.all_cols
                 for i, (a, b) in enumerate(zip(head, cols), start=1):
                     # ignore column number differences here, will catch later
                     if a != b:
@@ -172,10 +165,10 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
                             f'Unexpected header row: first mismatch in column '
                             f'{i}: got "{a}", expected "{b}"'
                         )
-                if len(head) != len(cols):
+                if len(head) != len(self.spec):
                     raise ValueError(
-                        f'expecting {len(cols)} columns but got {len(head)} '
-                        'in header row'
+                        f'expecting {len(self.spec)} columns but got '
+                        f'{len(head)} in header row'
                     )
             else:
                 # assume no header
@@ -192,21 +185,43 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
             if parse_only:
                 return self._parse_lines(file_it, sep=sep)
 
-            return self._load_lines(file_it, sep=sep, dry_run=dry_run)
+            return self._load_lines(
+                file_it,
+                template=template,
+                sep=sep,
+                dry_run=dry_run,
+            )
 
     @atomic
-    def _load_lines(self, lines, sep='\t', dry_run=False):
-        ncols = len(self.import_file_spec)
+    def _load_lines(self, lines, sep='\t', dry_run=False, template={}):
+        ncols = len(self.spec)
+
+        split = self._split_m2m_input
+        # assumes spec.keys are the actual field names
+        fields = [self.model._meta.get_field(i) for i in self.spec.keys]
+
+        # loading FK acc->pk mappings
+        fkmap = {}
+        for i in fields:
+            if not i.many_to_one:
+                continue
+            print(f'Loading {i.related_model._meta.verbose_name} data...',
+                  end='', flush=True)
+            fkmap[i.name] = dict((
+                i.related_model.objects
+                .values_list(i.related_model.get_accession_lookup_single(), 'pk')  # noqa: E501
+                .iterator()
+            ))
+            print('[OK]')
 
         objs = []
         m2m_data = {}
-        split = self._split_m2m_input
-        # assumes get_col_keys() returns field names only
-        # TODO: allow fields to be skipped -- but WHY?
-        fields = [self.model._meta.get_field(i) for i in self.get_col_keys()]
-        accession_field_name = self.model.get_accession_field().name
+        missing_fks = defaultdict(set)
+        skip_count = 0
+        pk = None
+
         for line in lines:
-            obj = self.model()
+            obj = self.model(**template)
             m2m = {}
             row = line.rstrip('\n').split(sep)
 
@@ -216,44 +231,68 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
                     f'{ncols=}'
                 )
 
-            for i, field in enumerate(fields):
+            for field, value in zip(fields, self.spec.cut(row)):
                 if field.many_to_many:
-                    m2m[field.name] = split(row[i])
+                    m2m[field.name] = split(value)
+                elif field.many_to_one:
+                    try:
+                        pk = fkmap[field.name][value]
+                    except KeyError:
+                        # FK target object does not exist
+                        missing_fks[field.name].add(value)
+                        if field.null:
+                            pass
+                        else:
+                            skip_count += 1
+                            break  # avoids else, forgetting obj
+                    else:
+                        setattr(obj, field.name + '_id', pk)
                 else:
-                    if not row[i] == '':
+                    if not value == '':
                         # TODO: find out why leaving '' in for int fields fails
                         # ValueError @ django/db/models/fields/__init__.py:1825
-                        setattr(obj, field.name, row[i])
-
-            objs.append(obj)
-            m2m_data[getattr(obj, accession_field_name)] = m2m
+                        setattr(obj, field.name, value)
+            else:
+                objs.append(obj)
+                if m2m:
+                    m2m_data[obj.get_accessions()] = m2m
+        del fkmap, field, value, row, pk, line, obj, m2m
 
         if not objs:
             # empty file?
             return
 
-        m2m_fields = list(m2m.keys())
-        del m2m
+        for fname, bad_ids in missing_fks.items():
+            print(f'WARNING: found {len(bad_ids)} distinct unknown {fname}'
+                  'IDs:', ' '.join([str(i) for i in islice(bad_ids, 5)]))
+        if skip_count:
+            print(f'WARNING: skipped {skip_count} rows due to unknown but '
+                  f'non-null FK IDs')
+
+        if missing_fks:
+            del fname, bad_ids
+        del missing_fks, skip_count
 
         self.bulk_create(objs)
         del objs
 
-        # get accession -> pk map
-        accpk = dict(
-            self.model.objects.values_list(accession_field_name, 'pk')
-            .iterator()
-        )
+        if m2m_data:
+            # get accession -> pk map
+            qs = self.model.objects.values_list(
+                *self.model.get_accession_lookups(),
+                'pk',
+            )
+            accpk = {tuple(accs): pk for *accs, pk in qs.iterator()}
 
-        # replace accession with pk in m2m data keys
-        m2m_data = {accpk[i]: data for i, data in m2m_data.items()}
-        del accpk
+            # replace accession with pk in m2m data keys
+            m2m_data = {accpk[i]: data for i, data in m2m_data.items()}
+            del accpk
 
-        # collecting all m2m entries
-        for i in m2m_fields:
-            self._update_m2m(i, m2m_data)
+            # collecting all m2m entries
+            for field in (i for i in fields if i.many_to_many):
+                self._update_m2m(field.name, m2m_data)
 
-        if dry_run:
-            set_rollback(True)
+        set_rollback(dry_run)
 
     def _update_m2m(self, field_name, m2m_data):
         """
@@ -270,11 +309,10 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
         print(f'm2m {field_name}: ', end='', flush=True)
         field = self.model._meta.get_field(field_name)
         model = field.related_model
-        acc_field = model.get_accession_field()
-        acc_field_name = acc_field.name
 
         # extract and flatten all accessions for field in m2m data
         accs = (i for objdat in m2m_data.values() for i in objdat[field_name])
+        acc_field = model.get_accession_field_single()
         if acc_field.get_internal_type().endswith('IntegerField'):
             # cast to right type as needed (integers only?)
             accs = (int(i) for i in accs)
@@ -286,7 +324,7 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
 
         # get existing
         qs = model.objects.all()
-        qs = qs.values_list(acc_field_name, 'pk')
+        qs = qs.values_list(model.get_accession_lookup_single(), 'pk')
         a2pk = dict(qs.iterator())
         print(f'known: {len(a2pk)} ', end='', flush=True)
 
@@ -346,12 +384,10 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
         return items
 
     def _parse_lines(self, lines, sep='\t'):
-        ncols = len(self.import_file_spec)
+        ncols = len(self.spec)
 
         data = []
         split = self._split_m2m_input
-        # TODO: allow fields to be skipped
-        col_keys = self.get_col_keys()
 
         for line in lines:
             row = line.rstrip('\n').split(sep)
@@ -363,7 +399,7 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
                 )
 
             rec = {}
-            for key, value in zip(col_keys, row):
+            for key, value in zip(self.spec.all_keys, row):
                 if key is None:
                     continue
                 try:
@@ -396,7 +432,7 @@ class CompoundLoader(Loader):
 
         refdb_names = [
             i for _, i in CompoundEntry.DB_CHOICES
-            if i in [j[1] for j in self.import_file_spec]
+            if i in self.spec.keys
         ]
 
         # get data and split m2m fields
@@ -526,7 +562,7 @@ class CompoundLoader(Loader):
 
 
 class FuncRefDBEntryLoader(Loader):
-    import_file_spec = ('accession', 'names')
+    spec = CSV_Spec('accession', 'names')
 
     def get_file(self):
         return settings.UMRAD_ROOT / \
@@ -599,7 +635,7 @@ class ReactionLoader(Loader):
 
         refdbs = [
             i for _, i in ReactionEntry.DB_CHOICES
-            if i in [j[1] for j in self.import_file_spec]
+            if i in self.spec.keys
         ]
         comp_cols = {
             ReactionEntry.DB_KEGG: ('left_kegg', 'right_kegg'),
@@ -609,7 +645,7 @@ class ReactionLoader(Loader):
 
         # get data and split m2m fields
         data = []
-        m2mcols = [i for i in self.get_col_keys() if i not in ['accession', 'dir']]  # noqa:E501
+        m2mcols = [i for i in self.spec.all_keys if i not in ['accession', 'dir']]  # noqa:E501
         for row in super().load(max_rows=max_rows, parse_only=True):
             for i in m2mcols:
                 row[i] = self._split_m2m_input(row[i])
@@ -872,7 +908,9 @@ class Manager(BulkCreateWrapperMixin, MibiosManager):
         hence the default version should only be used with controlled
         vocabulary or similarly simple models.
         """
-        accession_field_name = self.model.get_accession_field().name
+        # TODO: if need arises we can implement support for values to
+        # contain tuples of values
+        attr_name = self.model.get_accession_lookup_single()
         model = self.model
-        objs = (model(**{accession_field_name: i}) for i in values)
+        objs = (model(**{attr_name: i}) for i in values)
         return self.bulk_create(objs)

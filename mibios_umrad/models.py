@@ -17,6 +17,7 @@ from .model_utils import (
     ch_opt, fk_opt, fk_req, VocabularyModel, delete_all_objects_quickly,
     LoadMixin, Manager, Model
 )
+from .utils import CSV_Spec
 
 
 log = getLogger(__name__)
@@ -93,7 +94,7 @@ class Compound(Model):
 
     # spec: 2nd item is either base compound field name or compound model name
     # for the reverse relation
-    import_file_spec = (
+    loader_spec = CSV_Spec(
         ('id', 'accession'),
         ('form', 'formula'),
         ('char', 'charge'),
@@ -193,7 +194,7 @@ class Reaction(Model):
 
     # no fields here!
 
-    import_file_spec = (
+    loader_spec = CSV_Spec(
         ('ID', 'accession'),
         ('dir', 'dir'),
         ('left_kegg', 'left_kegg'),
@@ -640,7 +641,6 @@ class UniRef100(LoadMixin, Model):
         refdb_keys = [i for _, i in FuncRefDBEntry.DB_CHOICES]
         rxndb_keys = [i for _, i in ReactionEntry.DB_CHOICES]
         field_names = [i.name for i in cls._meta.get_fields()]
-        accession_field_name = cls.get_accession_field().name
 
         m2mcols = []
         for _, i in cls.import_file_spec:
@@ -706,7 +706,7 @@ class UniRef100(LoadMixin, Model):
                         f'{refdb_keys=}'
                     )
 
-            acc = getattr(obj, accession_field_name)
+            acc = obj.get_accession_single()
             if acc in m2m_data:
                 # duplicate row !!?!??
                 print(f'WARNING: skipping row with duplicate UniRef100 '
@@ -746,7 +746,9 @@ class UniRef100(LoadMixin, Model):
 
         # get accession -> pk map
         acc2pk = dict(
-            cls.objects.values_list(accession_field_name, 'pk').iterator()
+            cls.objects
+            .values_list(cls.get_accession_lookup_single(), 'pk')
+            .iterator()
         )
 
         # replace accession with pk in m2m data keys

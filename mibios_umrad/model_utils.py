@@ -102,7 +102,6 @@ class LoadMixin:
         split = cls._split_m2m_input
         # TODO: allow fields to be skipped
         fields = [cls._meta.get_field(i) for _, i in cls.import_file_spec]
-        accession_field_name = cls.get_accession_field().name
         for line in lines:
             obj = cls()
             m2m = {}
@@ -124,7 +123,7 @@ class LoadMixin:
                         setattr(obj, field.name, row[i])
 
             objs.append(obj)
-            m2m_data[getattr(obj, accession_field_name)] = m2m
+            m2m_data[obj.get_accession_single()] = m2m
 
         if not objs:
             # empty file?
@@ -138,7 +137,9 @@ class LoadMixin:
 
         # get accession -> pk map
         accpk = dict(
-            cls.objects.values_list(accession_field_name, 'pk').iterator()
+            cls.objects
+            .values_list(cls.get_accession_field_single(), 'pk')
+            .iterator()
         )
 
         # replace accession with pk in m2m data keys
@@ -168,8 +169,7 @@ class LoadMixin:
         print(f'm2m {field_name}: ', end='', flush=True)
         field = cls._meta.get_field(field_name)
         model = field.related_model
-        acc_field = model.get_accession_field()
-        acc_field_name = acc_field.name
+        acc_field = model.get_accession_field_single()
 
         # extract and flatten all accessions for field in m2m data
         accs = (i for objdat in m2m_data.values() for i in objdat[field_name])
@@ -184,7 +184,7 @@ class LoadMixin:
 
         # get existing
         qs = model.objects.all()
-        qs = qs.values_list(acc_field_name, 'pk')
+        qs = qs.values_list(acc_field.name, 'pk')
         a2pk = dict(qs.iterator())
         print(f'known: {len(a2pk)} ', end='', flush=True)
 
@@ -290,19 +290,129 @@ class Model(MibiosModel):
         default_manager_name = 'objects'
 
     @classmethod
-    def get_accession_field(cls):
+    def get_accession_fields(cls):
         """
-        Return the accession / human-facing UID field
+        Return the accession / human-facing UID fields
+
+        Returns a tuple of fields.
 
         Usually this is the first non-pk unique field, going by class
         declaration order.
 
-        Raises KeyError if no such field exists.
+        If no such field exist, then return the first tuple of fields declared
+        as "unique_together" if such a declaration took place.
+
+        Raises KeyError in all other cases.
         """
-        return [
+        unique_fields = [
             i for i in cls._meta.get_fields()
             if hasattr(i, 'unique') and i.unique and not i.primary_key
-        ][0]
+        ]
+        if unique_fields:
+            return (unique_fields[0], )
+
+        if cls._meta.unique_together:
+            return tuple((
+                cls._meta.get_field(i)
+                for i in cls._meta.unique_together[0]
+            ))
+
+        raise LookupError('no unique or unique_together fields found')
+
+    @classmethod
+    def get_accession_field_single(cls):
+        """
+        Return the accession / natural key / human-facing UID field
+
+        Use this instead of get_accession_fields() if the calling site can only
+        handle a single such accession field.  If this method is called on a
+        model that has multiple "unique_together" fields a RuntimeError is
+        raised.
+        """
+        fields = cls.get_accession_fields()
+        if len(fields) > 1:
+            raise RuntimeError('model has multiple "unique_together" fields')
+        return fields[0]
+
+    @classmethod
+    def get_accession_lookups(cls):
+        """
+        Get lookups/accessors to retrieve accession values
+
+        Similar to get_accesion_fields, but returns the field names and in case
+        of foreign key fields, returns the lookup to the FK's models accession.
+        """
+        ret = []
+        for i in cls.get_accession_fields():
+            attr_name = i.name
+            if i.many_to_one:
+                attr_name += '_id'
+            ret.append(attr_name)
+        return tuple(ret)
+
+    @classmethod
+    def get_accession_lookup_single(cls):
+        """
+        Get lookup/accessor/fieldname to retrieve the accession value
+
+        Similar to get_accession_field_single, but returns the field name or in
+        case of a foreign key field, returns the lookup to the FK's models
+        accession.
+
+        Use this method instead of get_accession_lookups() if the calling site
+        can only handle a single such lookup.
+
+        Will raise a RuntimeError of called on a model with multiple
+        "unique_together" accession fields.
+        """
+        names = cls.get_accession_lookups()
+        if len(names) > 1:
+            raise RuntimeError('model has multiple "unique_together" fields')
+        return names[0]
+
+    def get_accessions(self):
+        """
+        Return instance-identifying value(s)
+
+        For FK fields this returns the pk
+        """
+        accs = []
+        for field in self.get_accession_fields():
+            if field.many_to_one:
+                attr_name = field.name + '_id'
+            else:
+                attr_name = field.name
+
+            accs.append(getattr(self, attr_name))
+        return tuple(accs)
+
+    def get_accession_single(self):
+        """
+        Return accession/natural key value
+
+        For FK fields this returns the pk.  Use this method instead of
+        get_accessions() is the calling site can not handle tuples but only a
+        single value.
+
+        Raises a RuntimeError if called on a model with multiple
+        "unique_together" accession fields.
+        """
+        values = self.get_accessions()
+        if len(values) > 1:
+            raise RuntimeError('model has multiple "unique_together" fields')
+        return values[0]
+
+    def set_accession(self, *values):
+        """
+        Set instance-identifying value(s)
+        """
+        for field, value in zip(self.get_accession_fields(), values):
+            if field.many_to_one:
+                attr_name = field.name + '_id'
+            else:
+                attr_name = field.name
+
+            setattr(self, attr_name, value)
 
 
 class VocabularyModel(Model):

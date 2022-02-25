@@ -316,6 +316,47 @@ def chunker(iterable, n):
             yield grp
 
 
+class CSV_Spec:
+    def __init__(self, *column_specs):
+        if not column_specs:
+            raise ValueError('at least one column needs to be declared')
+
+        self._spec = column_specs
+        if isinstance(column_specs[0], tuple):
+            self.has_header = True
+            for i in self._spec:
+                if not isinstance(i, tuple) or len(i) != 2:
+                    raise ValueError(
+                        'invalid spec format: expect 2-tuple, got: {i}'
+                    )
+            self.all_cols = tuple((i for i, _ in self._spec))
+            self.cols = tuple((i for i, j in self._spec if j is not None))
+            self.all_keys = tuple((j for _, j in self._spec))
+            self.keys = tuple((j for _, j in self._spec if j is not None))
+        else:
+            self.has_header = False
+            for i in self._spec:
+                if not isinstance(i, str):
+                    raise ValueError(
+                        'invalid spec format: expect str, got: {i} ({type(i))}'
+                    )
+            self.all_cols = None
+            self.cols = None
+            self.all_keys = tuple((i for i in self._spec))
+            self.keys = tuple((i for i in self._spec if i is not None))
+
+    def __len__(self):
+        return len(self._spec)
+
+    def cut(self, row):
+        """
+        A method that cuts out the right values of an input file row
+        """
+        for key, value in zip(self.all_keys, row):
+            if key is not None:
+                yield value
+
+
 class SizedIterator:
     """
     a wrapper to attach a known length to an iterator
