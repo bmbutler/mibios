@@ -254,7 +254,7 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
                             pass
                         else:
                             skip_count += 1
-                            break  # avoids else, forgetting obj
+                            break  # will skip this obj / skips for-else block
                     else:
                         setattr(obj, field.name + '_id', pk)
                 else:
@@ -268,16 +268,16 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
                     m2m_data[obj.get_accessions()] = m2m
         del fkmap, field, value, row, pk, line, obj, m2m
 
-        if not objs:
-            # empty file?
-            return
-
         for fname, bad_ids in missing_fks.items():
             print(f'WARNING: found {len(bad_ids)} distinct unknown {fname}'
                   'IDs:', ' '.join([str(i) for i in islice(bad_ids, 5)]))
         if skip_count:
             print(f'WARNING: skipped {skip_count} rows due to unknown but '
                   f'non-null FK IDs')
+
+        if not objs:
+            print('WARNING: nothing saved, empty file or all got skipped')
+            return
 
         if missing_fks:
             del fname, bad_ids
