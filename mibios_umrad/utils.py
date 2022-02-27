@@ -317,33 +317,63 @@ def chunker(iterable, n):
 
 
 class CSV_Spec:
+    IGNORE_COLUMN = object()
+    SKIP_ROW = object()
+
     def __init__(self, *column_specs):
         if not column_specs:
             raise ValueError('at least one column needs to be declared')
 
         self._spec = column_specs
-        if isinstance(column_specs[0], tuple):
-            self.has_header = True
-            for i in self._spec:
-                if not isinstance(i, tuple) or len(i) != 2:
-                    raise ValueError(
-                        'invalid spec format: expect 2-tuple, got: {i}'
-                    )
-            self.all_cols = tuple((i for i, _ in self._spec))
-            self.cols = tuple((i for i, j in self._spec if j is not None))
-            self.all_keys = tuple((j for _, j in self._spec))
-            self.keys = tuple((j for _, j in self._spec if j is not None))
-        else:
-            self.has_header = False
-            for i in self._spec:
-                if not isinstance(i, str):
-                    raise ValueError(
-                        'invalid spec format: expect str, got: {i} ({type(i))}'
-                    )
-            self.all_cols = None
-            self.cols = None
-            self.all_keys = tuple((i for i in self._spec))
-            self.keys = tuple((i for i in self._spec if i is not None))
+        self.setup()
+
+    def setup(self, column_specs=None):
+        if column_specs is None:
+            column_specs = self._spec
+
+        cols = []  # used column header
+        all_cols = []  # all column headers, as in file
+        keys = []  # used keys, usually field names
+        all_keys = []  # keys incl. Nones
+        conv = []  # conversion functions, one (or None) per used columns
+
+        for row in column_specs:
+            if isinstance(row, tuple):
+                # table with header
+                self.has_header = True
+                colname, key, *convfunc = row
+                all_cols.append(colname)
+                all_keys.append(key)
+                if key is None:
+                    # ignore this column
+                    pass
+                else:
+                    keys.append(key)
+                    if convfunc:
+                        convfunc = convfunc[0]
+                        if not callable(convfunc):
+                            raise ValueError(f'not a callable: {convfunc}')
+                        conv.append(convfunc)
+                    else:
+                        conv.append(None)
+            else:
+                # table without header
+                self.has_header = False
+                key = row
+                all_keys.append(key)
+                if key is None:
+                    # ignore this column
+                    pass
+                else:
+                    keys.append(key)
+                    conv.append(None)
+                # cols/all_cols stay empty
+
+        self.all_cols = all_cols
+        self.cols = cols
+        self.all_keys = all_keys
+        self.keys = keys
+        self.convfuncs = conv
 
     def __len__(self):
         return len(self._spec)

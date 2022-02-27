@@ -195,10 +195,10 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
     @atomic
     def _load_lines(self, lines, sep='\t', dry_run=False, template={}):
         ncols = len(self.spec)
-
         split = self._split_m2m_input
-        # assumes spec.keys are the actual field names
         fields = [self.model._meta.get_field(i) for i in self.spec.keys]
+        convfuncs = self.spec.convfuncs
+        cut = self.spec.cut
 
         # loading FK acc->pk mappings
         fkmap = {}
@@ -231,7 +231,14 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
                     f'{ncols=}'
                 )
 
-            for field, value in zip(fields, self.spec.cut(row)):
+            for field, fn, value in zip(fields, convfuncs, cut(row)):
+                if callable(fn):
+                    value = fn(value, row)
+                    if value is CSV_Spec.IGNORE_COLUMN:
+                        continue  # treats value as empty
+                    elif value is CSV_Spec.SKIP_ROW:
+                        break  # skips obj / avoids for-else block
+
                 if field.many_to_many:
                     m2m[field.name] = split(value)
                 elif field.many_to_one:
