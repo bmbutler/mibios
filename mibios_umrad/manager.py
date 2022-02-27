@@ -200,18 +200,19 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
         convfuncs = self.spec.convfuncs
         cut = self.spec.cut
 
-        # loading FK acc->pk mappings
+        # loading FK (acc,...)->pk mappings
         fkmap = {}
         for i in fields:
             if not i.many_to_one:
                 continue
             print(f'Loading {i.related_model._meta.verbose_name} data...',
                   end='', flush=True)
-            fkmap[i.name] = dict((
-                i.related_model.objects
-                .values_list(i.related_model.get_accession_lookup_single(), 'pk')  # noqa: E501
-                .iterator()
-            ))
+            lookups = i.related_model.get_accession_lookups()
+            fkmap[i.name] = {
+                tuple(a): pk for *a, pk
+                in i.related_model.objects.values_list(*lookups, 'pk')
+                    .iterator()
+            }
             print('[OK]')
 
         objs = []
@@ -242,6 +243,8 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
                 if field.many_to_many:
                     m2m[field.name] = split(value)
                 elif field.many_to_one:
+                    if not isinstance(value, tuple):
+                        value = (value, )  # fkmap keys are tuples
                     try:
                         pk = fkmap[field.name][value]
                     except KeyError:
