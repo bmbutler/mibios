@@ -317,7 +317,7 @@ class Model(MibiosModel):
                 for i in cls._meta.unique_together[0]
             ))
 
-        raise LookupError('no unique or unique_together fields found')
+        raise LookupError(f'model {cls} has no unique/unique_together fields')
 
     @classmethod
     def get_accession_field_single(cls):
@@ -367,7 +367,9 @@ class Model(MibiosModel):
         """
         names = cls.get_accession_lookups()
         if len(names) > 1:
-            raise RuntimeError('model has multiple "unique_together" fields')
+            raise RuntimeError(
+                f'model {cls} has multiple "unique_together" fields'
+            )
         return names[0]
 
     def get_accessions(self):
