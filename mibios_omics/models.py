@@ -4,12 +4,13 @@ from subprocess import PIPE, Popen, TimeoutExpired
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.db.transaction import atomic
+from django.db.transaction import atomic, set_rollback
 
 from mibios.data import TableConfig
 from mibios_umrad.fields import AccessionField
-from mibios_umrad.model_utils import opt, fk_req, fk_opt, Model
-from mibios_umrad.models import Taxon, Lineage, UniRef100
+from mibios_umrad.model_utils import digits, opt, fk_req, fk_opt, Model
+from mibios_umrad.models import (CompoundEntry, FuncRefDBEntry, TaxName, Taxon,
+                                 Lineage, UniRef100)
 from mibios_umrad.utils import ProgressPrinter
 
 from .fields import DataPathField
@@ -17,6 +18,21 @@ from . import managers
 
 
 log = getLogger(__name__)
+
+
+class AbstractAbundance(Model):
+    """
+    abundance vs <something>
+
+    With data from the Sample_xxxx_<something>_VERSION.txt files
+    """
+    sample = models.ForeignKey(settings.OMICS_SAMPLE_MODEL, **fk_req)
+    scos = models.DecimalField(**digits(12, 2))
+    rpkm = models.DecimalField(**digits(12, 2))
+    # lca ?
+
+    class Meta(Model.Meta):
+        abstract = True
 
 
 class AbstractSample(Model):
@@ -46,6 +62,18 @@ class AbstractSample(Model):
     proteins_ok = models.BooleanField(
         default=False,
         help_text='Protein data loaded',
+    )
+    tax_abund_ok = models.BooleanField(
+        default=False,
+        help_text='Taxon abundance data loaded',
+    )
+    func_abund_ok = models.BooleanField(
+        default=False,
+        help_text='Function abundance data loaded',
+    )
+    comp_abund_ok = models.BooleanField(
+        default=False,
+        help_text='Compound abundance data loaded',
     )
 
     # mapping data / header items from bbmap output:
@@ -484,6 +512,101 @@ class CheckM(Model):
         return ret
 
 
+class TaxonAbundance(Model):
+
+    sample = models.ForeignKey(settings.OMICS_SAMPLE_MODEL, **fk_req)
+    #  1 type
+    #  2 source
+    #  3 target
+    taxname = models.ForeignKey(TaxName, **fk_req, related_name='abundance')
+    #  4 lin_cnt
+    lin_cnt = models.PositiveIntegerField()
+    #  5 lin_avg_prgc  (inconsistent precision)
+    lin_avg_prgc = models.DecimalField(**digits(10, 3))
+    #  6 lin_avg_depth (inconsistent)
+    lin_avg_depth = models.DecimalField(**digits(10, 3))
+    #  7 lin_avg_rpkm  (inconsistent)
+    lin_avg_rpkm = models.DecimalField(**digits(8, 3))
+    #  8 lin_gnm_pgc  ( really inconsistent numbers, incl. int + float? )
+    lin_gnm_pgc = models.DecimalField(**digits(8, 2))
+    #  9 lin_sum_sco  (inconsistent)
+    lin_sum_sco = models.DecimalField(**digits(18, 4))
+    # 10 lin_con_len
+    lin_con_len = models.PositiveIntegerField()
+    # 11 lin_gen_len
+    lin_gen_len = models.PositiveIntegerField()
+    # 12 lin_con_cnt
+    lin_con_cnt = models.PositiveIntegerField()
+    # 13 lin_tgc
+    lin_tgc = models.PositiveIntegerField()
+    # 14 lin_comp_genes
+    lin_comp_genes = models.PositiveIntegerField()
+    # 15 lin_nlin_gc
+    lin_nlin_gc = models.PositiveIntegerField()
+    # 16 lin_novel
+    lin_novel = models.PositiveIntegerField()
+    # 17 lin_con_uniq
+    lin_con_uniq = models.PositiveIntegerField()
+    # 18 lin_tpg
+    lin_tpg = models.PositiveIntegerField()
+    # 19 lin_obg
+    lin_obg = models.PositiveIntegerField()
+    # 20 con_lca
+    con_lca = models.PositiveIntegerField()
+    # 21 gen_lca
+    gen_lca = models.PositiveIntegerField()
+    # 22 part_gen
+    part_gen = models.PositiveIntegerField()
+    # 23 uniq_gen
+    uniq_gen = models.PositiveIntegerField()
+    # 24 con_len
+    con_len = models.PositiveIntegerField()
+    # 25 gen_len
+    gen_len = models.PositiveIntegerField()
+    # 26 con_rpkm
+    con_rpkm = models.DecimalField(**digits(12, 4))
+    # 27 gen_rpkm
+    gen_rpkm = models.DecimalField(**digits(12, 4))
+    # 28 gen_dept  ...
+    gen_dept = models.DecimalField(**digits(12, 4))
+
+    loader = managers.TaxonAbundanceLoader()
+
+    class Meta(Model.Meta):
+        unique_together = (
+            ('sample', 'taxname'),
+        )
+
+    def __str__(self):
+        return (f'{self.sample.accession}/{self.taxname.name} '
+                f'{self.lin_avg_rpkm}')
+
+
+class CompoundAbundance(AbstractAbundance):
+    """
+    abundance vs. compounds
+
+    with data from Sample_xxxxx_compounds_VERSION.txt files
+    """
+    ROLE_CHOICES = (
+        ('r', 'REACTANT'),
+        ('p', 'PRODUCT'),
+        ('t', 'TRANSPORT'),
+    )
+    compound = models.ForeignKey(CompoundEntry, *fk_req)
+    role = models.CharField(max_length=1, choices=ROLE_CHOICES)
+
+    loader = managers.CompoundAbundanceLoader()
+
+    class Meta(AbstractAbundance.Meta):
+        unique_together = (
+            ('sample', 'compound', 'role'),
+        )
+
+    def __str__(self):
+        return f'{self.compound.accession} ({self.role[0]}) {self.rpkm}'
+
+
 class SequenceLike(Model):
     """
     Abstraction of model based on fasta file sequences
@@ -585,6 +708,22 @@ class ContigCluster(ContigLike):
 
         # parsing ">foo\n" -> "foo"  /  FIXME: varying case issue
         self.cluster_id = fasta_head_line.lstrip('>').rstrip().upper()
+
+
+class FuncAbundance(AbstractAbundance):
+    """
+    abundance vs functions
+
+    With data from the Sample_xxxx_functions_VERSION.txt files
+    """
+    function = models.ForeignKey(FuncRefDBEntry, **fk_req)
+
+    loader = managers.FuncAbundanceLoader()
+
+    class Meta(Model.Meta):
+        unique_together = (
+            ('sample', 'function'),
+        )
 
 
 class Gene(ContigLike):
@@ -857,6 +996,20 @@ class Sample(AbstractSample):
     """
     class Meta:
         swappable = 'OMICS_SAMPLE_MODEL'
+
+    @atomic
+    def load_omics_data(self, dry_run=False):
+        """
+        load all omics data for this sample from data source
+
+        Assumes no existing data
+        """
+        ContigCluster.loader.load_sample(self)
+        Gene.loader.load_sample(self)
+        FuncAbundance.loader.load_sample(self)
+        CompoundAbundance.loader.load_sample(self)
+        TaxonAbundance.loader.load_sample(self)
+        set_rollback(dry_run)
 
 
 class SampleGroup(AbstractSampleGroup):

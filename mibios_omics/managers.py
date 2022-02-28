@@ -12,11 +12,53 @@ from django.conf import settings
 from django.db.transaction import atomic, set_rollback
 
 from mibios_umrad.models import Lineage, TaxName, Taxon, UniRef100
-from mibios_umrad.manager import Manager
-from mibios_umrad.utils import ProgressPrinter, ReturningGenerator
+from mibios_umrad.manager import Loader, Manager
+from mibios_umrad.utils import CSV_Spec, ProgressPrinter, ReturningGenerator
 
 
 log = getLogger(__name__)
+
+
+class SampleLoadMixin:
+    """ Mixin for Loader class that loads per-sample files """
+    ok_field_name = None
+
+    @atomic
+    def load_sample(self, sample, start=0, max_rows=None, dry_run=False):
+        if self.ok_field_name is not None:
+            if getattr(sample, self.ok_field_name):
+                raise RuntimeError(f'data already loaded: {sample}')
+
+        self.load(
+            file=self.get_file(sample),
+            template={'sample': sample},
+            start=start,
+            max_rows=max_rows,
+        )
+
+        if self.ok_field_name is not None:
+            setattr(sample, self.ok_field_name, True)
+
+        set_rollback(dry_run)
+
+
+class CompoundAbundanceLoader(Loader, SampleLoadMixin):
+    """ loader manager for CompoundAbundance """
+    ok_field_name = 'comp_abund_ok'
+
+    spec = CSV_Spec(
+        ('cpd', 'compound'),
+        ('cpd_name', None),
+        ('type', 'role'),
+        ('CPD_GENES', None),
+        ('CPD_SCO', 'scos'),
+        ('CPD_RPKM', 'rpkm'),
+        ('cpdlca', None),
+    )
+
+    def get_file(self, sample):
+        return settings.OMICS_DATA_ROOT / 'GENES' \
+            / f'{sample.accession}_compounds_{settings.OMICS_DATA_VERSION}.txt'
 
 
 class SequenceLikeLoader(Manager):
@@ -426,6 +468,23 @@ class ContigClusterLoader(ContigLikeLoader):
             sample.save()
 
 
+class FuncAbundanceLoader(Loader, SampleLoadMixin):
+    ok_field_name = 'func_abund_ok'
+
+    def get_file(self, sample):
+        return settings.OMICS_DATA_ROOT / 'GENES' \
+            / f'{sample.accession}_functions_{settings.OMICS_DATA_VERSION}.txt'
+
+    spec = CSV_Spec(
+        ('fid', 'function'),
+        ('fname', None),
+        ('FUNC_GENES', None),
+        ('FUNC_SCOS', 'scos'),
+        ('FUNC_RPKM', 'rpkm'),
+        ('fidlca', None),
+    )
+
+
 class GeneLoader(ContigLikeLoader):
     """ Manager for the Gene model """
     is_loaded_attr = 'genes_ok'
@@ -549,3 +608,63 @@ class SampleManager(Manager):
                 i.gene_set.count(),
                 sep='\t'
             )
+
+
+class TaxonAbundanceLoader(Loader, SampleLoadMixin):
+    """ loader manager for the TaxonAbundance model """
+    ok_field_name = 'tax_abund_ok'
+
+    def get_file(self, sample):
+        return settings.OMICS_DATA_ROOT / 'GENES' \
+            / f'{sample.accession}_community_{settings.OMICS_DATA_VERSION}.txt'
+
+    # conversion functions, methods without self, get passed to _load_lines and
+    # called ?unbound? or so
+
+    def get_taxname_acc(value, row):
+        """ return taxname accession tuple with rank from type column """
+        # turn a value "x_n" into (n + 1)
+        # (rank is for the "source", so "target" is plus 1)
+        letter, _, rank = row[0].partition('_')
+        if letter == 'I':
+            # FIXME: should be fixed in the source data
+            # skip the three rows with ?duplicated? targets
+            print(f'WARNING: skipping duplicate with I type: {row[:3]} ...')
+            return CSV_Spec.SKIP_ROW
+        # items must be in field declaration order, cf. get_accession_lookups()
+        try:
+            rank = int(rank)
+        except ValueError as e:
+            raise ValueError(f'{e} in row: {row}') from e
+        return (rank + 1, value)
+
+    spec = CSV_Spec(
+        ('type', None),  # 1 --> gets picked up via target column
+        ('source', None),  # 2
+        ('target', 'taxname', get_taxname_acc),  # 3
+        ('lin_cnt', 'lin_cnt'),  # 4
+        ('lin_avg_prgc', 'lin_avg_prgc'),  # 5
+        ('lin_avg_depth', 'lin_avg_depth'),  # 6
+        ('lin_avg_rpkm', 'lin_avg_rpkm'),  # 7
+        ('lin_gnm_pgc', 'lin_gnm_pgc'),  # 8
+        ('lin_sum_sco', 'lin_sum_sco'),  # 9
+        ('lin_con_len', 'lin_con_len'),  # 10
+        ('lin_gen_len', 'lin_gen_len'),  # 11
+        ('lin_con_cnt', 'lin_con_cnt'),  # 12
+        ('lin_tgc', 'lin_tgc'),  # 13
+        ('lin_comp_genes', 'lin_comp_genes'),  # 14
+        ('lin_nlin_gc', 'lin_nlin_gc'),  # 15
+        ('lin_novel', 'lin_novel'),  # 16
+        ('lin_con_uniq', 'lin_con_uniq'),  # 17
+        ('lin_tpg', 'lin_tpg'),  # 18
+        ('lin_obg', 'lin_obg'),  # 19
+        ('con_lca', 'con_lca'),  # 20
+        ('gen_lca', 'gen_lca'),  # 21
+        ('part_gen', 'part_gen'),  # 22
+        ('uniq_gen', 'uniq_gen'),  # 23
+        ('con_len', 'con_len'),  # 24
+        ('gen_len', 'gen_len'),  # 25
+        ('con_rpkm', 'con_rpkm'),  # 26
+        ('gen_rpkm', 'gen_rpkm'),  # 27
+        ('gen_dept', 'gen_dept'),  # 28
+    )

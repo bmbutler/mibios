@@ -3,6 +3,7 @@ Model-related utilities
 
 Separate module to avoid circular imports issues
 """
+from collections import UserDict
 from itertools import islice
 import os
 
@@ -22,6 +23,16 @@ uniq_opt = dict(unique=True, **opt)  # unique and optional (char/non-char)
 # standard foreign key options
 fk_req = dict(on_delete=models.CASCADE)  # required FK
 fk_opt = dict(on_delete=models.SET_NULL, **opt)  # optional FK
+
+
+class digits(UserDict):
+    """
+    Abbreviation for max_digits and decimal_places DecimalField keyword args
+
+    Usage:  foo = models.DecimalField(**digits(8, 3))
+    """
+    def __init__(self, max_digits, decimal_places):
+        super().__init__(max_digits=max_digits, decimal_places=decimal_places)
 
 
 class LoadMixin:
