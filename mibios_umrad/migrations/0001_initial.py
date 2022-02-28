@@ -34,7 +34,7 @@ class Migration(migrations.Migration):
                 ('formula', models.CharField(blank=True, max_length=32)),
                 ('charge', models.SmallIntegerField(blank=True, null=True)),
                 ('mass', models.CharField(blank=True, max_length=16)),
-                ('compound', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='mibios_umrad.Compound')),
+                ('compound', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='group', to='mibios_umrad.Compound')),
             ],
             options={
                 'abstract': False,

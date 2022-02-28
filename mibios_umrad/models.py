@@ -77,12 +77,16 @@ class CompoundEntry(Model):
     charge = models.SmallIntegerField(blank=True, null=True)
     mass = models.CharField(max_length=16, blank=True)  # TODO: decimal??
     names = models.ManyToManyField('CompoundName')
-    compound = models.ForeignKey('Compound', **fk_req)
+    compound = models.ForeignKey('Compound', **fk_req, related_name='group')
 
     objects = CompoundEntryManager()
 
     def __str__(self):
         return self.accession
+
+    def group(self):
+        """ return QuerySet of synonym/related compound entry group """
+        return self.compound.group.all()
 
 
 class Compound(Model):
