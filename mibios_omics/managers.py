@@ -38,6 +38,7 @@ class SampleLoadMixin:
 
         if self.ok_field_name is not None:
             setattr(sample, self.ok_field_name, True)
+            sample.save()
 
         set_rollback(dry_run)
 
