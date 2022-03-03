@@ -1,9 +1,14 @@
 {% extends "mibios_glamr/base.html" %}
+{% load static %}
 {% load render_table from django_tables2 %}
 {% block content %}
 
+<h3>Search:</h3>
+foo
 <h3>Available data sets</h3>
 {% render_table table %}
 <p><a href="{% url 'top' %}">table interface</a></p>
+<h3>Ratios of mapped reads, contigs vs genes</h3>
+<p><img src="{% get_media_prefix %}var/mappedratios.png"></p>
 
 {% endblock %}

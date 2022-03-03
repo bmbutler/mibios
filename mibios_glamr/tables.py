@@ -1,3 +1,5 @@
+from django.urls import reverse
+
 from django_tables2 import Table, Column
 
 
@@ -8,6 +10,7 @@ class DatasetTable(Table):
     )
     scheme = Column(
         verbose_name='description',
+        linkify=True,
     )
     reference = Column(
         linkify=lambda value: getattr(value, 'doi'),
@@ -39,3 +42,21 @@ class DatasetTable(Table):
 
     def render_samples(self, record):
         return f'{record.samples().count()}'
+
+
+def get_sample_url(sample):
+    """ linkify helper for SampleTable """
+    return reverse('sample_detail', args=[sample.pk])
+
+
+class SampleTable(Table):
+
+    accession = Column(
+        verbose_name='accession',  # FIXME: verbose_name
+        # linkify=lambda record: get_sample_url(record),
+        linkify=lambda record: reverse('sample', args=[record.pk]),
+    )
+    group = Column(verbose_name='dataset')
+    read_count = Column()
+    reads_mapped_contigs = Column()
+    reads_mapped_genes = Column()

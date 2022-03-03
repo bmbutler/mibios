@@ -2,9 +2,10 @@
 GLAMR-specific modeling
 """
 from django.db import models
+from django.urls import reverse
 
-from mibios.models import Model
 from mibios_omics.models import AbstractSampleGroup
+from mibios_umrad.models import Model
 from mibios_umrad.model_utils import fk_req
 
 from .load import DatasetLoader
@@ -107,6 +108,15 @@ class Dataset(AbstractSampleGroup):
         elif self.accession_db == self.DB_JGI:
             return f'https://genome.jgi.doe.gov/portal/?core=genome&query={self.accession}'  # noqa: E501
 
+    def get_absolute_url(self):
+        if self.orphan_group:
+            return reverse('dataset', args=[0])
+        return reverse('dataset', args=[self.pk])
+
+    def get_samples_url(self):
+        pk = 0 if self.orphan_group else self.pk
+        return reverse('dataset_sample_list', args=[pk])
+
 
 # Create your models here.
 class Reference(Model):
@@ -146,3 +156,6 @@ class Reference(Model):
             # rm last word, add ellipsis
             value = ' '.join(value.split(' ')[:-1]) + '[\u2026]"'
         return value
+
+    def get_absolute_url(self):
+        return reverse('reference', args=[self.pk])

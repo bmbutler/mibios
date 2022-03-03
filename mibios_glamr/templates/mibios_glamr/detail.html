@@ -1,0 +1,14 @@
+{% extends "mibios_glamr/base.html" %}
+{% block content %}
+
+<h3>{{ model_name }}: {{ object_name }}</h3>
+<table class="table table-hover table-condensed">
+<tbody>
+{% for name, url, value in details %}
+<tr>
+    <td>{{ name }}:</td>
+    <td>{% if url %}<a href="{{ url }}">{{ value }}</a>{% else %}{{ value|default_if_none:"<missing>" }}{% endif %}</td>
+</tr>
+{% endfor %}
+</tbody></table>
+{% endblock %}

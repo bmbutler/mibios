@@ -90,6 +90,7 @@ setuptools.setup(
         'djangorestframework~=3.12.0',
         'django-tables2~=2.1.0',
         'pandas~=1.1.0',
+        'matplotlib~=3.3.0',
         'biopython~=1.78',
         'zipstream',
     ],
