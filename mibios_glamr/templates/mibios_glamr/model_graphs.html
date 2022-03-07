@@ -1,0 +1,9 @@
+{% extends "mibios_glamr/base.html" %}
+{% load static %}
+{% block content %}
+{% for app_name, img_path in graphs.items %}
+<h3>{{ app_name }}:</h3>
+<p><img src="{% get_media_prefix %}{{ img_path }}" width="100%"></p>
+{% endfor %}
+{% endblock %}
+

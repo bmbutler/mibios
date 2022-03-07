@@ -15,6 +15,7 @@ from . import views
 
 urlpatterns = [
     path('', views.DemoFrontPageView.as_view(), name='demo_frontpage'),
+    path('model-graphs/', views.ModelGraphView.as_view(), name='graphs'),
     path('tables/', include(mibios_urls)),
     path('dataset/<int:pk>/samples', views.SampleListView.as_view(), name='dataset_sample_list'),  # noqa: E501
     path('dataset/<int:pk>/', views.DatasetView.as_view(), name='dataset'),
