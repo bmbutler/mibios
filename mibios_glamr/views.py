@@ -5,14 +5,57 @@ from django_tables2 import SingleTableView
 import pandas
 
 from django.conf import settings
+from django.core.exceptions import FieldDoesNotExist
 from django.core.management import call_command
 from django.db.models import URLField
+from django.http import Http404, HttpResponseRedirect
 from django.urls import reverse
 from django.views.generic import DetailView
+from django.views.generic.base import TemplateView
 
 from mibios_omics.models import Sample, TaxonAbundance
+from mibios_umrad.models import (
+    CompoundEntry, CompoundName, FunctionName, Location, Metal, FuncRefDBEntry,
+    ReactionEntry, TaxName, Taxon, Uniprot, UniRef100,
+)
 from . import models
+from .forms import SearchForm
 from .tables import DatasetTable, SampleTable
+
+
+class AbundanceView(SingleTableView):
+    # FIXME: should be a SingleObject??? something
+    template_name = 'mibios_glamr/abundance.html'
+
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+        model_name = self.kwargs['model_name']
+        for i in SearchResultView.searchables:
+            if i._meta.model_name == model_name:
+                self.object_model = i
+                break
+        else:
+            raise Http404(f'no such model: {model_name}')
+
+        accession = self.request.GET['id'].strip()
+
+        if self.object_model == TaxName:
+            acc = 'name'
+        else:
+            acc = self.object_model.get_accession_lookup_single()
+        kw = {acc: accession}
+        self.object = self.object_model.objects.get(**kw)
+        self.model = self.object.abundance.model
+
+    def get_queryset(self):
+        return self.object.abundance.all()
+
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['model_name_verbose'] = self.model._meta.verbose_name
+        ctx['object'] = self.object
+
+        return ctx
 
 
 class GlamrDetailView(DetailView):
@@ -86,6 +129,7 @@ class DemoFrontPageView(SingleTableView):
         ctx['mc_abund'] = TaxonAbundance.objects \
             .filter(taxname='MICROCYSTIS') \
             .select_related('sample')[:5]
+        ctx['search_form'] = SearchForm()
         self.make_ratios_plot()
         return ctx
 
@@ -149,3 +193,58 @@ class SampleListView(SingleTableView):
 
 class SampleView(GlamrDetailView):
     model = Sample
+
+
+class SearchResultView(TemplateView):
+    template_name = 'mibios_glamr/search_results.html'
+
+    searchables = [
+        TaxName, Taxon, CompoundEntry, ReactionEntry, UniRef100, CompoundName,
+        FunctionName, Location, Metal, FuncRefDBEntry, Uniprot, Sample,
+    ]
+
+    def get(self, request, *args, **kwargs):
+        self.search()
+        if self.results:
+            ctx = self.get_context_data(
+                search_results=self.results,
+                query=self.query,
+            )
+        else:
+            return HttpResponseRedirect(reverse('frontpage'))
+        return self.render_to_response(ctx)
+
+    def search(self, abundance_only=True):
+        self.results = []
+        form = SearchForm(data=self.request.GET)
+        if not form.is_valid():
+            return None
+        self.query = form.cleaned_data['query']
+
+        for model in self.searchables:
+            extra = '[kAb]'
+            search_field_name = model.get_search_field().name
+            qs = model.objects.search(self.query)
+            if abundance_only:
+                try:
+                    model._meta.get_field('abundance')
+                except FieldDoesNotExist:
+                    abund_a = getattr(model, 'abundance_accessor', None)
+                else:
+                    abund_a = 'abundance'
+
+                if abund_a:
+                    extra = ''
+                    qs = qs.exclude(**{abund_a: None})
+
+            hits = [
+                (obj, getattr(obj, search_field_name))
+                for obj in qs.iterator()
+            ]
+
+            if True or hits:
+                self.results.append((
+                    model._meta.model_name,
+                    model._meta.verbose_name_plural + extra,
+                    hits,
+                ))

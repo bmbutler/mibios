@@ -593,7 +593,11 @@ class CompoundAbundance(AbstractAbundance):
         ('p', 'PRODUCT'),
         ('t', 'TRANSPORT'),
     )
-    compound = models.ForeignKey(CompoundEntry, *fk_req)
+    compound = models.ForeignKey(
+        CompoundEntry,
+        related_name='abundance',
+        *fk_req,
+    )
     role = models.CharField(max_length=1, choices=ROLE_CHOICES)
 
     loader = managers.CompoundAbundanceLoader()
@@ -716,7 +720,11 @@ class FuncAbundance(AbstractAbundance):
 
     With data from the Sample_xxxx_functions_VERSION.txt files
     """
-    function = models.ForeignKey(FuncRefDBEntry, **fk_req)
+    function = models.ForeignKey(
+        FuncRefDBEntry,
+        related_name='abundance',
+        **fk_req,
+    )
 
     loader = managers.FuncAbundanceLoader()
 
@@ -992,7 +1000,7 @@ class RNACentralRep(Model):
 
 class Sample(AbstractSample):
     """
-    Placeholder model for samples
+    Placeholder model for (metagenomic?) samples
     """
     class Meta:
         swappable = 'OMICS_SAMPLE_MODEL'

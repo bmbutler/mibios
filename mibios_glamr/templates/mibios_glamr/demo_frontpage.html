@@ -4,7 +4,9 @@
 {% block content %}
 
 <h3>Search:</h3>
-foo
+<form action="{% url 'search_result' %}" method="get">
+    {{ search_form }}<input type="submit" values="Submit">
+</form>
 <h3>Available data sets</h3>
 {% render_table table %}
 <p><a href="{% url 'top' %}">table interface</a></p>

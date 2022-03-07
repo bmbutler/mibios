@@ -115,10 +115,12 @@ class Compound(Model):
 
 class CompoundName(VocabularyModel):
     max_length = 128
+    abundance_accessor = 'compoundentry__abundance'
 
 
 class FunctionName(VocabularyModel):
     max_length = 128
+    abundance_accessor = 'funcrefdbentry__abundance'
 
 
 class Location(VocabularyModel):
@@ -272,6 +274,10 @@ class TaxName(Model):
 
     def __str__(self):
         return f'{self.get_rank_display()} {self.name}'
+
+    @classmethod
+    def get_search_field(cls):
+        return cls._meta.get_field('name')
 
 
 class Lineage(Model):

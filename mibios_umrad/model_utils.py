@@ -427,6 +427,16 @@ class Model(MibiosModel):
 
             setattr(self, attr_name, value)
 
+    @classmethod
+    def get_search_field(cls):
+        """
+        Return the default search field
+
+        Usually this is the first (non-pk) unique id fields.  Models that don't
+        have such a field must overwrite this method.
+        """
+        return cls.get_accession_field_single()
+
 
 class VocabularyModel(Model):
     """

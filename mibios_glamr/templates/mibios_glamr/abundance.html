@@ -1,0 +1,7 @@
+{% extends "mibios_glamr/base.html" %}
+{% load render_table from django_tables2 %}
+{% block content %}
+<h3>Adundance for {{ model_name_verbose }} {{ object }}</h3>
+{% render_table table %}
+{% endblock %}
+

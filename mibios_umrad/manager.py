@@ -11,7 +11,10 @@ from django.db.models.manager import Manager as DjangoManager
 from django.db.transaction import atomic, set_rollback
 from django.utils.module_loading import import_string
 
-from mibios.models import Manager as MibiosManager
+from mibios.models import (
+    BaseManager as MibiosBaseManager,
+    QuerySet as MibiosQuerySet,
+)
 
 from .utils import CSV_Spec, ProgressPrinter, siter
 
@@ -895,7 +898,7 @@ class TaxonLoader(Loader):
         set_rollback(dry_run)
 
 
-class Manager(BulkCreateWrapperMixin, MibiosManager):
+class BaseManager(BulkCreateWrapperMixin, MibiosBaseManager):
     """ Manager class for UMRAD data models """
     def create_from_m2m_input(self, values, source_model, src_field_name):
         """
@@ -924,3 +927,34 @@ class Manager(BulkCreateWrapperMixin, MibiosManager):
         model = self.model
         objs = (model(**{attr_name: i}) for i in values)
         return self.bulk_create(objs)
+
+
+class QuerySet(MibiosQuerySet):
+    def search(self, query_term, field_name=None, lookup=None):
+        """
+        implement search from search field
+
+        For models for which get_accession_field_single raises an exception,
+        this method should be overwritten.
+        """
+        if field_name is None:
+            uid_field = self.model.get_search_field()
+        else:
+            uid_field = self.model._meta.get_field(field_name)
+
+        if lookup is None:
+            if uid_field.get_internal_type() == 'CharField':
+                lookup = 'icontains'
+            else:
+                lookup = 'exact'
+
+        kw = {uid_field.name + '__' + lookup: query_term}
+        try:
+            return self.filter(**kw)
+        except ValueError:
+            # wrong type, e.g. searching for "text" on a numeric field
+            return self.none()
+
+
+class Manager(BaseManager.from_queryset(QuerySet)):
+    pass
