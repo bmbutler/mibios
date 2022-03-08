@@ -1,13 +1,22 @@
 {% extends "mibios_glamr/base.html" %}
 {% block content %}
 
-<h3>{{ model_name }}: {{ object_name }}</h3>
+<h3>{{ object_model_verbose_name }}: {{ object }}</h3>
 <table class="table table-hover table-condensed">
 <tbody>
 {% for name, url, value in details %}
 <tr>
     <td>{{ name }}:</td>
     <td>{% if url %}<a href="{{ url }}">{{ value }}</a>{% else %}{{ value|default_if_none:"<missing>" }}{% endif %}</td>
+</tr>
+{% endfor %}
+{% for name, model_name, qs, field in relations %}
+<tr><td>{{ name }}:</td>
+<td>
+    {% for obj in qs %}<a href="{% url 'record' model=model_name pk=obj.pk %}">{{ obj }}</a>{% if not forloop.last %}&nbsp;|&nbsp;{% endif %}
+    {% empty %}-{% endfor %}
+    {% if qs|length == view.max_to_many %}[...]<br><a href="{% url 'relations' model=object_model_name pk=object.pk field=field.name %}">[view all]</a>{% endif %}
+</td>
 </tr>
 {% endfor %}
 </tbody></table>

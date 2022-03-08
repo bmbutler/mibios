@@ -21,6 +21,9 @@ urlpatterns = [
     path('dataset/<int:pk>/', views.DatasetView.as_view(), name='dataset'),
     path('reference/<int:pk>/', views.ReferenceView.as_view(), name='reference'),  # noqa: E501
     path('sample/<int:pk>/', views.SampleView.as_view(), name='sample'),
+    path('data/<str:model>/<int:pk>/', views.RecordView.as_view(), name='record'),  # noqa: E501
+    path('data/<str:model>/<int:pk>/relations/<str:field>/', views.ToManyListView.as_view(), name='relations'),  # noqa: E501
+    path('data/<str:model>/<int:pk>/relations/<str:field>/full/', views.ToManyFullListView.as_view(), name='relations_full'),  # noqa: E501
     path('search/', views.SearchResultView.as_view(), name='search_result'),
-    path('abundance/<model_name>/', views.AbundanceView.as_view(), name='abundance'),  # noqa: E501
+    path('abundance/<model>/', views.AbundanceView.as_view(), name='abundance'),  # noqa: E501
 ]

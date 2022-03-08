@@ -1,15 +1,21 @@
 {% extends "mibios_glamr/base.html" %}
 {% block content %}
 <h3>Search results for <small>"{{ query }}"</small>:</h3>
-{% for model_name, plural, hits in search_results %}
+{% for have_abundance, model_name, plural, hits in search_results %}
     <a href="#{{ model_name }}">{{ plural }}({{ hits|length }})</a>
 {% endfor %}
-{% for model_name, plural, hits in search_results %}
+{% for have_abundance, model_name, plural, hits in search_results %}
     <p id="{{ model_name }}">Found {{ hits|length }} {{ plural }}:
     <ul>
-    {% for obj, accession in hits %}
-        <li><a href="{% url 'abundance' model_name=model_name %}?id={{ accession }}">{{ obj }}</a></li>
-    {% endfor %}
+    {% if have_abundance %}
+        {% for obj, accession in hits %}
+            <li><a href="{% url 'abundance' model=model_name %}?id={{ accession }}">{{ obj }}</a></li>
+        {% endfor %}
+    {% else %}
+        {% for obj, accession in hits %}
+            <li><a href="{% url 'record' model=model_name pk=obj.pk %}">{{ obj }}</a></li>
+        {% endfor %}
+    {% endif %}
     </ul>
     </p>
 {% endfor %}

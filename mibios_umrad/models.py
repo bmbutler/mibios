@@ -77,7 +77,12 @@ class CompoundEntry(Model):
     charge = models.SmallIntegerField(blank=True, null=True)
     mass = models.CharField(max_length=16, blank=True)  # TODO: decimal??
     names = models.ManyToManyField('CompoundName')
-    compound = models.ForeignKey('Compound', **fk_req, related_name='group')
+    compound = models.ForeignKey(
+        'Compound',
+        **fk_req,
+        related_name='group',
+        verbose_name='distinct compound',
+    )
 
     objects = CompoundEntryManager()
 
@@ -95,6 +100,9 @@ class Compound(Model):
     # no fields hereQ
 
     loader = manager.CompoundLoader()
+
+    class Meta:
+        verbose_name = 'distinct compound'
 
     # spec: 2nd item is either base compound field name or compound model name
     # for the reverse relation
@@ -215,6 +223,9 @@ class Reaction(Model):
     )
 
     loader = manager.ReactionLoader()
+
+    class Meta:
+        verbose_name = 'distinct reaction'
 
 
 class FuncRefDBEntry(Model):

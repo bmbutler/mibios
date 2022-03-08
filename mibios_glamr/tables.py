@@ -2,6 +2,66 @@ from django.urls import reverse
 
 from django_tables2 import Table, Column
 
+from mibios_omics import models as omics_models
+
+
+def get_record_url(*args):
+    """
+    Return URL for an object
+
+    Arguments: <obj> | <<model|model_name> <pk>>
+
+    The object can be passed as the only argument.  Or the model/model name and
+    PK must be passed.
+
+    Use this instead of Model.get_absolute_url() because it needs to work on
+    models from pother apps.
+    """
+    if len(args) == 1:
+        obj = args[0]
+        model_name = obj._meta.model_name
+        pk = obj.pk
+    elif len(args) == 2:
+        model, pk = args
+        if isinstance(model, str):
+            model_name = model
+        else:
+            model_name = model._meta.model_name
+    else:
+        raise TypeError(
+            'expect either a model instance or model/-name and pk pair'
+        )
+    return reverse('record', kwargs={'model': model_name, 'pk': pk})
+
+
+class CompoundAbundanceTable(Table):
+    sample = Column(
+        linkify=lambda value: get_record_url(value)
+    )
+    compound = Column(
+        linkify=lambda value: get_record_url(value)
+    )
+
+    class Meta:
+        model = omics_models.CompoundAbundance
+        exclude = ['id']
+
+
+class FunctionAbundanceTable(Table):
+    class Meta:
+        model = omics_models.FuncAbundance
+        exclude = ['id']
+
+
+class TaxonAbundanceTable(Table):
+    sample = Column(
+        linkify=lambda value: get_record_url('sample', value.pk)
+    )
+
+    class Meta:
+        model = omics_models.TaxonAbundance
+        fields = ['sample', 'lin_avg_rpkm', 'lin_gnm_pgc', 'lin_sum_sco']
+
 
 class DatasetTable(Table):
     samples = Column(
@@ -23,10 +83,6 @@ class DatasetTable(Table):
         verbose_name='other info',
     )
 
-    class Meta:
-        template_name = 'django_tables2/bootstrap4.html'
-        pass
-
     def render_scheme(self, value, record):
         if record.material_type:
             value += f' | {record.material_type}'
@@ -47,6 +103,18 @@ class DatasetTable(Table):
 def get_sample_url(sample):
     """ linkify helper for SampleTable """
     return reverse('sample_detail', args=[sample.pk])
+
+
+class SingleColumnRelatedTable(Table):
+    """ Table showing *-to-many related records in single column """
+    objects = Column(
+        verbose_name='related records',
+        linkify=lambda record: get_record_url(record),
+        empty_values=(),  # triggers render_objects()
+    )
+
+    def render_objects(self, record):
+        return str(record)
 
 
 class SampleTable(Table):
