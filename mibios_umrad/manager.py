@@ -444,7 +444,7 @@ class CompoundLoader(Loader):
         CompoundName = import_string('mibios_umrad.models.CompoundName')
 
         refdb_names = [
-            i for _, i in CompoundEntry.DB_CHOICES
+            i for i, _ in CompoundEntry.DB_CHOICES
             if i in self.spec.keys
         ]
 
@@ -647,7 +647,7 @@ class ReactionLoader(Loader):
         ReactionEntry = import_string('mibios_umrad.models.ReactionEntry')
 
         refdbs = [
-            i for _, i in ReactionEntry.DB_CHOICES
+            i for i, _ in ReactionEntry.DB_CHOICES
             if i in self.spec.keys
         ]
         comp_cols = {

@@ -63,12 +63,12 @@ class CompoundEntry(Model):
     DB_KEGG = 'k'
     DB_PUBCHEM = 'p'
     DB_CHOICES = (
-        ('Biocyc', DB_BIOCYC),
-        ('ChEBI', DB_CHEBI),
-        ('HMDB', DB_HMDB),
-        ('InChI', DB_INCHI),
-        ('KEGG', DB_KEGG),
-        ('PubChem', DB_PUBCHEM),
+        (DB_BIOCYC, 'Biocyc'),
+        (DB_CHEBI, 'ChEBI'),
+        (DB_HMDB, 'HMDB'),
+        (DB_INCHI, 'InChi'),
+        (DB_KEGG, 'KEGG'),
+        (DB_PUBCHEM, 'PubChem'),
     )
 
     accession = models.CharField(max_length=40, unique=True)
@@ -181,9 +181,9 @@ class ReactionEntry(Model):
     DB_KEGG = 'k'
     DB_RHEA = 'r'
     DB_CHOICES = (
-        ('Biocyc', DB_BIOCYC),
-        ('KEGG', DB_KEGG),
-        ('RHEA', DB_RHEA),
+        (DB_BIOCYC, 'Biocyc'),
+        (DB_KEGG, 'KEGG'),
+        (DB_RHEA, 'RHEA'),
     )
 
     accession = AccessionField()
@@ -237,16 +237,16 @@ class FuncRefDBEntry(Model):
     DB_TCDB = 'tcdb'
     DB_TIGR = 'tigr'
     DB_CHOICES = (
-        (DB_COG, DB_COG),
-        (DB_EC, DB_EC),
-        (DB_GO, DB_GO),
-        (DB_IPR, DB_IPR),
-        (DB_PFAM, DB_PFAM),
-        (DB_TCDB, DB_TCDB),
-        (DB_TIGR, DB_TIGR),
+        (DB_COG, 'COG'),
+        (DB_EC, 'EC'),
+        (DB_GO, 'GO'),
+        (DB_IPR, 'InterPro'),
+        (DB_PFAM, 'Pfam'),
+        (DB_TCDB, 'TCDB'),
+        (DB_TIGR, 'TIGR'),
     )
     accession = AccessionField()
-    db = models.CharField(max_length=4, db_index=True)
+    db = models.CharField(max_length=4, choices=DB_CHOICES, db_index=True)
     names = models.ManyToManyField('FunctionName')
 
     loader = manager.FuncRefDBEntryLoader()
@@ -659,8 +659,8 @@ class UniRef100(LoadMixin, Model):
     @atomic
     def load(cls, max_rows=None, start=0, dry_run=False):
         # get data and split m2m fields
-        refdb_keys = [i for _, i in FuncRefDBEntry.DB_CHOICES]
-        rxndb_keys = [i for _, i in ReactionEntry.DB_CHOICES]
+        refdb_keys = [i for i, _ in FuncRefDBEntry.DB_CHOICES]
+        rxndb_keys = [i for i, _ in ReactionEntry.DB_CHOICES]
         field_names = [i.name for i in cls._meta.get_fields()]
 
         m2mcols = []
