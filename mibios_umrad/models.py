@@ -93,6 +93,32 @@ class CompoundEntry(Model):
         """ return QuerySet of synonym/related compound entry group """
         return self.compound.group.all()
 
+    external_urls = {
+        DB_BIOCYC: 'https://biocyc.org/compound?orgid=META&id={}',
+        DB_CHEBI: 'https://www.ebi.ac.uk/chebi/searchId.do?chebiId={}',
+        DB_HMDB: 'https://hmdb.ca/metabolites/{}',
+        DB_INCHI: (
+            'https://www.ebi.ac.uk/unichem/frontpage/results?queryText={}&kind=InChIKey',  # noqa: E501
+            lambda x: x.removeprefix('INCHI:')
+        ),
+        DB_KEGG: 'https://www.kegg.jp/entry/{}',
+        DB_PUBCHEM: (
+            'https://pubchem.ncbi.nlm.nih.gov/compound/{}',
+            lambda x: x.removeprefix('CID:')
+        ),
+    }
+
+    def get_external_url(self):
+        url_spec = self.external_urls[self.db]
+        if not url_spec:
+            return None
+        elif isinstance(url_spec, str):
+            # assume simple formatting string
+            return url_spec.format(self.accession)
+        else:
+            # assumme a tuple (templ, func)
+            return url_spec[0].format(url_spec[1](self.accession))
+
 
 class Compound(Model):
     """ Distinct source-DB-independent compounds """
@@ -257,6 +283,27 @@ class FuncRefDBEntry(Model):
 
     def __str__(self):
         return self.accession
+
+    external_urls = {
+        DB_COG: 'https://www.ncbi.nlm.nih.gov/research/cog/cog/{}/',
+        DB_EC: '',
+        DB_GO: 'http://amigo.geneontology.org/amigo/term/{}',
+        DB_IPR: 'https://www.ebi.ac.uk/interpro/entry/InterPro/{}/',
+        DB_PFAM: 'https://pfam.xfam.org/family/{}',
+        DB_TCDB: '',
+        DB_TIGR: '',
+    }
+
+    def get_external_url(self):
+        url_spec = self.external_urls.get(self.db, None)
+        if not url_spec:
+            return None
+        elif isinstance(url_spec, str):
+            # assume simple formatting string
+            return url_spec.format(self.accession)
+        else:
+            # assumme a tuple (templ, func)
+            return url_spec[0].format(url_spec[1](self.accession))
 
 
 class TaxName(Model):
@@ -554,6 +601,9 @@ class Uniprot(Model):
     def __str__(self):
         return self.accession
 
+    def get_external_url(self):
+        return f'https://www.uniprot.org/uniprot/{self.accession}'
+
 
 class UniRef100(LoadMixin, Model):
     """
@@ -812,6 +862,9 @@ class UniRef100(LoadMixin, Model):
         Manager.bulk_create_wrapper(through.objects.bulk_create)(through_objs)
 
         set_rollback(dry_run)
+
+    def get_external_url(self):
+        return f'https://www.uniprot.org/uniref/{self.accession}'
 
 
 # development stuff

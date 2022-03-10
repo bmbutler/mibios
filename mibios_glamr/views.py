@@ -85,6 +85,8 @@ class BaseDetailView(DetailView):
         ctx['object_model_name'] = self.model._meta.model_name
         ctx['object_model_verbose_name'] = self.model._meta.verbose_name
         ctx['details'], ctx['relations'] = self.get_details()
+        ctx['external_url'] = self.object.get_external_url()
+
         return ctx
 
     def get_details(self):
@@ -124,6 +126,10 @@ class BaseDetailView(DetailView):
                 value = getattr(self.object, f'get_{i.name}_display')()
 
             details.append((name, url, value))
+
+        if exturl := self.object.get_external_url():
+            details.append(('external URL', exturl, exturl))
+
         return details, rel_lists
 
 

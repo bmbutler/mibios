@@ -437,6 +437,15 @@ class Model(MibiosModel):
         """
         return cls.get_accession_field_single()
 
+    def get_external_url(self):
+        """
+        get external URL for this record
+
+        Inheriting models should overwrite this to suit their needs.  The
+        default implementation returns None.
+        """
+        pass
+
 
 class VocabularyModel(Model):
     """
