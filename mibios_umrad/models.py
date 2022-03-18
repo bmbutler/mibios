@@ -15,7 +15,7 @@ from .fields import AccessionField
 from . import manager
 from .model_utils import (
     ch_opt, fk_opt, fk_req, VocabularyModel, delete_all_objects_quickly,
-    LoadMixin, Manager, Model
+    LoadMixin, Model
 )
 from .utils import CSV_Spec
 
@@ -23,7 +23,7 @@ from .utils import CSV_Spec
 log = getLogger(__name__)
 
 
-class CompoundEntryManager(Manager):
+class CompoundEntryManager(manager.Manager):
     def create_from_m2m_input(self, values, source_model, src_field_name):
         if source_model is UniRef100 and src_field_name == 'trans_compounds':
             pass
@@ -166,7 +166,7 @@ class Metal(VocabularyModel):
     pass
 
 
-class ReactionEntryManager(Manager):
+class ReactionEntryManager(manager.Manager):
     def create_from_m2m_input(self, values, source_model, src_field_name):
         if source_model is not UniRef100:
             raise NotImplementedError(
@@ -859,7 +859,7 @@ class UniRef100(LoadMixin, Model):
             for i, j in rels
         )
         through_objs = list(through_objs)
-        Manager.bulk_create_wrapper(through.objects.bulk_create)(through_objs)
+        manager.Manager.bulk_create_wrapper(through.objects.bulk_create)(through_objs)  # noqa:E501
 
         set_rollback(dry_run)
 

@@ -23,6 +23,13 @@ log = getLogger(__name__)
 
 
 class BulkCreateWrapperMixin:
+    """
+    Mixin providing the bulk_create wrapper
+
+    Intended to be mixed into both QuerySet and Manager classes.  Inside
+    QuerySet it is used to overwrite the bulk_create method.  <add some more
+    here...>
+    """
     @staticmethod
     def bulk_create_wrapper(wrappee_bc):
         """
@@ -43,6 +50,7 @@ class BulkCreateWrapperMixin:
             Does not return the object list like super().bulk_create() does.
             """
             if not progress:
+                # behave like original method, sans return value
                 wrappee_bc(
                     objs,
                     ignore_conflicts=ignore_conflicts,
@@ -89,12 +97,40 @@ class BulkCreateWrapperMixin:
 
         return bulk_create
 
+
+class QuerySet(BulkCreateWrapperMixin, MibiosQuerySet):
+    def search(self, query_term, field_name=None, lookup=None):
+        """
+        implement search from search field
+
+        For models for which get_accession_field_single raises an exception,
+        this method should be overwritten.
+        """
+        if field_name is None:
+            uid_field = self.model.get_search_field()
+        else:
+            uid_field = self.model._meta.get_field(field_name)
+
+        if lookup is None:
+            if uid_field.get_internal_type() == 'CharField':
+                lookup = 'icontains'
+            else:
+                lookup = 'exact'
+
+        kw = {uid_field.name + '__' + lookup: query_term}
+        try:
+            return self.filter(**kw)
+        except ValueError:
+            # wrong type, e.g. searching for "text" on a numeric field
+            return self.none()
+
     def bulk_create(self, objs, batch_size=None, ignore_conflicts=False,
                     progress_text=None, progress=True):
         """
         Value-added bulk_create with batching and progress metering
 
-        Does not return the object list like super().bulk_create() does.
+        Does not return the object list like Django's QuerySet.bulk_create()
+        does.
         """
         wrapped_bc = self.bulk_create_wrapper(super().bulk_create)
         wrapped_bc(
@@ -106,7 +142,7 @@ class BulkCreateWrapperMixin:
         )
 
 
-class Loader(BulkCreateWrapperMixin, DjangoManager):
+class BaseLoader(DjangoManager):
     """
     A manager providing functionality to load data from file
     """
@@ -438,6 +474,10 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
 
             data.append(rec)
         return data
+
+
+class Loader(BulkCreateWrapperMixin, BaseLoader.from_queryset(QuerySet)):
+    pass
 
 
 class CompoundLoader(Loader):
@@ -908,7 +948,7 @@ class TaxonLoader(Loader):
         set_rollback(dry_run)
 
 
-class BaseManager(BulkCreateWrapperMixin, MibiosBaseManager):
+class BaseManager(MibiosBaseManager):
     """ Manager class for UMRAD data models """
     def create_from_m2m_input(self, values, source_model, src_field_name):
         """
@@ -939,32 +979,5 @@ class BaseManager(BulkCreateWrapperMixin, MibiosBaseManager):
         return self.bulk_create(objs)
 
 
-class QuerySet(MibiosQuerySet):
-    def search(self, query_term, field_name=None, lookup=None):
-        """
-        implement search from search field
-
-        For models for which get_accession_field_single raises an exception,
-        this method should be overwritten.
-        """
-        if field_name is None:
-            uid_field = self.model.get_search_field()
-        else:
-            uid_field = self.model._meta.get_field(field_name)
-
-        if lookup is None:
-            if uid_field.get_internal_type() == 'CharField':
-                lookup = 'icontains'
-            else:
-                lookup = 'exact'
-
-        kw = {uid_field.name + '__' + lookup: query_term}
-        try:
-            return self.filter(**kw)
-        except ValueError:
-            # wrong type, e.g. searching for "text" on a numeric field
-            return self.none()
-
-
-class Manager(BaseManager.from_queryset(QuerySet)):
+class Manager(BulkCreateWrapperMixin, BaseManager.from_queryset(QuerySet)):
     pass
