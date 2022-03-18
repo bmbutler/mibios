@@ -14,7 +14,7 @@ from mibios_umrad.models import (CompoundEntry, FuncRefDBEntry, TaxName, Taxon,
 from mibios_umrad.utils import ProgressPrinter
 
 from .fields import DataPathField
-from . import managers
+from . import managers, get_sample_model
 
 
 log = getLogger(__name__)
@@ -38,7 +38,7 @@ class AbstractAbundance(Model):
 class AbstractSample(Model):
     accession = AccessionField()
     group = models.ForeignKey(
-        settings.SAMPLE_GROUP_MODEL,
+        settings.OMICS_SAMPLE_GROUP_MODEL,
         **fk_opt,
     )
 
@@ -138,6 +138,20 @@ class AbstractSample(Model):
                 / f'{self.accession}_CHECKM' / 'storage'
                 / 'bin_stats.analyze.tsv')
 
+    @atomic
+    def load_omics_data(self, dry_run=False):
+        """
+        load all omics data for this sample from data source
+
+        Assumes no existing data
+        """
+        ContigCluster.loader.load_sample(self)
+        Gene.loader.load_sample(self)
+        FuncAbundance.loader.load_sample(self)
+        CompoundAbundance.loader.load_sample(self)
+        TaxonAbundance.loader.load_sample(self)
+        set_rollback(dry_run)
+
 
 class AbstractSampleGroup(Model):
     """
@@ -160,7 +174,7 @@ class AbstractSampleGroup(Model):
         Return samples in a way that also works for the orphan set
         """
         if self.orphan_group:
-            return Sample.objects.filter(group=None)
+            return get_sample_model().objects.filter(group=None)
         else:
             return self.sample_set.all()
 
@@ -168,7 +182,7 @@ class AbstractSampleGroup(Model):
         """
         Returns mibios table interface URL for table of the group's samples
         """
-        conf = TableConfig(Sample)
+        conf = TableConfig(get_sample_model())
         if self.orphan_group:
             conf.filter['group'] = None
         else:
@@ -192,7 +206,7 @@ class AbstractSampleGroup(Model):
 
 class Bin(Model):
     history = None
-    sample = models.ForeignKey('Sample', **fk_req)
+    sample = models.ForeignKey(settings.OMICS_SAMPLE_MODEL, **fk_req)
     number = models.PositiveIntegerField()
     checkm = models.OneToOneField('CheckM', **fk_opt)
 
@@ -255,7 +269,7 @@ class Bin(Model):
             raise RuntimeError(
                 'method can not be called by concrete bin subclass'
             )
-        for i in Sample.objects.all():
+        for i in get_sample_model().objects.all():
             cls.import_sample_bins(i)
 
     @classmethod
@@ -406,7 +420,7 @@ class CheckM(Model):
 
     @classmethod
     def import_all(cls):
-        for i in Sample.objects.all():
+        for i in get_sample_model().objects.all():
             if i.checkm_ok:
                 log.info(f'sample {i}: have checkm stats, skipping')
                 continue
@@ -616,7 +630,7 @@ class SequenceLike(Model):
     Abstraction of model based on fasta file sequences
     """
     history = None
-    sample = models.ForeignKey('Sample', **fk_req)
+    sample = models.ForeignKey(settings.OMICS_SAMPLE_MODEL, **fk_req)
 
     # Data from fasta file:
     # 1. offset of begin of sequence in bytes
@@ -790,7 +804,7 @@ class Gene(ContigLike):
 
 class NCRNA(Model):
     history = None
-    sample = models.ForeignKey('Sample', **fk_req)
+    sample = models.ForeignKey(settings.OMICS_SAMPLE_MODEL, **fk_req)
     contig = models.ForeignKey('ContigCluster', **fk_req)
     match = models.ForeignKey('RNACentralRep', **fk_req)
     part = models.PositiveIntegerField(**opt)
@@ -859,7 +873,7 @@ class Protein(SequenceLike):
 
 class ReadLibrary(Model):
     sample = models.OneToOneField(
-        'Sample',
+        settings.OMICS_SAMPLE_MODEL,
         on_delete=models.CASCADE,
         related_name='reads',
     )
@@ -882,7 +896,7 @@ class ReadLibrary(Model):
         if not no_counts:
             raise NotImplementedError('read counting is not yet implemented')
 
-        for i in Sample.objects.filter(reads=None):
+        for i in get_sample_model().objects.filter(reads=None):
             obj = cls.from_sample(i)
             try:
                 obj.full_clean()
@@ -1005,20 +1019,6 @@ class Sample(AbstractSample):
     class Meta:
         swappable = 'OMICS_SAMPLE_MODEL'
 
-    @atomic
-    def load_omics_data(self, dry_run=False):
-        """
-        load all omics data for this sample from data source
-
-        Assumes no existing data
-        """
-        ContigCluster.loader.load_sample(self)
-        Gene.loader.load_sample(self)
-        FuncAbundance.loader.load_sample(self)
-        CompoundAbundance.loader.load_sample(self)
-        TaxonAbundance.loader.load_sample(self)
-        set_rollback(dry_run)
-
 
 class SampleGroup(AbstractSampleGroup):
     """
@@ -1035,7 +1035,7 @@ def load_all(**kwargs):
     assumes an empty DB.
     """
     verbose = kwargs.get('verbose', False)
-    Sample.sync(**kwargs)
+    get_sample_model().sync(**kwargs)
     # ReadLibrary.sync()
     ContigCluster.load(verbose=verbose)
     Bin.import_all()

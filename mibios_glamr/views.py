@@ -13,8 +13,9 @@ from django.views.generic import DetailView
 from django.views.generic.base import TemplateView
 
 from mibios import get_registry
+from mibios_omics import get_sample_model
 from mibios_omics.models import (
-    CompoundAbundance, FuncAbundance, Sample, TaxonAbundance
+    CompoundAbundance, FuncAbundance, TaxonAbundance
 )
 from mibios_umrad.models import (
     CompoundEntry, CompoundName, FunctionName, Location, Metal, FuncRefDBEntry,
@@ -179,7 +180,7 @@ class DemoFrontPageView(SingleTableView):
         ratios = pandas.DataFrame([
             (i.reads_mapped_contigs / i.read_count,
              i.reads_mapped_genes / i.read_count)
-            for i in Sample.objects.all()
+            for i in get_sample_model().objects.all()
         ], columns=['contigs', 'genes'])
         plot = ratios.plot(x='contigs', y='genes', kind='scatter')
         plot.figure.savefig(imgpath)
@@ -223,7 +224,7 @@ class RecordView(BaseDetailView):
 
 class SampleListView(SingleTableView):
     """ List of samples belonging to a given dataset  """
-    model = Sample
+    model = get_sample_model()
     template_name = 'mibios_glamr/sample_list.html'
     table_class = tables.SampleTable
 
@@ -242,7 +243,7 @@ class SampleListView(SingleTableView):
 
 
 class SampleView(BaseDetailView):
-    model = Sample
+    model = get_sample_model()
 
 
 class SearchResultView(TemplateView):
@@ -250,7 +251,8 @@ class SearchResultView(TemplateView):
 
     searchables = [
         TaxName, Taxon, CompoundEntry, ReactionEntry, UniRef100, CompoundName,
-        FunctionName, Location, Metal, FuncRefDBEntry, Uniprot, Sample,
+        FunctionName, Location, Metal, FuncRefDBEntry, Uniprot,
+        get_sample_model(),
     ]
 
     def get(self, request, *args, **kwargs):

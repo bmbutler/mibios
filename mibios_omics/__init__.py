@@ -1,20 +1,8 @@
-from django.apps import apps as django_apps
-from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
 
-
-def get_sample_group_model():
-    try:
-        return django_apps.get_model(
-            settings.SAMPLE_GROUP_MODEL,
-            require_ready=False,
-        )
-    except ValueError:
-        raise ImproperlyConfigured(
-            "SAMPLE_GROUP_MODEL must be of the form 'app_label.model_name'"
-        )
-    except LookupError:
-        raise ImproperlyConfigured(
-            f'SAMPLE_GROUP_MODEL refers to model {settings.SAMPLE_GROUP_MODEL}'
-            f' that has not been installed'
-        )
+# Convenience functions to get the swappable models.  This tries to follow how
+# the auth.User model swapping works.  BUT: we define get_sample_model() etc.
+# in the utils module and then import it here for convenience.  This is
+# because, if we were to define those functions here in __init__ the required
+# import of the settings gives us the mibios_omics'a app settings module and
+# not the expected LazySettings object for some strange reason.
+from . utils import get_sample_model, get_sample_group_model  # noqa: F401
