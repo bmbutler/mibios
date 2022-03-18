@@ -876,3 +876,12 @@ def delete_all_uniref100_etc():
         print(f'Deleting: {i} ', end='', flush=True)
         delete_all_objects_quickly(i)
         print('[done]')
+
+
+def load_umrad():
+    """ load all of UMRAD from scratch, assuming an empty DB """
+    Compound.loader.load()
+    Reaction.loader.load()
+    Taxon.loader.load()
+    FuncRefDBEntry.loader.load()
+    UniRef100.load()
