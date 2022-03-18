@@ -320,14 +320,27 @@ class CSV_Spec:
     IGNORE_COLUMN = object()
     SKIP_ROW = object()
 
+    model = None
+    loader = None
+
+    empty_values = []
+    """
+    A list of input-file-wide extra empty values.  For the purpose of loading
+    the data these are used in addition to each field's empty_values attribute.
+    """
+
     def __init__(self, *column_specs):
         if not column_specs:
             raise ValueError('at least one column needs to be declared')
 
         self._spec = column_specs
-        self.setup()
 
     def setup(self, column_specs=None):
+        """
+        Setup method to be called once before loading data
+
+        Intended to be called automatically by the loader.
+        """
         if column_specs is None:
             column_specs = self._spec
 

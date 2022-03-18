@@ -125,12 +125,19 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
 
     def contribute_to_class(self, model, name):
         super().contribute_to_class(model, name)
-        # get spec from model if non is declared in loader class
+        # get spec from model if none is declared in loader class
         if self.spec is None:
             try:
                 self.spec = model.loader_spec
             except AttributeError:
                 pass
+
+        if self.spec is not None:
+            if self.spec.model is None:
+                self.spec.model = model
+
+            self.spec.loader = self
+            self.spec.setup()
 
     def load(self, max_rows=None, start=0, dry_run=False, sep='\t',
              parse_only=False, file=None, template={}):
@@ -202,6 +209,7 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
         fields = [self.model._meta.get_field(i) for i in self.spec.keys]
         convfuncs = self.spec.convfuncs
         cut = self.spec.cut
+        empty_extra = self.spec.empty_values
 
         # loading FK (acc,...)->pk mappings
         fkmap = {}
@@ -260,11 +268,13 @@ class Loader(BulkCreateWrapperMixin, DjangoManager):
                             break  # will skip this obj / skips for-else block
                     else:
                         setattr(obj, field.name + '_id', pk)
+                elif value not in empty_extra and value not in field.empty_values:  # noqa: E501
+                    # TODO: find out why leaving '' in for int fields fails
+                    # ValueError @ django/db/models/fields/__init__.py:1825
+                    setattr(obj, field.name, value)
                 else:
-                    if not value == '':
-                        # TODO: find out why leaving '' in for int fields fails
-                        # ValueError @ django/db/models/fields/__init__.py:1825
-                        setattr(obj, field.name, value)
+                    # empty field
+                    pass
             else:
                 objs.append(obj)
                 if m2m:
