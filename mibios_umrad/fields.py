@@ -55,7 +55,10 @@ class AccessionField(CharField):
         if set_verbose_name:
             # verbose_name should now have been set via
             # set_attributes_from_name()
-            self.verbose_name = cls._meta.verbose_name + ' id'
+            # FIXME: line below causes this default to be used in a model
+            # derived from an abstract model that declares an AccessionField:
+            # ??? self.verbose_name = cls._meta.verbose_name + ' id'
+            pass
 
     def from_db_value(self, value, expression, connection):
         if self.prefix is not None and value is not None:
