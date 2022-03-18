@@ -181,6 +181,7 @@ class DemoFrontPageView(SingleTableView):
             (i.reads_mapped_contigs / i.read_count,
              i.reads_mapped_genes / i.read_count)
             for i in get_sample_model().objects.all()
+            if i.contigs_ok and i.genes_ok
         ], columns=['contigs', 'genes'])
         plot = ratios.plot(x='contigs', y='genes', kind='scatter')
         plot.figure.savefig(imgpath)

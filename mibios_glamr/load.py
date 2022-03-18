@@ -5,6 +5,9 @@ from django.core.exceptions import ValidationError
 from django.db.models.manager import BaseManager
 from django.db.transaction import atomic, set_rollback
 
+from mibios_umrad.manager import Loader
+from mibios_umrad.utils import CSV_Spec
+
 
 class DatasetLoader(BaseManager):
     empty_values = ['NA', 'Not Listed']
@@ -100,3 +103,74 @@ class DatasetLoader(BaseManager):
 
         set_rollback(dry_run)
         return refs
+
+
+class SampleLoader(Loader):
+
+    def get_file(self):
+        return settings.GLAMR_META_ROOT / '2014_metaG_metadata.tsv'
+
+    def load(self):
+        fnames = [
+            'accession',
+            'site',
+            'fraction',
+            'sample_name',
+            'date',
+            'station_depth',
+            'sample_depth',
+            'sample_depth_category',
+            'local_time',
+            'latitude',
+            'longitude',
+            'wind_speed',
+            'wave_height',
+            'sky',
+            'secchi_depth',
+            'sample_temperature',
+            'ctd_temperature',
+            'ctd_specific_conductivity',
+            'ctd_beam_attenuation',
+            'ctd_tramission',
+            'ctd_dissolved_oxygen',
+            'ctd_radiation',
+            'turbidity',
+            'particulate_microcystin',
+            'dissolved_microcystin',
+            'extracted_phycocyanin',
+            'extracted_chlorophyll_a',
+            'phosphorus',
+            'dissolved_phosphorus',
+            'soluble_reactive_phosphorus',
+            'ammonia',
+            'nitrate_nitrite',
+            'urea',
+            'organic_carbon',
+            'organic_nitrogen',
+            'dissolved_organic_carbon',
+            'absorbance',
+            'suspended_solids',
+            'Volatile_suspended_solids']
+
+        # get column headers from verbose names!
+        spec = []
+        for i in fnames:
+            field = self.model._meta.get_field(i)
+            if i == 'accession':
+                col_name = 'accession'
+            else:
+                col_name = field.verbose_name
+            spec.append((col_name, i))
+        self.spec = CSV_Spec(*spec)
+        self.spec.empty_values = ['NA']
+        self.spec.setup()
+
+        # FIXME: need some proper source for dataset
+        dset = self.model._meta.get_field('group').related_model(
+            scheme='Lake Erie CIGLR weekly monitoring data',
+            water_bodies='Lake Erie',
+            sequencing_data_type='metagenome',
+        )
+        dset.save()
+        template = dict(group=dset)
+        super().load(template=template)
