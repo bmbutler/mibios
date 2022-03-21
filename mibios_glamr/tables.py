@@ -97,7 +97,7 @@ class DatasetTable(Table):
         return f'{record.gene_target} {record.size_fraction}'
 
     def render_samples(self, record):
-        return f'{record.samples().count()}'
+        return f'{record.sample_count}'
 
 
 def get_sample_url(sample):

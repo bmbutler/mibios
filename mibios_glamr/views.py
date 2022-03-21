@@ -6,7 +6,7 @@ import pandas
 from django.conf import settings
 from django.core.exceptions import FieldDoesNotExist, FieldError
 from django.core.management import call_command
-from django.db.models import URLField
+from django.db.models import Count, URLField
 from django.http import Http404, HttpResponseRedirect
 from django.urls import reverse
 from django.views.generic import DetailView
@@ -164,7 +164,19 @@ class DemoFrontPageView(SingleTableView):
 
     def get_table_data(self):
         data = super().get_table_data()
-        return chain([models.Dataset.orphans], data)
+        orphans = models.Dataset.orphans
+        orphans.sample_count = orphans.samples().count()
+        # put orphans into first row (if any exist):
+        if orphans.sample_count > 0:
+            return chain([orphans], data)
+        else:
+            return data
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        qs = qs.select_related('reference')
+        qs = qs.annotate(sample_count=Count('sample'))
+        return qs
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
