@@ -1,7 +1,8 @@
 from django.urls import reverse
 
-from django_tables2 import Table, Column
+from django_tables2 import Column, Table, TemplateColumn
 
+from mibios_glamr import models as glamr_models
 from mibios_omics import models as omics_models
 
 
@@ -15,7 +16,7 @@ def get_record_url(*args):
     PK must be passed.
 
     Use this instead of Model.get_absolute_url() because it needs to work on
-    models from pother apps.
+    models from other apps.
     """
     if len(args) == 1:
         obj = args[0]
@@ -51,6 +52,44 @@ class FunctionAbundanceTable(Table):
     class Meta:
         model = omics_models.FuncAbundance
         exclude = ['id']
+
+
+class OverViewTable(Table):
+    num_samples = TemplateColumn(
+        """<a href="{% url 'record_overview_samples' model=table.view_object_model_name pk=table.view_object.pk %}">{{ value }}</a> out of {{ record.total_samples }}""",  # noqa: E501
+        verbose_name='number of samples',
+    )
+    short = TemplateColumn(
+        "{{ record }}",
+        linkify=lambda record: get_record_url(record),
+        verbose_name='mini description',
+    )
+
+    class Meta:
+        model = glamr_models.Dataset
+        fields = [
+            'num_samples', 'short', 'water_bodies', 'year', 'Institution/PI',
+            'sequencing_data_type',
+        ]
+
+
+class OverViewSamplesTable(Table):
+    accession = Column(
+        linkify=lambda record: get_record_url(record),
+        verbose_name='sample',
+    )
+    sample_name = Column(verbose_name='other names')
+    group = Column(
+        linkify=lambda value: get_record_url(value),
+        verbose_name='dataset',
+    )
+
+    class Meta:
+        model = glamr_models.Sample
+        fields = [
+            'accession', 'sample_name', 'group', 'group.water_bodies',
+            'date', 'Institution/PI', 'latitude', 'longitude',
+        ]
 
 
 class TaxonAbundanceTable(Table):

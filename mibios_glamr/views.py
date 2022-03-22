@@ -4,6 +4,7 @@ from django_tables2 import Column, SingleTableView, TemplateColumn
 import pandas
 
 from django.conf import settings
+from django.contrib import messages
 from django.core.exceptions import FieldDoesNotExist, FieldError
 from django.core.management import call_command
 from django.db.models import Count, URLField
@@ -45,20 +46,15 @@ class AbundanceView(SingleTableView):
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)
         try:
-            obj_model = get_registry().models[self.kwargs['model']]
+            self.object_model = get_registry().models[kwargs['model']]
         except KeyError as e:
             raise Http404(f'no such model: {e}') from e
 
-        accession = self.request.GET['id'].strip()
-
         try:
-            sfield = obj_model.get_search_field()
-        except AttributeError as e:
-            raise Http404('model is unsupported') from e
+            self.object = self.object_model.objects.get(pk=kwargs['pk'])
+        except self.model.DoesNotExist:
+            raise Http404('no such object')
 
-        kw = {sfield.name: accession}
-        self.object = obj_model.objects.get(**kw)
-        self.object_model = obj_model
         self.model = self.object.abundance.model
 
     def get_queryset(self):
@@ -235,6 +231,117 @@ class RecordView(BaseDetailView):
             raise Http404(f'no such model: {e}') from e
 
 
+class OverView(SingleTableView):
+    template_name = 'mibios_glamr/overview.html'
+    table_class = tables.OverViewTable
+
+    # lookup from sample to object
+    accessor = {
+        'compoundentry': 'compoundabundance__compound',
+        'funcrefdbentry': 'funcabundance__function',
+        'taxname': 'taxonabundance__taxname',
+        'compoundname': 'compoundabundance__compound__names',
+        'functionname': 'funcabundance__function__names',
+    }
+
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+        try:
+            self.model = get_registry().models[kwargs['model']]
+        except KeyError as e:
+            raise Http404(f'no such model: {e}') from e
+
+        try:
+            self.object = self.model.objects.get(pk=kwargs['pk'])
+        except self.model.DoesNotExist:
+            raise Http404('no such object')
+
+    def get_table_data(self):
+        try:
+            a = self.accessor[self.model._meta.model_name]
+        except KeyError:
+            return []
+        else:
+            a = 'sample__' + a
+            f = {a: self.object}
+            qs = models.Dataset.objects.filter(**f)
+            qs = qs.annotate(num_samples=Count('sample', distinct=True))
+
+        # add totals (can't do this in above query (cf. django docs order of
+        # annotation and filters:
+        totals = models.Dataset.objects.filter(pk__in=[i.pk for i in qs])
+        totals = totals.annotate(Count('sample'))
+        totals = dict(totals.values_list('pk', 'sample__count'))
+        for i in qs:
+            i.total_samples = totals[i.pk]
+
+        return qs
+
+    def get_table(self):
+        table = super().get_table()
+        # FIXME: a hack: pass some extra context for column rendering
+        table.view_object = self.object
+        table.view_object_model_name = self.model._meta.model_name
+        return table
+
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx.update(
+            object=self.object,
+            object_model_name=self.model._meta.model_name,
+            object_model_name_verbose=self.model._meta.verbose_name
+        )
+        return ctx
+
+
+class OverViewSamplesView(SingleTableView):
+    template_name = 'mibios_glamr/overview_samples.html'
+    table_class = tables.OverViewSamplesTable
+
+    # lookup from sample to object
+    accessor = {
+        'compoundentry': 'compoundabundance__compound',
+        'funcrefdbentry': 'funcabundance__function',
+        'taxname': 'taxonabundance__taxname',
+        'compoundname': 'compoundabundance__compound__names',
+        'functionname': 'funcabundance__function__names',
+    }
+
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+        try:
+            self.model = get_registry().models[kwargs['model']]
+        except KeyError as e:
+            raise Http404(f'no such model: {e}') from e
+
+        try:
+            self.object = self.model.objects.get(pk=kwargs['pk'])
+        except self.model.DoesNotExist:
+            raise Http404('no such object')
+
+    def get_table_data(self):
+        try:
+            a = self.accessor[self.model._meta.model_name]
+        except KeyError:
+            return []
+        else:
+            f = {a: self.object}
+            qs = models.Sample.objects.filter(**f)
+            # distinct: there may be multiple abundances per object and sample
+            # e.g. for different roles of a compound
+            qs = qs.select_related('group').distinct()
+        return qs
+
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx.update(
+            object=self.object,
+            object_model_name=self.model._meta.model_name,
+            object_model_name_verbose=self.model._meta.verbose_name
+        )
+        return ctx
+
+
 class SampleListView(SingleTableView):
     """ List of samples belonging to a given dataset  """
     model = get_sample_model()
@@ -259,8 +366,8 @@ class SampleView(BaseDetailView):
     model = get_sample_model()
 
 
-class SearchResultView(TemplateView):
-    template_name = 'mibios_glamr/search_results.html'
+class SearchHitView(TemplateView):
+    template_name = 'mibios_glamr/search_hits.html'
 
     searchables = [
         TaxName, Taxon, CompoundEntry, ReactionEntry, UniRef100, CompoundName,
@@ -270,17 +377,23 @@ class SearchResultView(TemplateView):
 
     def get(self, request, *args, **kwargs):
         self.search()
-        if self.results:
+        if self.hits:
             ctx = self.get_context_data(
-                search_results=self.results,
+                search_hits=self.hits,
                 query=self.query,
+                no_hit_models=self.no_hit_models,
             )
         else:
+            messages.add_message(
+                request, messages.INFO, 'search: did not find anything'
+            )
             return HttpResponseRedirect(reverse('frontpage'))
         return self.render_to_response(ctx)
 
     def search(self):
-        self.results = []
+        self.hits = []
+        self.no_hit_models = []
+
         form = SearchForm(data=self.request.GET)
         if not form.is_valid():
             return None
@@ -291,30 +404,53 @@ class SearchResultView(TemplateView):
             search_field_name = model.get_search_field().name
             qs = model.objects.search(self.query)
 
-            try:
-                abund_qs = qs.exclude(abundance=None)
-            except FieldError:
-                # don't have abundance field, keeping qs as-is
-                pass
+            if not form.cleaned_data['search_all']:
+                # just search for objects with abundance
+                # (if model supports it, no filters for other models)
+                if model is CompoundName:
+                    abund_lookup = 'compoundentry__abundance'
+                elif model is FunctionName:
+                    abund_lookup = 'funcrefdbentry__abundance'
+                else:
+                    abund_lookup = 'abundance'
+                try:
+                    qs = qs.exclude(**{abund_lookup: None})
+                except FieldError:
+                    # don't have abundance field, keeping qs as-is
+                    # (or abund_path is outdated)
+                    continue
+                else:
+                    have_abundance = True
+
+            model_hits = []
+            if model is CompoundName:
+                model_name = CompoundEntry._meta.model_name
+                for obj in qs.iterator():
+                    hit_value = getattr(obj, search_field_name)
+                    for i in obj.compoundentry_set.exclude(abundance=None):
+                        model_hits.append((i, str(i), hit_value))
+            elif model is FunctionName:
+                model_name = FuncRefDBEntry._meta.model_name
+                for obj in qs.iterator():
+                    hit_value = getattr(obj, search_field_name)
+                    for i in obj.funcrefdbentry_set.exclude(abundance=None):
+                        model_hits.append((i, str(i), hit_value))
             else:
-                have_abundance = True
-                if not form.cleaned_data['search_all']:
-                    # just search for objects with abundance
-                    # (if model supports it, no filters for other models)
-                    qs = abund_qs
+                model_name = model._meta.model_name
+                for obj in qs.iterator():
+                    # use hit as-is, no proxy
+                    hit_value = getattr(obj, search_field_name)
+                    model_hits.append((obj, hit_value, None))
 
-            hits = [
-                (obj, getattr(obj, search_field_name))
-                for obj in qs.iterator()
-            ]
-
-            if True or hits:
-                self.results.append((
+            if model_hits:
+                self.hits.append((
                     have_abundance,
-                    model._meta.model_name,
                     model._meta.verbose_name_plural,
-                    hits,
+                    model_name,
+                    model_hits,
                 ))
+            else:
+                self.no_hit_models.append(model._meta.verbose_name_plural)
 
 
 class ToManyListView(SingleTableView):

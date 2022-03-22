@@ -1,0 +1,31 @@
+{% extends "mibios_glamr/base.html" %}
+{% block content %}
+<h3>Search results for <small>"{{ query }}"</small>:</h3>
+Hits: {% for have_abundance, hit_model_plural, model_name, hits in search_hits %}
+    <a href="#{{ hit_model_plural }}">{{ hit_model_plural }}({{ hits|length }})</a>
+{% endfor %}
+{% if no_hit_models %}<br>No hits: {{ no_hit_models|join:", " }}{% endif %}
+{% for have_abundance, hit_model_plural, model_name, hits in search_hits %}
+    <p id="{{ hit_model_plural }}">Found {{ hits|length }} {{ hit_model_plural }}:
+    <ul>
+    {% if have_abundance %}
+        {% for obj, accession, proxy in hits %}
+            <li>
+            {% if proxy %}
+                {{ proxy }} via <a href="{% url 'record_overview' model=model_name pk=obj.pk %}">{{ obj }}</a>
+            {% else %}
+                <a href="{% url 'record_overview' model=model_name pk=obj.pk %}">{{ obj }}</a>
+            {% endif %}
+            </li>
+
+        {% endfor %}
+    {% else %}
+        {% for obj, accession, proxy in hits %}
+            <li><a href="{% url 'record' model=model_name pk=obj.pk %}">{{ obj }}</a></li>
+        {% endfor %}
+    {% endif %}
+    </ul>
+    </p>
+{% endfor %}
+{% endblock %}
+

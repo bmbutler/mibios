@@ -1,0 +1,8 @@
+{% extends "mibios_glamr/base.html" %}
+{% load django_tables2 %}
+{% block content %}
+<h3><small><a href="{% url 'record' model=object_model_name pk=object.pk %}">{{ object }}</a> ({{ object_model_name_verbose }})</small> is found in these data sets:</h3>
+{% render_table table %}
+{% endblock %}
+
+

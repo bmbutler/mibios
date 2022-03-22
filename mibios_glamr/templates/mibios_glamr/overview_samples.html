@@ -1,0 +1,11 @@
+{% extends "mibios_glamr/base.html" %}
+{% load django_tables2 %}
+{% block content %}
+
+<h3>Samples with <small>{{ object_model_name_verbose }}: <a href="{% url 'record' model=object_model_name pk=object.pk %}">{{ object }}</a></small>:</h3>
+{% render_table table %}
+<p>
+See <a href="{% url 'record_abundance' model=object_model_name pk=object.pk %}">abundance data</a> for {{ object_model_name_verbose }} {{ object }}.
+</p>
+
+{% endblock %}
