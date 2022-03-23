@@ -117,6 +117,11 @@ class QuerySet(BulkCreateWrapperMixin, MibiosQuerySet):
             else:
                 lookup = 'exact'
 
+        if prefix := getattr(uid_field, 'prefix', ''):
+            # rm prefix from query for accession fields
+            if query_term.casefold().startswith(prefix.casefold()):
+                query_term = query_term[len(prefix):]
+
         kw = {uid_field.name + '__' + lookup: query_term}
         try:
             return self.filter(**kw)
