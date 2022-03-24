@@ -49,9 +49,26 @@ class CompoundAbundanceTable(Table):
 
 
 class FunctionAbundanceTable(Table):
+    related_genes = Column(
+        linkify=lambda record:
+            reverse(
+                'record_abundance_genes',
+                kwargs={
+                    'model': record.function._meta.model_name,
+                    'pk': record.function.pk,
+                    'sample': record.sample.accession,
+                },
+            ),
+        verbose_name='related genes',
+        empty_values=(),  # to trigger render_FOO()
+    )
+
     class Meta:
         model = omics_models.FuncAbundance
         exclude = ['id']
+
+    def render_related_genes(self):
+        return 'genes'
 
 
 class OverViewTable(Table):

@@ -22,9 +22,58 @@ from mibios_umrad.models import (
     CompoundEntry, CompoundName, FunctionName, Location, Metal, FuncRefDBEntry,
     ReactionEntry, TaxName, Taxon, Uniprot, UniRef100,
 )
+from mibios_omics.models import Gene
 from . import models
 from .forms import SearchForm
 from . import tables
+
+
+class ModelTableMixin():
+    """
+    Mixin for SingleTableView
+
+    Improves columns for relation fields.  The inheriting view must set
+    self.model
+    """
+    model = None  # model needs to be set by inheriting class
+    table_class = None  # triggers the model-based table class creation
+    exclude = ['id']  # do not display these fields
+
+    def get_table_kwargs(self):
+        kw = {}
+        kw['exclude'] = self.exclude
+        kw['extra_columns'] = self.get_improved_columns()
+        return kw
+
+    def get_improved_columns(self):
+        """ make replacements to linkify FK + accession columns """
+        cols = []
+        try:
+            acc_field = self.model.get_accession_field_single()
+        except RuntimeError:
+            acc_field = None
+            col = TemplateColumn(
+                """[<a href="{% url 'record' model=model_name pk=record.pk %}">{{ record }}</a>]""",  # noqa:E501
+                extra_context=dict(model_name=self.model._meta.model_name),
+            )
+            cols.append(('record links', col))
+
+        for i in self.model._meta.get_fields():
+            if acc_field and i is acc_field:
+                col = Column(
+                    linkify=lambda record: tables.get_record_url(record)
+                )
+            elif not i.many_to_one:
+                continue
+            elif i.name in self.exclude:
+                continue
+            else:
+                # regular FK field
+                col = Column(
+                    linkify=lambda value: tables.get_record_url(value)
+                )
+            cols.append((i.name, col))
+        return cols
 
 
 class AbundanceView(SingleTableView):
@@ -70,6 +119,43 @@ class AbundanceView(SingleTableView):
         ctx['object'] = self.object
         ctx['object_model_name'] = self.object_model._meta.model_name
 
+        return ctx
+
+
+class AbundanceGeneView(ModelTableMixin, SingleTableView):
+    template_name = 'mibios_glamr/abundance_genes.html'
+    model = Gene
+    exclude = ['id', 'sample']
+
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+        try:
+            self.object_model = get_registry().models[kwargs['model']]
+        except KeyError as e:
+            raise Http404(f'no such model: {e}') from e
+
+        try:
+            self.object = self.object_model.objects.get(pk=kwargs['pk'])
+        except self.model.DoesNotExist:
+            raise Http404('no such object')
+
+        try:
+            self.sample = models.Sample.objects.get(accession=kwargs['sample'])
+        except models.Sample.DoesNotExist:
+            raise Http404('no such sample')
+
+    def get_queryset(self):
+        f = dict(sample=self.sample)
+        if self.object_model is FuncRefDBEntry:
+            f['besthit__function_refs'] = self.object
+        return Gene.objects.filter(**f)
+
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['sample'] = self.sample
+        ctx['object'] = self.object
+        ctx['object_model_name'] = self.object_model._meta.model_name
+        ctx['object_model_name_verbose'] = self.object_model._meta.verbose_name
         return ctx
 
 
@@ -499,45 +585,11 @@ class ToManyListView(SingleTableView):
         return ctx
 
 
-class ToManyFullListView(ToManyListView):
-    """ relations view but with full tables """
+class ToManyFullListView(ModelTableMixin, ToManyListView):
+    """ relations view but with full model-based table """
     template_name = 'mibios_glamr/relations_full_list.html'
-    table_class = None
 
-    def get_table_kwargs(self):
-        kw = {}
-        # excl. pk and column for the object
-        kw['exclude'] = ['id', self.field.remote_field.name]
-        kw['extra_columns'] = self.get_improved_columns()
-        return kw
-
-    def get_improved_columns(self):
-        """ make replacements to linkify FK + accession columns """
-        cols = []
-        try:
-            acc_field = self.model.get_accession_field_single()
-        except RuntimeError:
-            acc_field = None
-            col = TemplateColumn(
-                """[<a href="{% url 'record' model=model_name pk=record.pk %}">{{ record }}</a>]""",  # noqa:E501
-                extra_context=dict(model_name=self.model._meta.model_name),
-            )
-            cols.append(('record links', col))
-
-        for i in self.model._meta.get_fields():
-            if acc_field and i is acc_field:
-                col = Column(
-                    linkify=lambda record: tables.get_record_url(record)
-                )
-            elif not i.many_to_one:
-                continue
-            elif i is self.field:
-                # is excluded
-                continue
-            else:
-                # regular FK field
-                col = Column(
-                    linkify=lambda value: tables.get_record_url(value)
-                )
-            cols.append((i.name, col))
-        return cols
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+        # hide the column for the object
+        self.exclude.append(self.field.remote_field.name)

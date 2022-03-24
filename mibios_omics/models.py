@@ -747,6 +747,15 @@ class FuncAbundance(AbstractAbundance):
             ('sample', 'function'),
         )
 
+    def genes(self):
+        """
+        Queryset of associated genes
+        """
+        return Gene.objects.filter(
+            sample=self.sample,
+            besthit__function_refs=self.function,
+        )
+
 
 class Gene(ContigLike):
     STRAND_CHOICE = (

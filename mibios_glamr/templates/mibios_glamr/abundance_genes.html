@@ -1,0 +1,10 @@
+{% extends "mibios_glamr/base.html" %}
+{% load render_table from django_tables2 %}
+{% block content %}
+<h3>
+    Assembled genes in sample <a href="{% url 'record' model='sample' pk=sample.pk %}">{{ sample }}</a>
+    for {{ object_model_name_verbose }}
+    <a href="{% url 'record' model=object_model_name pk=object.pk %}">{{ object }}</a>
+</h3>
+{% render_table table %}
+{% endblock %}
