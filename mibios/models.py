@@ -217,20 +217,21 @@ class QuerySet(models.QuerySet):
                 # not a real field
                 _fields[i] = None
         fields = _fields
+        # real field names has at least 'id', so it's never empty:
+        real_field_names = [i for i in fields if fields[i] is not None]
         del _fields
 
         # get transposed value list (for real fields):
-        data = list(map(list, zip(*self.values_list(
-            *([i for i in fields if fields[i] is not None])
-        ))))
+        data = list(map(list, zip(*self.values_list(*real_field_names))))
+
+        if len(self) == 0:
+            # we're empty, and data == [] but we need it to be a list of empty
+            # lists, the pandas calls below will then make a nice empty
+            # DataFrame (with columns and index) for us
+            data = [[] for _ in real_field_names]
 
         # map field name to list index (for real fields):
-        fidx = dict(
-            (j, i) for i, j
-            in enumerate(
-                [i for i in fields if fields[i] is not None]
-            )
-        )
+        fidx = dict((j, i) for i, j in enumerate(real_field_names))
 
         index = pandas.Index(data[fidx['id']], dtype=int, name='id')
         df = pandas.DataFrame([], index=index)
@@ -650,7 +651,7 @@ class ImportFile(models.Model):
                   'file records.  This practice is encouraged e.g. if the '
                   'same file is uploaded multiple times, e.g. re-uploading '
                   'after making offline changes to the file.',
-            )
+    )
     file = models.FileField(
         upload_to='imported/%Y/', verbose_name='data source file',
     )
