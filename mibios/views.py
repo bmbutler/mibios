@@ -86,9 +86,9 @@ class BasicBaseMixin(CuratorMixin, ContextMixin):
         ctx = super().get_context_data(**ctx)
         # page_title: a list, inheriting views should consider adding to this
         ctx['page_title'] = [getattr(
-                get_registry(),
-                'verbose_name',
-                apps.get_app_config('mibios').verbose_name
+            get_registry(),
+            'verbose_name',
+            apps.get_app_config('mibios').verbose_name
         )]
         ctx['user_is_curator'] = self.user_is_curator
         ctx['version_info'] = {'mibios': __version__}
@@ -299,6 +299,13 @@ class TableViewPlugin():
 
     def __init__(self, view):
         self.view = view
+        self.setup()
+
+    def setup(self):
+        pass
+
+    def get_queryset(self, qs):
+        return qs
 
     def get_context_data(self, **ctx):
         return ctx
@@ -314,7 +321,18 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
 
     def __init__(self, *args, **kwargs):
         self.compute_counts = False
+        self.plugin = None
         super().__init__(*args, **kwargs)
+
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+        try:
+            plugin_class = \
+                get_registry().table_view_plugins[self.conf.name]
+        except KeyError:
+            self.plugin = None
+        else:
+            self.plugin = plugin_class(view=self)
 
     def get_queryset(self):
         if hasattr(self, 'object_list'):
@@ -323,7 +341,10 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
         if self.conf is None:
             return []
 
-        return self.conf.get_queryset()
+        qs = self.conf.get_queryset()
+        if self.plugin:
+            qs = self.plugin.get_queryset(qs)
+        return qs
 
     def get_table_class(self):
         t = table_factory(conf=self.conf)
@@ -435,7 +456,7 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
                         get_field_search_form(
                             self.conf,
                             *self.get_search_field()
-                        )()
+                    )()
                 except SearchFieldLookupError:
                     pass
             # END sort-column stuff
@@ -448,15 +469,11 @@ class TableView(DatasetMixin, UserRequiredMixin, SingleTableView):
 
         # Plugin: process the plugin last so that their get_context_data() gets
         # a full view of the existing context:
-        try:
-            plugin_class = \
-                get_registry().table_view_plugins[self.conf.name]
-        except KeyError:
-            ctx['table_view_plugin_template'] = None
+        if self.plugin:
+            ctx['table_view_plugin_template'] = self.plugin.template_name
+            ctx = self.plugin.get_context_data(**ctx)
         else:
-            plugin = plugin_class(view=self)
-            ctx['table_view_plugin_template'] = plugin.template_name
-            ctx = plugin.get_context_data(**ctx)
+            ctx['table_view_plugin_template'] = None
 
         # add relation links
         related_confs = []
