@@ -8,12 +8,13 @@ from django.contrib import messages
 from django.core.exceptions import FieldDoesNotExist, FieldError
 from django.core.management import call_command
 from django.db.models import Count, URLField
-from django.http import Http404, HttpResponseRedirect
+from django.http import Http404, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 from django.views.generic import DetailView
 from django.views.generic.base import TemplateView
 
 from mibios import get_registry
+from mibios.views import ExportBaseMixin, TextRendererZipped
 from mibios_omics import get_sample_model
 from mibios_omics.models import (
     CompoundAbundance, FuncAbundance, TaxonAbundance
@@ -28,7 +29,55 @@ from .forms import SearchForm
 from . import tables
 
 
-class ModelTableMixin():
+class ExportMixin(ExportBaseMixin):
+    query_param = 'export'
+
+    def get_filename(self):
+        value = ''
+        if hasattr(self, 'object_model'):
+            value += self.object_model._meta.model_name
+        if hasattr(self, 'object'):
+            if value:
+                value += '-'
+            value += str(self.object)
+        if hasattr(self, 'model'):
+            if value:
+                value += '-'
+            value += self.model._meta.model_name
+        if value:
+            return value
+        else:
+            return self.__class__.__name__.lower() + '-export'
+
+    def get(self, request, *args, **kwargs):
+        if self.export_check():
+            return self.export_response()
+        else:
+            return super().get(request, *args, **kwargs)
+
+    def export_check(self):
+        """ Returns wether a file export response is needed """
+        return self.query_param in self.request.GET
+
+    def export_response(self):
+        """ generate file download response """
+        name, suffix, renderer_class = self.get_format()
+
+        response = HttpResponse(content_type=renderer_class.content_type)
+        filename = self.get_filename() + suffix
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+        renderer_class(response, filename=filename).render(self.get_values())
+        return response
+
+    def get_values(self):
+        if hasattr(self, 'get_table'):
+            return self.get_table().as_values()
+        else:
+            raise RuntimeError('not implemented')
+
+
+class ModelTableMixin(ExportMixin):
     """
     Mixin for SingleTableView
 
@@ -76,7 +125,7 @@ class ModelTableMixin():
         return cols
 
 
-class AbundanceView(SingleTableView):
+class AbundanceView(ExportMixin, SingleTableView):
     """
     Lists abundance data for a single object of a variable model
     """
@@ -123,6 +172,11 @@ class AbundanceView(SingleTableView):
 
 
 class AbundanceGeneView(ModelTableMixin, SingleTableView):
+    """
+    Views genes for a sample/something combo
+
+    Can export genes in fasta format
+    """
     template_name = 'mibios_glamr/abundance_genes.html'
     model = Gene
     exclude = ['id', 'sample']
@@ -157,6 +211,27 @@ class AbundanceGeneView(ModelTableMixin, SingleTableView):
         ctx['object_model_name'] = self.object_model._meta.model_name
         ctx['object_model_name_verbose'] = self.object_model._meta.verbose_name
         return ctx
+
+    # file export methods
+
+    def export_check(self):
+        self.export_fasta = 'export-fasta' in self.request.GET
+        return self.export_fasta or super().export_check()
+
+    def get_format(self):
+        return ('fa/zip', '.fasta.zip', TextRendererZipped)
+
+    def get_filename(self):
+        if self.export_fasta:
+            return super().get_filename() + '.fasta'
+        else:
+            return super().get_filename()
+
+    def get_values(self):
+        if self.export_fasta:
+            return self.get_queryset().to_fasta()
+        else:
+            return super().get_values()
 
 
 class BaseDetailView(DetailView):
