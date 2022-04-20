@@ -13,8 +13,9 @@ from mibios_umrad.models import (CompoundEntry, FuncRefDBEntry, TaxName, Taxon,
                                  Lineage, UniRef100)
 from mibios_umrad.utils import ProgressPrinter
 
-from .fields import DataPathField
 from . import managers, get_sample_model
+from .fields import DataPathField
+from .utils import get_fasta_sequence
 
 
 log = getLogger(__name__)
@@ -638,28 +639,32 @@ class SequenceLike(Model):
     # 2. num of bytes until next offset (or EOF)
     seq_bytes = models.PositiveIntegerField(**opt)
 
+    objects = managers.SequenceLikeManager()
+
     class Meta:
         abstract = True
 
-    def get_sequence(self, fasta_format=False):
-        with self.objects.get_fasta_path(self.sample).open('rb') as fa:
-            fa.seek(self.seq_offset)
-            seq = b''
-            for line in fa:
-                if line.startswith(b'>'):
-                    break
-                seq += line.strip()
-                if len(seq) > self.seq_bytes:
-                    raise RuntimeError(
-                        f'Unexpectedly, sequence of {self} has a length more '
-                        f'than {self.seq_bytes}'
-                    )
+    def get_sequence(self, fasta_format=False, file=None):
+        """
+        Retrieve sequence from file storage, optionally fasta-formatted
+
+        To get sequences for many objects, use the to_fasta() queryset method,
+        which is much more efficient than calling this method while iterating
+        over a queryset.
+        """
+        if file is None:
+            p = self.__class__.loader.get_fasta_path(self.sample)
+            with p.open('rb') as f:
+                seq = get_fasta_sequence(f, self.seq_offset, self.seq_bytes)
+        else:
+            seq = get_fasta_sequence(file, self.seq_offset, self.seq_bytes)
 
         if fasta_format:
-            head = f'>{self}\n'
+            lines = [f'>{self}']
         else:
-            head = ''
-        return head + seq.decode()
+            lines = []
+        lines.append(seq.decode())
+        return '\n'.join(lines)
 
 
 class ContigLike(SequenceLike):

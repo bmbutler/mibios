@@ -37,3 +37,28 @@ def get_sample_model():
             f'OMICS_SAMPLE_MODEL refers to model '
             f'{settings.OMICS_SAMPLE_MODEL} that has not been installed'
         )
+
+
+def get_fasta_sequence(file, offset, length):
+    """
+    Retrieve sequence from fasta formatted file with known offset
+
+    parameters:
+        file: file like object, opened for reading bytes
+        offset: start of sequence data
+        length: expected length in bytes
+
+    Returns sequence data as bytes string.
+    """
+    file.seek(offset)
+    seq = b''
+    for line in file:
+        if line.startswith(b'>'):
+            break
+        seq += line.strip()
+    if len(seq) > length:
+        raise RuntimeError(
+            f'Unexpectedly, sequence at {file}:{offset} has a length '
+            f'{len(seq)} but {length} was expected.'
+        )
+    return seq

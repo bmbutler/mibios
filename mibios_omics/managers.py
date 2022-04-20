@@ -11,9 +11,13 @@ import os
 from django.conf import settings
 from django.db.transaction import atomic, set_rollback
 
+from mibios.models import QuerySet
 from mibios_umrad.models import Lineage, TaxName, Taxon, UniRef100
 from mibios_umrad.manager import Loader, Manager
 from mibios_umrad.utils import CSV_Spec, ProgressPrinter, ReturningGenerator
+
+from . import get_sample_model
+from .utils import get_fasta_sequence
 
 
 log = getLogger(__name__)
@@ -62,8 +66,40 @@ class CompoundAbundanceLoader(Loader, SampleLoadMixin):
             / f'{sample.accession}_compounds_{settings.OMICS_DATA_VERSION}.txt'
 
 
-class SequenceLikeLoader(Manager):
-    """ Manager for the SequenceLike abstrasct model """
+class SequenceLikeQuerySet(QuerySet):
+    """ objects manager for sequence-like models """
+
+    def to_fasta(self):
+        """
+        Make fasta-formatted sequences
+        """
+        files = {}
+        lines = []
+        fields = ('seq_offset', 'seq_bytes', 'gene_id', 'sample__accession')
+        qs = self.select_related('sample').values_list(*fields)
+        try:
+            for offs, length, gene_id, sampid in qs.iterator():
+                if sampid not in files:
+                    sample = get_sample_model().objects.get(accession=sampid)
+                    files[sampid] = \
+                        self.model.loader.get_fasta_path(sample).open('rb')
+
+                lines.append(f'>{sampid}:{gene_id}')
+                lines.append(
+                    get_fasta_sequence(files[sampid], offs, length).decode()
+                )
+        finally:
+            for i in files.values():
+                i.close()
+
+        return '\n'.join(lines)
+
+
+SequenceLikeManager = Manager.from_queryset(SequenceLikeQuerySet)
+
+
+class SequenceLikeLoader(SequenceLikeManager):
+    """ Loader manager for the SequenceLike abstract model """
 
     def get_fasta_path(self, sample):
         """
