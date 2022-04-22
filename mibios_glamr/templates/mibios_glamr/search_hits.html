@@ -5,6 +5,16 @@ Hits: {% for have_abundance, hit_model_plural, model_name, hits in search_hits %
     <a href="#{{ hit_model_plural }}">{{ hit_model_plural }}({{ hits|length }})</a>
 {% endfor %}
 {% if no_hit_models %}<br>No hits: {{ no_hit_models|join:", " }}{% endif %}
+
+{% if suggestions %}
+<p>Did you mean...?
+<ul>
+{% for i in suggestions %}
+<li><a href="{% url 'search_hits' %}?query={{ i }}">{{ i }}</a></li>
+{% endfor %}
+</ul>
+{% endif %}
+
 {% for have_abundance, hit_model_plural, model_name, hits in search_hits %}
     <p id="{{ hit_model_plural }}">Found {{ hits|length }} {{ hit_model_plural }}:
     <ul>

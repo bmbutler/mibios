@@ -20,13 +20,12 @@ from mibios_omics.models import (
     CompoundAbundance, FuncAbundance, TaxonAbundance
 )
 from mibios_umrad.models import (
-    CompoundEntry, CompoundName, FunctionName, Location, Metal, FuncRefDBEntry,
-    ReactionEntry, TaxName, Taxon, Uniprot, UniRef100,
+    CompoundEntry, CompoundName, FunctionName, FuncRefDBEntry,
 )
 from mibios_omics.models import Gene
-from . import models
+from . import models, tables
 from .forms import SearchForm
-from . import tables
+from .search_utils import searchable_models, get_suggestions
 
 
 class ExportMixin(ExportBaseMixin):
@@ -527,29 +526,42 @@ class SampleView(BaseDetailView):
     model = get_sample_model()
 
 
+class SearchFormView(TemplateView):
+    """ offer a form for advanced search """
+    template_name = 'mibios_glamr/advanced_search.html'
+
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['form'] = AdvancedSearchForm()
+        return ctx
+
+
 class SearchHitView(TemplateView):
     template_name = 'mibios_glamr/search_hits.html'
 
-    searchables = [
-        TaxName, Taxon, CompoundEntry, ReactionEntry, UniRef100, CompoundName,
-        FunctionName, Location, Metal, FuncRefDBEntry, Uniprot,
-        get_sample_model(),
-    ]
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['search_hits'] = self.hits
+        ctx['query'] = self.query
+        ctx['no_hit_models'] = self.no_hit_models
+        ctx['suggestions'] = self.suggestions
+        return ctx
 
     def get(self, request, *args, **kwargs):
         self.search()
         if self.hits:
-            ctx = self.get_context_data(
-                search_hits=self.hits,
-                query=self.query,
-                no_hit_models=self.no_hit_models,
-            )
+            self.suggestions = None
         else:
-            messages.add_message(
-                request, messages.INFO, 'search: did not find anything'
-            )
-            return HttpResponseRedirect(reverse('frontpage'))
-        return self.render_to_response(ctx)
+            self.suggestions = get_suggestions(self.query)
+            if not self.suggestions:
+                messages.add_message(
+                    request, messages.INFO, 'search: did not find anything'
+                )
+                return HttpResponseRedirect(reverse('frontpage'))
+        return self.render_to_response(self.get_context_data())
+
+    def get_suggestions(self):
+        return None
 
     def search(self):
         self.hits = []
@@ -560,7 +572,7 @@ class SearchHitView(TemplateView):
             return None
         self.query = form.cleaned_data['query']
 
-        for model in self.searchables:
+        for model in searchable_models:
             have_abundance = False
             search_field_name = model.get_search_field().name
             qs = model.objects.search(self.query)
