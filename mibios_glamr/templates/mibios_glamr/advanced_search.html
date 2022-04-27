@@ -1,0 +1,10 @@
+{% extends "mibios_glamr/base.html" %}
+{% block content %}
+<h3>
+Advanced Search
+</h3>
+<form action="{% url 'search_hits' %}" method="get">
+    {{ form }}<input type="submit" values="Submit">
+</form>
+{% endblock %}
+

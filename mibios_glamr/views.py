@@ -24,7 +24,7 @@ from mibios_umrad.models import (
 )
 from mibios_omics.models import Gene
 from . import models, tables
-from .forms import SearchForm
+from .forms import AdvancedSearchForm, SearchForm
 from .search_utils import searchable_models, get_suggestions
 
 

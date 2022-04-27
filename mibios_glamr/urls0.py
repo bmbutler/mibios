@@ -28,5 +28,6 @@ urlpatterns = [
     path('data/<str:model>/<int:pk>/abundance/<str:sample>/genes/', views.AbundanceGeneView.as_view(), name='record_abundance_genes'),  # noqa: E501
     path('data/<str:model>/<int:pk>/relations/<str:field>/', views.ToManyListView.as_view(), name='relations'),  # noqa: E501
     path('data/<str:model>/<int:pk>/relations/<str:field>/full/', views.ToManyFullListView.as_view(), name='relations_full'),  # noqa: E501
+    path('search/', views.SearchFormView.as_view(), name='advanced_search'),
     path('search/hits/', views.SearchHitView.as_view(), name='search_hits'),  # noqa: E501
 ]

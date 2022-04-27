@@ -14,3 +14,7 @@ class SearchForm(forms.Form):
         # label=??,
         # help_text='Also show results for things not found in samples',
     )
+
+
+class AdvancedSearchForm(SearchForm):
+    pass
