@@ -174,12 +174,14 @@ LOGGING = {
             'level': 'DEBUG',
             'class': 'logging.FileHandler',
             'filename': './debug.log',
+            'encoding': 'UTF-8',
         },
         'import_log_file': {
             'level': 'INFO',
             'class': 'logging.FileHandler',
             'filename': './import.log',
             'formatter': 'verbose',
+            'encoding': 'UTF-8',
         },
         'mail_admins': {
             'level': 'ERROR',
