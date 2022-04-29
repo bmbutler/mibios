@@ -22,12 +22,12 @@
 <div class="navbar fixed-top navbar-expand-lg navbar-dark bg-primary">
     <div class="container-fluid">
         {% block site_name %}
-        <a class="navbar-brand" href="{{ view.request.META.SCRIPT_NAME }}/">{{ site_name|default:"mibios" }}</a>
+        <a class="navbar-brand" href="{{ request.META.SCRIPT_NAME }}/">{{ site_name|default:"mibios" }}</a>
         {% endblock %}
 
         <ul class="nav navbar-nav">
-            <li class="nav-item"><a class="nav-link" href="{{ view.request.META.SCRIPT_NAME }}/">home</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ view.request.META.SCRIPT_NAME }}/query/">query interface</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ request.META.SCRIPT_NAME }}/">home</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ request.META.SCRIPT_NAME }}/query/">query interface</a></li>
         </u>
         <ul class="nav navbar-nav">
             {% if model_names %}
@@ -42,7 +42,7 @@
                 </li>
                 {% endfor %}
             {% endif %}
-            {% if data_names and view.user_is_curator %}
+            {% if data_names and user_is_curator %}
                 {% for app, special_list in data_names.items %}
                     <li class="dropdown">
                         <a href="#" class="nav-link dropdown-toggle" data-toggle="dropdown">{{ app }} special <b class="caret"></b></a>
@@ -61,7 +61,7 @@
                 <li class="nav-item"><a class="nav-link" href="{% url 'snapshot_list' %}">Archived database versions</a></li>
             {% endif %}
 
-            {% if view.user_is_curator %}
+            {% if user_is_curator %}
                 <li class="nav-item"><a class="nav-link" href="{% url 'admin:index' %}">admin interface</a></li>
             {% endif %}
 {% block navextra %}{% endblock %}

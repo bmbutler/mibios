@@ -5,7 +5,7 @@ from .views import BaseMixin
 log = getLogger(__name__)
 
 
-_base_context = {}
+_base_context = None
 
 
 def base(request):
@@ -19,15 +19,15 @@ def base(request):
     manipulate without writing our own error handling views.
 
     Our regular views in mibios.views etc should always overwrite these
-    context variables with their own value.
+    context variables with their own value.  For those the overwrite happens in
+    django.template.context.make_context().
     """
     global _base_context
-    if not _base_context:
+    if _base_context is None:
         # the base context should be static, so only build it once, intended to
         # be failsafe because this is used for error views
         try:
             _base_context = BaseMixin().get_context_data()
-            _base_context['view'].request = request
         except Exception as e:
             try:
                 log.warning(
@@ -35,5 +35,6 @@ def base(request):
                 )
             except Exception:
                 pass
+            _base_context = {}
 
     return _base_context
