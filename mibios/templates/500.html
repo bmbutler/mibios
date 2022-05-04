@@ -3,5 +3,5 @@
 {% block content %}
 <h2>Server Error (500)</h2>
 <p>The code must be buggy.  The maintainer has been informed of this and will try to resolve the problem soon.  We're sorry for the inconvenience..</p>
-[<a href="{% url 'top' %}">main page</a>]
+[<a href="{{ request.META.SCRIPT_NAME }}">home page</a>]
 {% endblock %}

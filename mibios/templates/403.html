@@ -3,5 +3,5 @@
 {% block content %}
 <h2>Permission Denied (403)</h2>
 <p>Sorry, you don't have access to this page.</p>
-[<a href="{% url 'top' %}">main page</a>]
+[<a href="{{ request.META.SCRIPT_NAME }}">home page</a>]
 {% endblock %}
