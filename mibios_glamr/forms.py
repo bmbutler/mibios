@@ -40,15 +40,22 @@ class QBuilderForm(forms.Form):
             )
 
 
-class QBuilderAddForm(QBuilderForm):
-    """ Form to add a key/value filter item """
+class QLeafEditForm(QBuilderForm):
+    """ Form to add/edit a key/value filter item """
     key = forms.ChoiceField()
     lookup = forms.ChoiceField(choices=human_lookups.items())
     value = forms.CharField()
+    add_mode = forms.BooleanField(
+        required=False,  # to allow this to be False
+        widget=forms.HiddenInput()
+    )
 
-    def __init__(self, model, *args, path=[], **kwargs):
+    def __init__(self, model, *args, add_mode=True, path=[], key=None,
+                 lookup=None, value=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.model = model
+        self.fields['add_mode'].initial = add_mode
+
         if path:
             self.fields['path'].initial = ','.join([str(i) for i in path])
         else:
@@ -57,6 +64,14 @@ class QBuilderAddForm(QBuilderForm):
             # interpreted as missing field, but we have path as 'required'
             # so we chose 'None' as the special value
             self.fields['path'].initial = 'None'
+
+        if key is not None:
+            self.fields['key'].initial = key
+        if lookup is not None:
+            self.fields['lookup'].initial = lookup
+        if value is not None:
+            self.fields['value'].initial = value
+
         self.set_key_choices()
 
     def set_key_choices(self):

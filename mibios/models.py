@@ -207,8 +207,13 @@ class Q(models.Q):
     def _resolve_path(self, path):
         """ recursive helper method for path resolution """
         first, *rest = path
-        node = self.children[first]
+        try:
+            node = self.children[first]
+        except IndexError as e:
+            raise LookupError('invalid path') from e
         if rest:
+            if not isinstance(node, Q):
+                raise LookupError('invalid path, leaf was reached midway')
             nodes = node._resolve_path(rest)
         else:
             nodes = []
@@ -218,7 +223,8 @@ class Q(models.Q):
         """
         do a 'combine' with other at specified node
 
-        returns a new instance with applied construction
+        This inserts (modulo squashing) an additional node into the Q object.
+        Returns a new instance with applied construction.
         """
         if not path:
             # at root level, normal combine, using self's connector
@@ -253,6 +259,21 @@ class Q(models.Q):
         else:
             raise RuntimeError('unknown connector')
 
+        return obj
+
+    def replace_node(self, other, path):
+        """ replace node at end of path with other """
+        if not path:
+            if isinstance(other, Q):
+                return other
+            else:
+                # assume (lhs, rhs) tuple
+                return Q(other)
+
+        obj = self & Q()
+        *_, parent, _ = obj.resolve_path(path)
+        index = path[-1]
+        parent.children[index] = other
         return obj
 
     def remove_node(self, path):

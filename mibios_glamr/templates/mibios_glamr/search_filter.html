@@ -1,6 +1,6 @@
 {% load glamr_extras %}
 <div class="col-2">
-    {% if qnode.negated %}(NOT){% endif %} -{{ qnode.connector }}-{% if edit %}{% include 'mibios_glamr/search_node_form.html' %}{% endif %}
+    {% if qnode.negated %}(NOT){% endif %} -{{ qnode.connector }}-{% if editable %}{% include 'mibios_glamr/search_node_form.html' %}{% endif %}
 </div>
 <div class="col-9">
 {% for child in qnode.children %}
@@ -9,7 +9,7 @@
     {% if child.connector %}
         {% include "mibios_glamr/search_filter.html" %}
     {% else %}
-    {{ child|qformat }}{% if edit %} {% include 'mibios_glamr/search_leaf_form.html' %}{% endif %}
+    {{ child|qformat }}{% if editable %} {% include 'mibios_glamr/search_leaf_form.html' %}{% endif %}
     {% endif %}
     {% endwith %}
     </div>

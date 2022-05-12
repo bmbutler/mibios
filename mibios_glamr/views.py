@@ -7,7 +7,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import FieldDoesNotExist, FieldError
 from django.core.management import call_command
-from django.db.models import Count, URLField
+from django.db.models import Count, Field, URLField
 from django.http import Http404, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 from django.views.generic import DetailView
@@ -27,7 +27,7 @@ from mibios_umrad.models import (
 from mibios_omics.models import Gene
 from . import models, tables
 from .forms import (
-    SearchForm, QBuilderForm, QBuilderAddForm,
+    SearchForm, QBuilderForm, QLeafEditForm,
 )
 from .search_utils import searchable_models, get_suggestions
 
@@ -138,14 +138,30 @@ class EditFilterMixin(BaseFilterMixin):
             elif action == 'neg':
                 self.q = self.q.negate_node(path)
             elif action == 'add':
-                self.filter_item_form = QBuilderAddForm(
+                self.filter_item_form = QLeafEditForm(
                     model=self.model,
+                    add_mode=True,
                     path=path,
                 )
             elif action == 'edit':
-                ...
-            elif action == 'apply_change':
-                self.q = self.apply_changes()
+                lhs, rhs = self.q.resolve_path(path)[-1]
+                items = lhs.split('__')
+                if items[-1] in Field.get_lookups():
+                    key = items[:-1]
+                    lookup = items[-1]
+                else:
+                    key = '__'.join(items)
+                    lookup = 'exact'
+                self.filter_item_form = QLeafEditForm(
+                    model=self.model,
+                    add_mode=False,
+                    path=path,
+                    key=key,
+                    lookup=lookup,
+                    value=rhs,
+                )
+            elif action == 'apply_leaf_change':
+                self.q = self.apply_leaf_changes()
         except IndexError:
             # illegal path, e.g. remove and then resend POST
             # so ignoring this
@@ -168,12 +184,12 @@ class EditFilterMixin(BaseFilterMixin):
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['edit'] = True
+        ctx['editable'] = True
         ctx['qnode_path'] = None
         return ctx
 
-    def apply_changes(self):
-        form = QBuilderAddForm(
+    def apply_leaf_changes(self):
+        form = QLeafEditForm(
             model=self.model,
             data=self.request.POST,
         )
@@ -183,7 +199,10 @@ class EditFilterMixin(BaseFilterMixin):
         lhs += '__' + form.cleaned_data['lookup']
         rhs = form.cleaned_data['value']
         path = form.cleaned_data['path']
-        return self.q.combine_at_node(Q(**{lhs: rhs}), path)
+        if form.cleaned_data['add_mode']:
+            return self.q.combine_at_node(Q(**{lhs: rhs}), path)
+        else:
+            return self.q.replace_node((lhs, rhs), path)
 
 
 class ModelTableMixin(ExportMixin):
