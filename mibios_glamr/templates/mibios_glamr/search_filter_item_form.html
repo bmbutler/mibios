@@ -1,0 +1,5 @@
+<form action="{% url 'search_model' model=view.model_name %}" method="post">
+{% csrf_token %}
+{{ view.filter_item_form }}
+<button type="submit" class="btn btn-primary" name="action" value="apply_change">Add</button>
+</form>

@@ -1,0 +1,33 @@
+{% extends "mibios_glamr/base.html" %}
+{% block content %}
+
+<div class="container-fluid">
+<h2>Explore {{ model_verbose_name_plural }}</h2>
+<a href="{% url 'search_initial' %}">change data category</a>
+{% include "mibios_glamr/search_form_simple.html" %}
+</div>
+
+<div class="container-fluid">
+<h3>Filter</h3>
+
+<div class="row bg-secondary">
+{% if qnode %}
+{% include "mibios_glamr/search_filter.html" %}
+{% else %}
+<p>Filter is empty, all data will be selected. Add filter item: {% include "mibios_glamr/search_new_form.html" %}</p>
+{% endif %}
+</div>
+
+<div class="row">
+{% if view.filter_item_form %}
+    {% include "mibios_glamr/search_filter_item_form.html" %}
+{% else %}
+    <form class="g-3" action="{% url 'generic_table' model=model_name %}">
+    <button type="submit" class="bnt btn-primary">Show filtered {{ model_verbose_name }} data</button>
+    </form>
+{% endif %}
+</div>
+
+</div>
+{% endblock %}
+

@@ -113,71 +113,208 @@ class Q(models.Q):
             kwargs = model.resolve_natural_lookups(**kwargs)
         super().__init__(*args, **kwargs)
 
-    def serialize(self, as_tuple=False, separators=(',', ':'), **kwargs):
+    def serialize(self, as_dict=False, separators=(',', ':'), **kwargs):
         """
         Serialize a Q object to json
 
         This is a wrapper around json.dumps.
 
-        :param bool as_tuple: return intermediate tuple representation
+        :param bool as_dict: return intermediate dict representation
         """
-        tree = []
+        node = {}
         if self.negated:
-            tree.append(Q.NOT)
+            node['_ne'] = True
 
         if self.connector == Q.OR:
-            tree.append(self.connector)
-        else:
+            node['_or'] = True
+        elif self.connector != Q.AND:
+            raise ValueError('connector must be either AND or OR')
 
-            if self.connector != Q.AND:
-                raise ValueError('connector must be either AND or OR')
-
+        child_nodes = []
         for i in self.children:
             if isinstance(i, Q):
-                tree.append(i.serialize(as_tuple=True))
+                child_nodes.append(i.serialize(as_dict=True))
+            elif isinstance(i, tuple) and len(i) == 2:
+                # key:val pair
+                node[i[0]] = i[1]
             else:
-                # a 2-tuple (or other object?)
-                tree.append(i)
+                raise ValueError('child node must be Q object or key:value')
 
-        if as_tuple:
-            return tuple(tree)
+        if child_nodes:
+            node['children'] = child_nodes
+
+        if as_dict:
+            return node
         else:
-            return json.dumps(tree, separators=separators, **kwargs)
+            return json.dumps(node, separators=separators, **kwargs)
 
     @classmethod
-    def deserialize(cls, text=None, tuple_repr=None):
+    def deserialize(cls, text=None, dict_repr=None):
         if text is None:
-            if tuple_repr is None:
+            if dict_repr is None:
                 raise ValueError('need some non-None input')
-            items = tuple_repr
+            node = dict_repr
         else:
-            if tuple_repr is not None:
-                raise ValueError('exactly one of text or tuple_repr must be '
+            if dict_repr is not None:
+                raise ValueError('exactly one of text or dict_repr must be '
                                  'None')
-            items = json.loads(text)
+            node = json.loads(text)
 
-        if len(items) == 2 \
-                and isinstance(items[0], str) \
-                and not isinstance(items[1], (Q, tuple)):
-            # (foo, 123)
-            # will be added as arg to Q class constructor
-            return items
-
-        items = list(items)
         conn = Q.AND
         negated = False
-        while items and items[0] in [cls.NOT, cls.OR]:
-            _conn = items.pop(0)
-            if _conn == cls.NOT:
+        child_nodes = []
+
+        if '_or' in node:
+            if node.pop('_or'):
+                conn = Q.OR
+            else:
+                raise ValueError('_or value expected to be True')
+
+        if '_ne' in node:
+            if node.pop('_ne'):
                 negated = True
-            elif _conn == cls.OR:
-                conn = cls.OR
+            else:
+                raise ValueError('_ne value expected to be True')
+
+        if 'children' in node:
+            child_nodes = [
+                cls.deserialize(dict_repr=i) for i in node.pop('children')
+            ]
 
         return cls(
-            *[cls.deserialize(tuple_repr=i) for i in items],
+            *child_nodes,
             _connector=conn,
             _negated=negated,
+            **node,  # remaining leaf nodes
         )
+
+    def resolve_path(self, path):
+        """
+        Get a list of Q object descendends following the given path
+
+        The path parameter is a list of integer child indicies. For a valid
+        path of length n a list of n+1 nodes is returned.  The last node
+        returned is a 2-tuple, the others are Q objects.
+
+        A path with invalid indices will raise an IndexError.  A path longer
+        than the depth of the tree will raise an AttributeError.
+        """
+        if path:
+            return [self] + self._resolve_path(path)
+        else:
+            return [self]
+
+    def _resolve_path(self, path):
+        """ recursive helper method for path resolution """
+        first, *rest = path
+        node = self.children[first]
+        if rest:
+            nodes = node._resolve_path(rest)
+        else:
+            nodes = []
+        return [node] + nodes
+
+    def combine_at_node(self, other, path=[]):
+        """
+        do a 'combine' with other at specified node
+
+        returns a new instance with applied construction
+        """
+        if not path:
+            # at root level, normal combine, using self's connector
+            if self.connector == Q.AND:
+                return self & other
+            elif self.connector == self.OR:
+                return self | other
+            else:
+                raise RuntimeError('unknown connector')
+
+        # node is internal, will be replaced with new combined node
+        obj = self & Q()  # make a deep copy to work on
+        *_, parent, node = obj.resolve_path(path)
+        index = path[-1]
+
+        if isinstance(node, Q):
+            conn = node.connector
+        else:
+            # assume a 2-tuple, use dual connector, adds depths
+            node = Q(node)
+            if parent.connector == Q.AND:
+                conn = Q.OR
+            elif parent.connector == Q.OR:
+                conn = Q.AND
+            else:
+                raise RuntimeError('unknown connector')
+
+        if conn == self.AND:
+            parent.children[index] = node & other
+        elif conn == self.OR:
+            parent.children[index] = node | other
+        else:
+            raise RuntimeError('unknown connector')
+
+        return obj
+
+    def remove_node(self, path):
+        """
+        remove a node
+
+        The path argument is the list of children indices that lead to the
+        node to be removed.
+        """
+        if not path:
+            # remove it all, also resets connector + negation state to default
+            return Q()
+
+        obj = self & Q()
+        *path, index = path
+        *_, node = obj.resolve_path(path)
+        node.children.pop(index)
+        return obj
+
+    def negate_node(self, path):
+        """
+        negate the node given by path
+
+        The path argument is the list of children indices that lead to the
+        node to be negated.
+        """
+        obj = self & Q()  # get deep copy to return
+        if not path:
+            obj.negate()
+            return obj
+
+        *_, parent, node = obj.resolve_path(path)
+        idx = path[-1]
+
+        if isinstance(node, Q):
+            node.negate()
+            # squash if possible
+            if node.connector == parent.connector and not node.negated:
+                parent.children[idx:idx + 1] = node.children
+            elif not node.negated and len(node.children) == 1:
+                # single child, connector does not matter
+                parent.children[idx] = node.children[0]
+        else:
+            # assume a leaf, i.e. a 2-tuple
+            key, value = node
+            parent.children[idx] = ~Q(**{key: value})
+
+        return obj
+
+    def get_field(self, path, model=None):
+        """
+        Get Field instance of rhs of end of given path.
+        """
+        if model is None:
+            raise ValueError('model must be provided')
+
+        *_, node = self.resolve_path(path)
+
+        lhs = node[0].split('__')
+        if lhs[-1] in models.Field.get_lookups():
+            lhs = lhs[:-1]
+        return model.get_field(lhs.join('__'))
 
 
 class QuerySet(models.QuerySet):

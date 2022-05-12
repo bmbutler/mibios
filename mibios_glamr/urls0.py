@@ -21,6 +21,7 @@ urlpatterns = [
     path('dataset/<int:pk>/', views.DatasetView.as_view(), name='dataset'),
     path('reference/<int:pk>/', views.ReferenceView.as_view(), name='reference'),  # noqa: E501
     path('sample/<int:pk>/', views.SampleView.as_view(), name='sample'),
+    path('data/<str:model>/', views.TableView.as_view(), name='generic_table'),  # noqa: E501
     path('data/<str:model>/<int:pk>/', views.RecordView.as_view(), name='record'),  # noqa: E501
     path('data/<str:model>/<int:pk>/overview/', views.OverView.as_view(), name='record_overview'),  # noqa: E501
     path('data/<str:model>/<int:pk>/overview/samples/', views.OverViewSamplesView.as_view(), name='record_overview_samples'),  # noqa: E501
@@ -28,6 +29,7 @@ urlpatterns = [
     path('data/<str:model>/<int:pk>/abundance/<str:sample>/genes/', views.AbundanceGeneView.as_view(), name='record_abundance_genes'),  # noqa: E501
     path('data/<str:model>/<int:pk>/relations/<str:field>/', views.ToManyListView.as_view(), name='relations'),  # noqa: E501
     path('data/<str:model>/<int:pk>/relations/<str:field>/full/', views.ToManyFullListView.as_view(), name='relations_full'),  # noqa: E501
-    path('search/', views.SearchFormView.as_view(), name='advanced_search'),
+    path('search/', views.SearchView.as_view(), name='search_initial'),  # noqa: E501
     path('search/hits/', views.SearchHitView.as_view(), name='search_hits'),  # noqa: E501
+    path('search/<str:model>/', views.SearchModelView.as_view(), name='search_model'),  # noqa: E501
 ]

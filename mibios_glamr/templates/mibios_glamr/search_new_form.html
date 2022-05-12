@@ -1,0 +1,12 @@
+<form action="{% url 'search_model' model=view.model_name %}" method="post">
+{% csrf_token %}
+<input type="hidden" name="path" value="{{ qnode_path }}" id="id_path">
+<div class="btn-group-sm">
+{% block negate_button %}{% endblock %}
+<button type="submit" class="btn btn-secondary" name="action" value="add">[+]</button>
+{% block edit_button %}{% endblock %}
+{% block remove_button %}{% endblock %}
+</div>
+</form>
+
+

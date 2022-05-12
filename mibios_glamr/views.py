@@ -14,6 +14,8 @@ from django.views.generic import DetailView
 from django.views.generic.base import TemplateView
 
 from mibios import get_registry
+from mibios.data import TableConfig
+from mibios.models import Q
 from mibios.views import ExportBaseMixin, TextRendererZipped
 from mibios_omics import get_sample_model
 from mibios_omics.models import (
@@ -24,7 +26,9 @@ from mibios_umrad.models import (
 )
 from mibios_omics.models import Gene
 from . import models, tables
-from .forms import AdvancedSearchForm, SearchForm
+from .forms import (
+    SearchForm, QBuilderForm, QBuilderAddForm,
+)
 from .search_utils import searchable_models, get_suggestions
 
 
@@ -74,6 +78,112 @@ class ExportMixin(ExportBaseMixin):
             return self.get_table().as_values()
         else:
             raise RuntimeError('not implemented')
+
+
+class BaseFilterMixin:
+    """
+    Basic filter infrastructure, sufficient to view the filter
+    """
+    def setup(self, request, *args, model=None, **kwargs):
+        super().setup(request, *args, **kwargs)
+        self.filter_item_form = None
+
+        if model:
+            try:
+                self.model = get_registry().models[model]
+            except KeyError as e:
+                raise Http404(f'no such model: {e}') from e
+        self.model_name = self.model._meta.model_name
+        if 'search_filter' in request.session \
+                and self.model_name == request.session.get('search_model'):
+            self.q = Q.deserialize(request.session['search_filter'])
+        else:
+            # (a) no filter in session yet or
+            # (b) data category changed -> so ignore session filter
+            self.q = Q()
+
+    def get_queryset(self):
+        return super().get_queryset().filter(self.q).distinct()
+
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['model_name'] = self.model._meta.model_name
+        ctx['model_verbose_name'] = self.model._meta.verbose_name
+        ctx['model_verbose_name_plural'] = self.model._meta.verbose_name_plural
+        ctx['edit'] = False
+        ctx['qnode'] = self.q
+        ctx['col_width'] = 9
+        return ctx
+
+
+class EditFilterMixin(BaseFilterMixin):
+    """
+    Provide complex filter editor
+    """
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+        self.old_q = self.q  # keep backup for revert on error
+
+    def post(self, request, *args, **kwargs):
+        form = QBuilderForm(data=request.POST)
+        if not form.is_valid():
+            raise Http404('post request form invalid', form.errors)
+
+        path = form.cleaned_data['path']
+
+        action = request.POST.get('action', None)
+        try:
+            if action == 'rm':
+                self.q = self.q.remove_node(path)
+            elif action == 'neg':
+                self.q = self.q.negate_node(path)
+            elif action == 'add':
+                self.filter_item_form = QBuilderAddForm(
+                    model=self.model,
+                    path=path,
+                )
+            elif action == 'edit':
+                ...
+            elif action == 'apply_change':
+                self.q = self.apply_changes()
+        except IndexError:
+            # illegal path, e.g. remove and then resend POST
+            # so ignoring this
+            # TODO: review error handling here
+            pass
+
+        try:
+            self.model.objects.filter(self.q)
+        except Exception as e:
+            self.q = self.old_q  # revert changes
+            messages.add_message(
+                request,
+                messages.ERROR,
+                f'not good: {e.__class__.__name__}: {e}',
+            )
+        else:
+            request.session['search_filter'] = self.q.serialize()
+            request.session['search_model'] = self.model_name
+        return super().get(request, *args, **kwargs)
+
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['edit'] = True
+        ctx['qnode_path'] = None
+        return ctx
+
+    def apply_changes(self):
+        form = QBuilderAddForm(
+            model=self.model,
+            data=self.request.POST,
+        )
+        if not form.is_valid():
+            raise Http404('apply changes request form invalid', form.errors)
+        lhs = form.cleaned_data['key']
+        lhs += '__' + form.cleaned_data['lookup']
+        rhs = form.cleaned_data['value']
+        path = form.cleaned_data['path']
+        return self.q.combine_at_node(Q(**{lhs: rhs}), path)
 
 
 class ModelTableMixin(ExportMixin):
@@ -339,7 +449,7 @@ class DemoFrontPageView(SingleTableView):
         ctx['mc_abund'] = TaxonAbundance.objects \
             .filter(taxname='MICROCYSTIS') \
             .select_related('sample')[:5]
-        ctx['search_form'] = SearchForm()
+        ctx['keyword_search_form'] = SearchForm()
         self.make_ratios_plot()
         return ctx
 
@@ -526,13 +636,28 @@ class SampleView(BaseDetailView):
     model = get_sample_model()
 
 
-class SearchFormView(TemplateView):
-    """ offer a form for advanced search """
-    template_name = 'mibios_glamr/advanced_search.html'
+class SearchView(TemplateView):
+    """ offer a form for advanced search, offer model list """
+    template_name = 'mibios_glamr/search_init.html'
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['form'] = AdvancedSearchForm()
+        ctx['keyword_search_form'] = SearchForm()
+        ctx['models'] = [
+            (i._meta.model_name, i._meta.verbose_name)
+            for i in get_registry().models.values()
+        ]
+        return ctx
+
+
+class SearchModelView(EditFilterMixin, TemplateView):
+    """ offer model-based searching """
+    template_name = 'mibios_glamr/search_model.html'
+    model = None
+
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['keyword_search_form'] = SearchForm()
         return ctx
 
 
@@ -577,7 +702,7 @@ class SearchHitView(TemplateView):
             search_field_name = model.get_search_field().name
             qs = model.objects.search(self.query)
 
-            if not form.cleaned_data['search_all']:
+            if not form.cleaned_data.get('search_all'):
                 # just search for objects with abundance
                 # (if model supports it, no filters for other models)
                 if model is CompoundName:
@@ -624,6 +749,14 @@ class SearchHitView(TemplateView):
                 ))
             else:
                 self.no_hit_models.append(model._meta.verbose_name_plural)
+
+
+class TableView(BaseFilterMixin, ModelTableMixin, SingleTableView):
+    template_name = 'mibios_glamr/table.html'
+
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+        self.conf = TableConfig(self.model)
 
 
 class ToManyListView(SingleTableView):

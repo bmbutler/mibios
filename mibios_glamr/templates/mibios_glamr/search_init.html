@@ -1,0 +1,15 @@
+{% extends "mibios_glamr/base.html" %}
+{% block content %}
+<div class="rowqqq">
+{% include "mibios_glamr/search_form_simple.html" %}
+</div>
+<h3>Complex search</h3>
+<p>Pick a data category:
+<ul>
+    {% for name, verbose in models %}
+    <li><a href="{% url 'search_model' model=name %}">{{ verbose }}</li>
+    {% endfor %}
+</ul>
+</p>
+{% endblock %}
+
