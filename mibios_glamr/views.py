@@ -162,6 +162,8 @@ class EditFilterMixin(BaseFilterMixin):
                 )
             elif action == 'apply_leaf_change':
                 self.q = self.apply_leaf_changes()
+            elif action == 'flip':
+                self.q = self.q.flip_node(path)
         except IndexError:
             # illegal path, e.g. remove and then resend POST
             # so ignoring this

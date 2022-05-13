@@ -305,6 +305,18 @@ class Q(models.Q):
 
         return obj
 
+    def flip_node(self, path=[]):
+        """ switch the connector at given node """
+        obj = self & Q()
+        *_, node = obj.resolve_path(path)
+        if node.connector == Q.AND:
+            node.connector = Q.OR
+        elif node.connector == Q.OR:
+            node.connector = Q.AND
+        else:
+            raise ValueError('invalid connector')
+        return obj
+
     def get_field(self, path, model=None):
         """
         Get Field instance of rhs of end of given path.
