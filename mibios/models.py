@@ -219,46 +219,28 @@ class Q(models.Q):
             nodes = []
         return [node] + nodes
 
-    def combine_at_node(self, other, path=[]):
-        """
-        do a 'combine' with other at specified node
+    def add_condition(self, lhs, rhs, path=[]):
+        """ Insert an lhs=rhs filter condition into the tree at given node """
+        obj = self & Q()
+        *head, node = obj.resolve_path(path)
 
-        This inserts (modulo squashing) an additional node into the Q object.
-        Returns a new instance with applied construction.
-        """
-        if not path:
-            # at root level, normal combine, using self's connector
-            if self.connector == Q.AND:
-                return self & other
-            elif self.connector == self.OR:
-                return self | other
-            else:
-                raise RuntimeError('unknown connector')
-
-        # node is internal, will be replaced with new combined node
-        obj = self & Q()  # make a deep copy to work on
-        *_, parent, node = obj.resolve_path(path)
-        index = path[-1]
-
-        if isinstance(node, Q):
-            conn = node.connector
-        else:
-            # assume a 2-tuple, use dual connector, adds depths
-            node = Q(node)
+        if not isinstance(node, Q):
+            # a leaf / (lhs, rhs)-tuple, make it into a Q object first
+            parent = head[-1]  # parent must exist as old node is a leaf
+            # use connector dual to the parent's, if this was not appropriate,
+            # then the condition should have been added to the parent.
             if parent.connector == Q.AND:
                 conn = Q.OR
             elif parent.connector == Q.OR:
                 conn = Q.AND
             else:
-                raise RuntimeError('unknown connector')
+                raise ValueError('invalid connector')
+            node = Q(node, _connector=conn)
+            # replace old node with new node
+            index = path[-1]
+            parent.children[index] = node
 
-        if conn == self.AND:
-            parent.children[index] = node & other
-        elif conn == self.OR:
-            parent.children[index] = node | other
-        else:
-            raise RuntimeError('unknown connector')
-
+        node.children.append((lhs, rhs))
         return obj
 
     def replace_node(self, other, path):

@@ -200,7 +200,7 @@ class EditFilterMixin(BaseFilterMixin):
         rhs = form.cleaned_data['value']
         path = form.cleaned_data['path']
         if form.cleaned_data['add_mode']:
-            return self.q.combine_at_node(Q(**{lhs: rhs}), path)
+            return self.q.add_condition(lhs, rhs, path)
         else:
             return self.q.replace_node((lhs, rhs), path)
 
