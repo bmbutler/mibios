@@ -1,4 +1,5 @@
 from itertools import chain
+from logging import getLogger
 
 from django_tables2 import Column, SingleTableView, TemplateColumn
 import pandas
@@ -30,6 +31,9 @@ from .forms import (
     SearchForm, QBuilderForm, QLeafEditForm,
 )
 from .search_utils import searchable_models, get_suggestions
+
+
+log = getLogger('__name__')
 
 
 class ExportMixin(ExportBaseMixin):
@@ -130,54 +134,62 @@ class EditFilterMixin(BaseFilterMixin):
             raise Http404('post request form invalid', form.errors)
 
         path = form.cleaned_data['path']
+        try:
+            self.q.resolve_path(path)
+        except LookupError:
+            # invalid path, e.g. remove and then resend POST
+            # so ignoring this
+            pass
 
         action = request.POST.get('action', None)
-        try:
-            if action == 'rm':
-                self.q = self.q.remove_node(path)
-            elif action == 'neg':
-                self.q = self.q.negate_node(path)
-            elif action == 'add':
-                self.filter_item_form = QLeafEditForm(
-                    model=self.model,
-                    add_mode=True,
-                    path=path,
-                )
-            elif action == 'edit':
-                lhs, rhs = self.q.resolve_path(path)[-1]
-                items = lhs.split('__')
-                if items[-1] in Field.get_lookups():
-                    key = items[:-1]
-                    lookup = items[-1]
-                else:
-                    key = '__'.join(items)
-                    lookup = 'exact'
-                self.filter_item_form = QLeafEditForm(
-                    model=self.model,
-                    add_mode=False,
-                    path=path,
-                    key=key,
-                    lookup=lookup,
-                    value=rhs,
-                )
-            elif action == 'apply_leaf_change':
-                self.q = self.apply_leaf_changes()
-            elif action == 'flip':
-                self.q = self.q.flip_node(path)
-        except IndexError:
-            # illegal path, e.g. remove and then resend POST
-            # so ignoring this
-            # TODO: review error handling here
-            pass
+        log.debug(f'EDIT Q FILTER: {path=} {action=}')
+        if action == 'rm':
+            self.q = self.q.remove_node(path)
+        elif action == 'neg':
+            self.q = self.q.negate_node(path)
+        elif action == 'add':
+            self.filter_item_form = QLeafEditForm(
+                model=self.model,
+                add_mode=True,
+                path=path,
+            )
+        elif action == 'edit':
+            lhs, rhs = self.q.resolve_path(path)[-1]
+            items = lhs.split('__')
+            if items[-1] in Field.get_lookups():
+                key = items[:-1]
+                lookup = items[-1]
+            else:
+                key = '__'.join(items)
+                lookup = 'exact'
+            self.filter_item_form = QLeafEditForm(
+                model=self.model,
+                add_mode=False,
+                path=path,
+                key=key,
+                lookup=lookup,
+                value=rhs,
+            )
+        elif action == 'apply_leaf_change':
+            self.q = self.apply_leaf_changes()
+        elif action == 'flip':
+            self.q = self.q.flip_node(path)
+        else:
+            raise Http404('invalid action')
 
         try:
             self.model.objects.filter(self.q)
         except Exception as e:
+            # TODO: eventually the UI should only allow very few things go
+            # wrong here, e.g. rhs type/value errors in free text fields.  And
+            # those needs to be fixed by the user, so the error messages must
+            # be really helpful.
+            log.error(f'EDIT Q FILTER: q failed: {type(e)=} {e=} {self.q=}')
             self.q = self.old_q  # revert changes
             messages.add_message(
                 request,
                 messages.ERROR,
-                f'not good: {e.__class__.__name__}: {e}',
+                f'Sorry, bad filter syndrome: {e.__class__.__name__}: {e}',
             )
         else:
             request.session['search_filter'] = self.q.serialize()
