@@ -12,7 +12,7 @@
 
 <div class="row bg-light">
 {% if qnode %}
-{% include "mibios_glamr/search_filter.html" %}
+<ul class="list-group"><li class="list-group-item">{% include "mibios_glamr/search_filter.html" %}</li></ul>
 {% else %}
 <p>Filter is empty, all data will be selected. Add filter item: {% include "mibios_glamr/search_new_form.html" %}</p>
 {% endif %}
