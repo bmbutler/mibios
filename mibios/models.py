@@ -1735,6 +1735,76 @@ class Model(models.Model):
         return data
 
     @classmethod
+    def get_related_fields(cls, relations_last=True, auto_fields=False):
+        """
+        Discover simple local and forward-looking remotely related fields
+
+        This includes one-to-one and excludes many-to-many and one-to-many
+        (reversed foreign keys) relations.  Cycles get broken at the first
+        repetition of model and field combination.
+
+        bool relations_last:
+            If true, sort relations last, otherwise keep order of fields in
+            class declaration
+        """
+        data = [([], cls, [])]
+        while True:
+            for pos, item in enumerate(data):
+                if type(item) == tuple:
+                    # get first tuple item
+                    break
+            else:
+                # all done
+                break
+
+            path, model, seen = data.pop(pos)
+
+            fields = model.get_fields(skip_auto=not auto_fields).fields
+            if relations_last:
+                fields = sorted(fields, key=lambda x: x.is_relation)
+            for i in fields:
+                new_path = path + [i]
+                if i.many_to_one or i.one_to_one:
+                    # foreign key rel
+                    this = (i.related_model, i)
+                    if this in seen:
+                        # avoid cycle
+                        continue
+                    else:
+                        seen.append(this)
+                        if i.one_to_one:
+                            # also put the other direction into seen
+                            if hasattr(i, 'remote_field'):
+                                # i is the real field, add reverse 1-1 relation
+                                seen.append((i.model, i.remote_field))
+                            elif hasattr(i, 'field'):
+                                # i is a OneToOneRel, add the real field
+                                seen.append((i.related_model, i.field))
+
+                        new_item = (new_path, i.related_model, seen)
+                else:
+                    new_item = new_path
+                data.insert(pos, new_item)
+                pos += 1
+
+        return data
+
+    @classmethod
+    def get_related_accessors2(cls, relations_last=True, auto_fields=False):
+        """
+        List accessors to (related) fields
+
+        This is a simpler version and potential replacement for
+        get_related_accessors().  It does not specially handle id/name/natural
+        fields.
+        """
+        fields = cls.get_related_fields(
+            relations_last=relations_last,
+            auto_fields=auto_fields,
+        )
+        return ['__'.join([i.name for i in path]) for path in fields]
+
+    @classmethod
     def get_field(cls, accessor):
         """
         Retrieve a field object following relations

@@ -76,6 +76,9 @@ class QLeafEditForm(QBuilderForm):
 
     def set_key_choices(self):
         lst = []
-        for i in self.model.get_related_accessors():
-            lst.append((i, i.replace('__', ' -> ')))
+        for path in self.model.get_related_fields():
+            accessor = '__'.join([i.name for i in path])
+            names = [getattr(i, 'verbose_name', i.name) for i in path]
+            humanized = ' -> '.join(names)
+            lst.append((accessor, humanized))
         self.fields['key'].choices = lst
