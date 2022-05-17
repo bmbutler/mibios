@@ -1759,31 +1759,43 @@ class Model(models.Model):
 
             path, model, seen = data.pop(pos)
 
-            fields = model.get_fields(skip_auto=not auto_fields).fields
+            fields = model._meta.get_fields()
             if relations_last:
                 fields = sorted(fields, key=lambda x: x.is_relation)
             for i in fields:
-                new_path = path + [i]
-                if i.many_to_one or i.one_to_one:
-                    # foreign key rel
-                    this = (i.related_model, i)
-                    if this in seen:
-                        # avoid cycle
-                        continue
-                    else:
-                        seen.append(this)
-                        if i.one_to_one:
-                            # also put the other direction into seen
-                            if hasattr(i, 'remote_field'):
-                                # i is the real field, add reverse 1-1 relation
-                                seen.append((i.model, i.remote_field))
-                            elif hasattr(i, 'field'):
-                                # i is a OneToOneRel, add the real field
-                                seen.append((i.related_model, i.field))
 
-                        new_item = (new_path, i.related_model, seen)
+                if isinstance(i, models.AutoField) and not auto_fields:
+                    continue
+                if i.many_to_many:
+                    continue
+
+                new_path = path + [i]
+
+                if i.is_relation:
+                    rel1 = (i.related_model, i)
+                    if i.one_to_one:
+                        # also add the reverse relation
+                        if hasattr(i, 'remote_field'):
+                            rel2 = (i.model, i.remote_field)
+                        elif hasattr(i, 'field'):
+                            rel2 = (i.related_model, i.field)
+                        else:
+                            raise RuntimeError('this should not be reachable')
+                    else:
+                        rel2 = None
+
+                    if rel1 in seen or rel2 in seen:
+                        continue
+
+                    seen.append(rel1)
+                    if rel2:
+                        seen.append(rel2)
+                    new_item = (new_path, i.related_model, seen)
+
                 else:
+                    # normal field
                     new_item = new_path
+
                 data.insert(pos, new_item)
                 pos += 1
 
