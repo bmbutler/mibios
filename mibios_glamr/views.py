@@ -129,6 +129,26 @@ class EditFilterMixin(BaseFilterMixin):
         self.old_q = self.q  # keep backup for revert on error
 
     def post(self, request, *args, **kwargs):
+        self._post(request)
+        return super().get(request, *args, **kwargs)
+
+    def _post(self, request):
+        """
+        do processing of the POST
+
+        In the method body of _post() we mostly do error handling.  There are
+        three parts:
+
+            1. validate POST data
+            2. process the POST data, apply changes to self.q
+            3. verify self.q by passing it to QuerySet.filter() -- without
+               hitting the DB
+
+        We return as soon as we catch and handle an error.  Error handling that
+        does not result in raising Http404 should revert any state changes
+        (e.g. self.q) and give some user feedback. If no errors occur, then the
+        session will be updated at the end.
+        """
         form = QBuilderForm(data=request.POST)
         if not form.is_valid():
             raise Http404('post request form invalid', form.errors)
@@ -137,12 +157,61 @@ class EditFilterMixin(BaseFilterMixin):
         try:
             self.q.resolve_path(path)
         except LookupError:
+            log.debug(f'bad path with {request.POST=} {path=}')
             # invalid path, e.g. remove and then resend POST
             # so ignoring this
-            pass
+            messages.add_message(
+                request,
+                messages.WARNING,
+                'Sorry, could not process the request - maybe you went "back" '
+                'with your web browser and/or re-submitted a previous request.'
+            )
+            return
 
-        action = request.POST.get('action', None)
-        log.debug(f'EDIT Q FILTER: {path=} {action=}')
+        try:
+            action = self.process_post(path)
+        except Http404:
+            raise
+        except Exception as e:
+            self.q = self.old_q  # revert changes
+            log.error(f'ERROR: {type(e)}: {e} with {request.POST=} {path=}')
+            messages.add_message(
+                request,
+                messages.WARNING,
+                # TODO: users should not see errors here
+                'Oops: error processing the request'
+            )
+            return
+
+        try:
+            self.model.objects.filter(self.q)
+        except Exception as e:
+            log.error(f'EDIT Q FILTER: q failed: {type(e)=} {e=} {self.q=}')
+            # TODO: eventually the UI should only allow very few things go
+            # wrong here, e.g. rhs type/value errors in free text fields.  And
+            # those needs to be fixed by the user, so the error messages must
+            # be really helpful.
+            self.q = self.old_q  # revert changes
+            if action == 'apply_leaf_change':
+                self.filter_item_form = QLeafEditForm(
+                    model=self.model,
+                    data=self.request.POST,
+                )
+                self.filter_item_form.is_valid()
+                self.filter_item_form.add_error(None, e)
+            else:
+                messages.add_message(
+                    request,
+                    messages.ERROR,
+                    f'Sorry, bad filter syndrome: {e.__class__.__name__}: {e}',
+                )
+            return
+
+        request.session['search_filter'] = self.q.serialize()
+        request.session['search_model'] = self.model_name
+
+    def process_post(self, path):
+        action = self.request.POST.get('action', None)
         if action == 'rm':
             self.q = self.q.remove_node(path)
         elif action == 'neg':
@@ -176,25 +245,7 @@ class EditFilterMixin(BaseFilterMixin):
             self.q = self.q.flip_node(path)
         else:
             raise Http404('invalid action')
-
-        try:
-            self.model.objects.filter(self.q)
-        except Exception as e:
-            # TODO: eventually the UI should only allow very few things go
-            # wrong here, e.g. rhs type/value errors in free text fields.  And
-            # those needs to be fixed by the user, so the error messages must
-            # be really helpful.
-            log.error(f'EDIT Q FILTER: q failed: {type(e)=} {e=} {self.q=}')
-            self.q = self.old_q  # revert changes
-            messages.add_message(
-                request,
-                messages.ERROR,
-                f'Sorry, bad filter syndrome: {e.__class__.__name__}: {e}',
-            )
-        else:
-            request.session['search_filter'] = self.q.serialize()
-            request.session['search_model'] = self.model_name
-        return super().get(request, *args, **kwargs)
+        return action
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
