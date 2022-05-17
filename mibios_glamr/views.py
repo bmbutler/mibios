@@ -224,18 +224,16 @@ class EditFilterMixin(BaseFilterMixin):
             )
         elif action == 'edit':
             lhs, rhs = self.q.resolve_path(path)[-1]
-            items = lhs.split('__')
-            if items[-1] in Field.get_lookups():
-                key = items[:-1]
-                lookup = items[-1]
+            lhs = lhs.split('__')
+            if lhs[-1] in Field.get_lookups():
+                lookup = lhs.pop(-1)
             else:
-                key = '__'.join(items)
                 lookup = 'exact'
             self.filter_item_form = QLeafEditForm(
                 model=self.model,
                 add_mode=False,
                 path=path,
-                key=key,
+                key='__'.join(lhs),
                 lookup=lookup,
                 value=rhs,
             )
