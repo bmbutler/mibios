@@ -33,7 +33,7 @@ from .forms import (
 from .search_utils import searchable_models, get_suggestions
 
 
-log = getLogger('__name__')
+log = getLogger(__name__)
 
 
 class ExportMixin(ExportBaseMixin):
