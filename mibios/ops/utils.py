@@ -1,4 +1,6 @@
+import cProfile
 import logging
+import pstats
 
 from django.conf import settings
 from django.contrib.auth import backends
@@ -56,3 +58,25 @@ class RemoteUserInjection:
             request.META['REMOTE_USER'] = assumed
 
         return self.get_response(request)
+
+
+class Profiling:
+    """
+    Profiling middleware
+    """
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        prof = cProfile.Profile()
+        prof.enable()
+
+        response = self.get_response(request)
+
+        prof.disable()
+        for sortby in ['cumulative', 'tottime']:
+            with open(f'profile.{sortby}.txt', 'w') as f:
+                ps = pstats.Stats(prof, stream=f).sort_stats(sortby)
+                ps.print_stats()
+
+        return response
