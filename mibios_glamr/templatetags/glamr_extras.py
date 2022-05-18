@@ -1,5 +1,5 @@
 from django import template
-from django.db.models import Field
+from django.db.models import Field, Q
 
 
 register = template.Library()
@@ -59,3 +59,9 @@ def qformat(value):
 
     lookup = human_lookups.get(lookup, lookup)
     return f'{"->".join(lhs)} ({lookup}) {rhs}'
+
+
+@register.filter(name='is_q')
+def is_q(value):
+    """ check if object is a Q instance """
+    return isinstance(value, Q)

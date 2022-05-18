@@ -114,8 +114,9 @@ class BaseFilterMixin:
         ctx['model_name'] = self.model._meta.model_name
         ctx['model_verbose_name'] = self.model._meta.verbose_name
         ctx['model_verbose_name_plural'] = self.model._meta.verbose_name_plural
-        ctx['edit'] = False
+        ctx['editable'] = False
         ctx['qnode'] = self.q
+        ctx['qnode_path'] = None
         ctx['col_width'] = 9
         return ctx
 
@@ -248,7 +249,6 @@ class EditFilterMixin(BaseFilterMixin):
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['editable'] = True
-        ctx['qnode_path'] = None
         return ctx
 
     def apply_leaf_changes(self):
