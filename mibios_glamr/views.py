@@ -836,6 +836,10 @@ class SearchHitView(TemplateView):
 class TableView(BaseFilterMixin, ModelTableMixin, SingleTableView):
     template_name = 'mibios_glamr/table.html'
 
+    def get_queryset(self):
+        self.conf.q = [self.q]
+        return self.conf.get_queryset()
+
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)
         self.conf = TableConfig(self.model)
