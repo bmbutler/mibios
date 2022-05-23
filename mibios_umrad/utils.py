@@ -1,10 +1,13 @@
 from datetime import datetime
+from functools import wraps
 from itertools import zip_longest
 from operator import length_hint
 import os
 from threading import Lock, Timer
 from string import Formatter
 import sys
+
+from django.db import router, transaction
 
 
 class ReturningGenerator:
@@ -436,3 +439,24 @@ def siter(obj, length=None):
     if length is None:
         length = len(obj)
     return SizedIterator(obj, length)
+
+
+def atomic_dry(f):
+    """
+    Replacement for @atomic decorator for Manager methods
+
+    Supports dry_run keyword arg and calls set_rollback appropriately and
+    coordinates the db alias in case we have multiple databases.  This assumes
+    that the decorated method has self.model available, as it is the case for
+    managers, and that if write operations are used for other models then those
+    must run on the same database connection.
+    """
+    @wraps(f)
+    def wrapper(self, *args, **kwargs):
+        dbalias = router.db_for_write(self.model)
+        with transaction.atomic(using=dbalias):
+            retval = f(self, *args, **kwargs)
+            if kwargs.get('dry_run', False):
+                transaction.set_rollback(True, dbalias)
+            return retval
+    return wrapper
