@@ -8,7 +8,7 @@ from itertools import islice
 import os
 
 from django.core.exceptions import FieldDoesNotExist
-from django.db import connection, models
+from django.db import connections, models, router
 from django.db.transaction import atomic, set_rollback
 
 from mibios.models import Model as MibiosModel
@@ -469,7 +469,8 @@ def delete_all_objects_quickly(model):
     This is a debugging/testing aid.  The usual Model.objects.all().delete() is
     way slower for large tables.
     """
-    with connection.cursor() as cur:
+    db_alias = router.db_for_write(model)
+    with connections[db_alias].cursor() as cur:
         cur.execute(f'delete from {model._meta.db_table}')
         res = cur.fetchall()
     if res != []:

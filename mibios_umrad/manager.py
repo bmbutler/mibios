@@ -480,6 +480,12 @@ class BaseLoader(DjangoManager):
             data.append(rec)
         return data
 
+    def quick_erase(self):
+        quickdel = import_string(
+            'mibios_umrad.model_utils.delete_all_objects_quickly'
+        )
+        quickdel(self.model)
+
 
 class Loader(BulkCreateWrapperMixin, BaseLoader.from_queryset(QuerySet)):
     pass
@@ -904,6 +910,14 @@ class TaxonLoader(Loader):
             for tid, (rank, name) in taxids.items()
         )
         TaxID.objects.bulk_create(taxids)
+
+    def quick_erase(self):
+        quickdel = import_string(
+            'mibios_umrad.model_utils.delete_all_objects_quickly'
+        )
+        quickdel(self.model._meta.get_field('taxid').related_model)
+        quickdel(self.model._meta.get_field('ancestors').remote_field.through)
+        quickdel(self.model)
 
 
 class BaseManager(MibiosBaseManager):
