@@ -17,7 +17,7 @@ OMICS_SAMPLE_GROUP_MODEL = 'mibios_omics.SampleGroup'
 LOGGING['loggers']['mibios_omics'] = LOGGING['loggers']['mibios']  # noqa:F405
 
 
-def setdb(db_dir='.', db_infix=''):
+def get_db_settings(db_dir='.', db_infix=''):
     """
     Call this to set DATABASES
 
@@ -28,8 +28,7 @@ def setdb(db_dir='.', db_infix=''):
     omics_db_file = f'omics{db_infix}.sqlite3'
     omics_db_mode = 'ro' if environ.get('MIBIOS_DB_RO') else 'rwc'
 
-    global DATABASES
-    DATABASES = {
+    return {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': f'file:{db_dir}/{ops_db_file}?mode=rwc',
@@ -43,6 +42,6 @@ def setdb(db_dir='.', db_infix=''):
     }
 
 
-setdb()
+DATABASES = get_db_settings()
 
 DATABASE_ROUTERS = ['mibios_omics.DBRouter']
