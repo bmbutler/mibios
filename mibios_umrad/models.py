@@ -1,5 +1,5 @@
-from collections import OrderedDict, defaultdict
-from itertools import islice, zip_longest
+from collections import defaultdict
+from itertools import groupby
 from logging import getLogger
 from pathlib import Path
 
@@ -7,14 +7,13 @@ from django.conf import settings
 from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 from django.db.transaction import atomic, set_rollback
-from django.utils.functional import cached_property
 
 from mibios import get_registry
 
 from .fields import AccessionField
 from . import manager
 from .model_utils import (
-    ch_opt, fk_opt, fk_req, VocabularyModel, delete_all_objects_quickly,
+    ch_opt, fk_req, VocabularyModel, delete_all_objects_quickly,
     LoadMixin, Model
 )
 from .utils import CSV_Spec
@@ -306,289 +305,179 @@ class FuncRefDBEntry(Model):
             return url_spec[0].format(url_spec[1](self.accession))
 
 
-class TaxName(Model):
+class TaxID(Model):
+    taxid = models.PositiveIntegerField(
+        unique=True, verbose_name='NCBI taxid',
+    )
+    taxon = models.ForeignKey('Taxon', **fk_req)
 
+
+class Taxon(Model):
     RANKS = (
         (0, 'root'),
         (1, 'domain'),
         (2, 'phylum'),
-        (3, 'klass'),
+        (3, 'class'),
         (4, 'order'),
         (5, 'family'),
         (6, 'genus'),
         (7, 'species'),
         (8, 'strain'),
     )
-    RANK_CHOICE = ((i[0], i[1]) for i in RANKS)
+    name = models.CharField(max_length=64)
+    rank = models.PositiveSmallIntegerField(choices=RANKS)
+    lineage = models.CharField(max_length=256)
+    ancestors = models.ManyToManyField(
+        'self',
+        symmetrical=False,
+        related_name='descendants',
+    )
 
-    rank = models.PositiveSmallIntegerField(choices=RANK_CHOICE)
-    name = models.CharField(max_length=64, db_index=True)
-
-    loader = manager.TaxNameLoader()
+    loader = manager.TaxonLoader()
 
     class Meta(Model.Meta):
-        unique_together = (('rank', 'name'),)
-        verbose_name = 'taxonomic name'
+        unique_together = (
+            ('rank', 'name'),
+        )
+        verbose_name_plural = 'taxa'
 
     def __str__(self):
         return f'{self.get_rank_display()} {self.name}'
+
+    def get_parent(self):
+        return self.ancestors.order_by('rank').last()
+
+    def as_lineage(self):
+        """ format taxon as lineage """
+        parts = []
+        ancestors = list(self.ancestors.order_by('rank'))
+        for i, rank_name in self.RANKS[1:]:
+            if ancestors:
+                taxon = ancestors.pop(0)
+            else:
+                break
+            if taxon.rank > i:
+                try:
+                    parts.append(f'UNCLASSIFIED_{parts[-1]}_{rank_name}')
+                except IndexError:
+                    print(f'BORK {self=} {parts=} {i=} {ancestors=} {taxon=}')
+                    raise
+            else:
+                parts.append(taxon.name)
+        return ';'.join(parts)
 
     @classmethod
     def get_search_field(cls):
         return cls._meta.get_field('name')
 
-
-class Lineage(Model):
-    """
-    Models taxonomic lineages
-
-    TaxName fields must be declared in order of ranks from highest to lowest.
-    """
-    domain = models.ForeignKey(
-        TaxName, **fk_opt,
-        related_name='tax_dom_rel',
-    )
-    phylum = models.ForeignKey(
-        TaxName, **fk_opt,
-        related_name='tax_phy_rel',
-    )
-    klass = models.ForeignKey(
-        TaxName, **fk_opt,
-        related_name='tax_cls_rel',
-        verbose_name='class',
-    )
-    order = models.ForeignKey(
-        TaxName, **fk_opt,
-        related_name='tax_ord_rel',
-    )
-    family = models.ForeignKey(
-        TaxName, **fk_opt,
-        related_name='tax_fam_rel',
-    )
-    genus = models.ForeignKey(
-        TaxName, **fk_opt,
-        related_name='tax_gen_rel',
-    )
-    species = models.ForeignKey(
-        TaxName, **fk_opt,
-        related_name='tax_sp_rel',
-    )
-    strain = models.ForeignKey(
-        TaxName, **fk_opt,
-        related_name='tax_str_rel',
-    )
-
-    loader = manager.LineageLoader()
-
-    class Meta(Model.Meta):
-        unique_together = (
-            ('domain', 'phylum', 'klass', 'order', 'family', 'genus',
-             'species', 'strain'),
-        )
-
-    def __str__(self):
-        return f'{self.lineage}'
-
     @classmethod
-    def get_name_fields(cls):
-        """Return list of tax name fields in order"""
-        return [
-            i for i in cls._meta.get_fields()
-            if i.many_to_one and i.related_model is TaxName
-        ]
+    def get_lineage_rep_lookupper(cls):
+        """
+        helper to build lineage representation to object lookup dictionary
+
+        Expensive to call, about 40s
+        """
+        objs = {obj.pk: obj for obj in cls.objects.iterator()}
+        thru = cls._meta.get_field('ancestors').remote_field.through
+        qs = thru.objects.values_list('from_taxon_id', 'to_taxon_id')
+        qs = qs.order_by('from_taxon_id')
+        lin2obj = {}
+        for from_id, grp in groupby(qs.iterator(), key=lambda x: x[0]):
+            rep = [(objs[i].rank, objs[i].name) for _, i in grp]
+            rep.append((objs[from_id].rank, objs[from_id].name))
+            lin2obj[tuple(rep)] = objs[from_id]
+        return lin2obj
 
     @classmethod
     def get_parse_and_lookup_fun(cls):
         """
-        Returns a funtion that parses a lineage str and returns the object
-
-        More precisely, the return value is a tuple (lineage, key) where
-        exactly one value is None, depending on the outcome.  If a lineage is
-        found, key is None, if no lineage is found (returning None for it),
-        then the key returned is a tuple of TaxName PKs, representing the
-        missing lineage.
+        Make and return a lineage string to Taxon instance mapper
         """
-        rank2key = {j: i for i, j in TaxName.RANKS}
-        rankkeys = [rank2key[i.name] for i in cls.get_name_fields()]  # 1..8
-        name2pk = {
-            (name, rank): pk
-            for name, rank, pk
-            in TaxName.objects.values_list('name', 'rank', 'pk').iterator()
-        }
-        key2obj = {i.get_name_pks(): i for i in cls.objects.all().iterator()}
+        lin2obj = cls.get_lineage_rep_lookupper()
 
-        def parse_and_lookup(value):
-            """
-            Get lineage object from string value
-
-            :param str value:
-                A string lineage, e.g. 'BACTERIA;BACTEROIDETES;FLAVOBACTERIIA'
-
-            Returns a tuple (obj, missing_key), where obj is a Lineage instance
-            and missing_key is None if a lineage corresponing to the passed
-            value exists.  If no such lineage is in the database, then obj is
-            None and missing_key contains the name-PK-key corresponding to the
-            given lineage string.
-
-            Raises TaxName.DoesNotExist if the given lineage string contains an
-            unknown tax name.
-            """
+        def str2instance(lineage):
+            lineage = tuple(cls.parse_string(lineage))
             try:
-                key = tuple((
-                    None if i is None else name2pk[(i, j)]
-                    for i, j in zip_longest(value.split(';'), rankkeys)
-                ))
-            except KeyError as e:
-                # e.args[0] should be (name, rankid)
-                raise TaxName.DoesNotExist(e.args[0]) from e
-            try:
-                return key2obj[key], None
+                return lin2obj[lineage], None
             except KeyError:
-                return None, key
+                return None, lineage
 
-        return parse_and_lookup
-
-    def get_name_pks(self):
-        """
-        Return tuple of all names' PK (incl. Nones)
-        """
-        return tuple((
-            getattr(self, i.name + '_id')
-            for i in self.get_name_fields()
-        ))
+        return str2instance
 
     @classmethod
-    def from_name_pks(cls, name_pks):
+    def parse_string(cls, lineage, sep=';'):
         """
-        Return a new instance from list of TaxName PKs
-
-        The instance is not saved on the database.
+        Parse a lineage string into list of (rank, name) pairs
         """
-        obj = cls()
-        for field, pk in zip_longest(cls.get_name_fields(), name_pks):
-            setattr(obj, field.name + '_id', pk)
-        return obj
-
-    def as_list_of_tuples(self):
-        """
-        Return instance as list of (rank, name) tuples
-        """
-        ret = []
-        for i in self.get_name_fields():
-            name = getattr(self, i.name, None)
-            if name is None:
-                continue
-            ret.append((i.name, name))
-        return ret
-
-    lineage_list = cached_property(as_list_of_tuples, name='lineage_list')
-
-    def names(self, with_missing_ranks=True):
-        """ return dict of taxnames """
-        names = OrderedDict()
-        for i in TaxName.RANKS[1:]:
-            attr = i[-1]
-            name = getattr(self, attr, None)
-            if name is None and not with_missing_ranks:
-                break
-            else:
-                names[attr] = name
-
-        return names
-
-    @classmethod
-    def format_lineage(cls, lineage, sep=';'):
-        """
-        Format a list of str taxnames as lineage
-        """
-        return sep.join(lineage)
-
-    @property
-    def lineage(self):
-        return self.format_lineage((i.name for _, i in self.lineage_list))
-
-    @classmethod
-    def lca_lineage(cls, taxa):
-        """
-        Return lineage of LCA of given taxa
-
-        Arguments:
-            taxa: Taxon queryset or iterable of taxids or Taxon instances
-        """
-        if not taxa:
-            raise ValueError(
-                'taxa should be a list or iterable with at least one element'
-            )
-        # ranks are rank field attr names str from 'domain' to 'strain'
-        ranks = [j[-1] for j in TaxName.RANKS[1:]]
-
-        # lca: a list of tuples (rank_name, taxname_id)
-        lca = None
-        for i in taxa:
-            if isinstance(i, int):
-                obj = cls.objects(taxid=i)
-            else:
-                obj = i
-
-            if lca is None:
-                # init lca
-                lca = []
-                for r in ranks:
-                    rid = getattr(obj, r + '_id', None)
-                    if rid is None:
-                        break
-                    lca.append((r, rid))
-                continue
-
-            # calc new lca
-            new_lca = []
-            for r, rid in lca:
-                if rid == getattr(obj, r + '_id', None):
-                    new_lca.append((r, rid))
+        specials = ('MICROBIOME',)
+        lst = []
+        check_species = False
+        for rank, name in enumerate(lineage.split(sep), start=1):
+            if rank < 7 and name.startswith('UNCLASSIFIED_'):
+                # skipping these
+                parts = name.split('_')
+                if len(parts) == 2:
+                    # unclass microbiome, others?
+                    if parts[-1] not in specials:
+                        raise RuntimeError(
+                            f'can not handle: {rank=} {name=} in {lineage=}'
+                        )
                     continue
+                rank_name = parts[-1]
+                if rank_name.casefold() != cls.RANKS[rank][1].casefold():
+                    raise RuntimeError(
+                        f'failed parsing: {rank=} {name=} rank mismatch'
+                    )
+                derivate = '_'.join(parts[1:-1])
+                if derivate != lst[-1][1]:
+                    raise RuntimeError(
+                        f'failed parsing: uncl {rank=} {name=} {lst=} mismatch'
+                    )
+                continue
+
+            if rank == 7 and name.endswith('_SP'):
+                # test if _SP name is derived from higher rank
+                for r, n in lst:
+                    if name[:-3] == n:
+                        skip = True
+                        break
                 else:
-                    break
-            lca = new_lca
+                    # not derived from higher rank
+                    # keep this for now, but check again with strain
+                    check_species = True
+                    skip = False
+                if skip:
+                    continue
 
-        # retrieve names
-        qs = TaxName.objects.filter(pk__in=[i[1] for i in lca])
-        names = dict(qs.values_list('pk', 'name'))
+            if rank == 8 and check_species:
+                # FIXME: not doing anything here for now
+                pass
 
-        # return just the tax names
-        return [names[i[1]] for i in lca]
-
-    @classmethod
-    def orphan(cls):
-        rels = ['taxon', 'contigcluster', 'gene', 'uniref100']
-        f = {i: None for i in rels}
-        return cls.objects.filter(**f)
-
-
-class Taxon(Model):
-    taxid = models.PositiveIntegerField(
-        unique=True, verbose_name='NCBI taxid',
-    )
-    lineage = models.ForeignKey(Lineage, **fk_opt)
-
-    loader = manager.TaxonLoader()
-
-    class Meta(Model.Meta):
-        verbose_name_plural = 'taxa'
-
-    def __str__(self):
-        return f'{self.taxid} {self.lineage}'
+            lst.append((rank, name))
+        return lst
 
     @classmethod
-    def classified(cls, lineage):
-        """ remove unclassified tail of a lineage """
-        ranks = [i[1].upper() for i in cls.RANK_CHOICE[1:]]
-        ret = lineage[:1]  # keep first
-        for rank, name in zip(ranks, lineage[1:]):
-            if name == f'UNCLASSIFIED_{ret[-1]}_{rank}':
-                break
-            ret.append(name)
+    def from_string(cls, lineage, obj_cache=None, sep=';'):
+        """
+        Get Taxon instance from a lineage string
 
-        return ret
+        obj_cache: a dict: (rank, name)->Taxon
+
+        ...
+        """
+        # formerly from_name_pks()
+        *ancestry, (rank, name) = cls.parse_string(lineage, sep=sep)
+        obj = cls(name=name, rank=rank, lineage=lineage)
+        if obj_cache is None:
+            q = None
+            for r, n in ancestry:
+                qi = models.Q(rank=r, name=n)
+                q = qi if q is None else q | qi
+            ancestry = Taxon.objects.filter(q)
+        else:
+            ancestry = [obj_cache[(r, n)] for r, n in ancestry]
+
+        return obj
 
 
 class Uniprot(Model):
@@ -623,9 +512,9 @@ class UniRef100(LoadMixin, Model):
     #  5 UNIREF90
     uniref90 = AccessionField(prefix='UNIREF90_', unique=False)
     #  6 TAXON_IDS
-    taxa = models.ManyToManyField(Taxon)
-    #  7 LINEAGE (method)
-    lineage = models.ForeignKey(Lineage, **fk_req)
+    taxids = models.ManyToManyField(TaxID, related_name='classified_uniref100')
+    #  7 LINEAGE
+    lineage = models.ForeignKey(Taxon, **fk_req)
     #  8 SIGALPEP
     signal_peptide = models.CharField(max_length=32, **ch_opt)
     #  9 TMS
@@ -674,7 +563,7 @@ class UniRef100(LoadMixin, Model):
         ('LENGTH', 'length'),
         ('UNIPROT_IDS', 'uniprot'),
         ('UNIREF90', 'uniref90'),
-        ('TAXON_IDS', 'taxa'),
+        ('TAXON_IDS', 'taxids'),
         ('LINEAGE', 'lineage'),
         ('SIGALPEP', 'signal_peptide'),
         ('TMS', 'tms'),
@@ -727,14 +616,13 @@ class UniRef100(LoadMixin, Model):
 
         # get lookups for FK PKs
         print('Retrieving lineage data... ', end='', flush=True)
-        get_lineage = Lineage.get_parse_and_lookup_fun()
+        get_taxon = Taxon.get_parse_and_lookup_fun()
         print('[OK]')
 
         objs = []
         m2m_data = {}
         xref_data = defaultdict(list)  # maps a ref DB references to UniRef100s
-        new_lineages = defaultdict(list)
-        unknown_names = set()
+        new_taxa = defaultdict(list)
 
         data = super().load(max_rows=max_rows, start=start, parse_only=True)
         for row in data:
@@ -751,19 +639,13 @@ class UniRef100(LoadMixin, Model):
                         # regular m2m fields
                         m2m[key] = value
                     elif key == 'lineage':
-                        try:
-                            lineage, name_pks = get_lineage(value)
-                        except TaxName.DoesNotExist as e:
-                            # unknown taxname encountered
-                            unknown_names.add(e.args[0])
-                            obj.lineage_id = 1  # quiddam FIXME
+                        taxon, new_rep = get_taxon(value)
+                        if taxon is None:
+                            # taxon not found in DB
+                            # save with index so we find the obj later
+                            new_taxa[new_rep].append(len(objs))
                         else:
-                            if lineage is None:
-                                # lineage not found in DB
-                                # save with index so we find the obj later
-                                new_lineages[name_pks].append(len(objs))
-                            else:
-                                obj.lineage = lineage
+                            obj.lineage = taxon
                     else:
                         # regular field (length, dna_binding, ...)
                         setattr(obj, key, value)
@@ -792,21 +674,20 @@ class UniRef100(LoadMixin, Model):
 
         del row, key, value, values, xrefs, acc, dbkey
 
-        if unknown_names:
-            print(f'WARNING: {len(unknown_names)} unique unknown tax names:',
-                  ' '.join([str(i) for i in islice(unknown_names, 5)]), '...')
-
-        if new_lineages:
-            # create+save+reload new lineages, then set missing PKs in unirefs
+        if new_taxa:
+            print(f'NEW TAXA: {len(new_taxa)=}', str(new_taxa)[:500])
+        if False and new_taxa:
+            # FIXME and what does it mean to have stuff here but not in Taxon?
+            # create+save+reload new taxa, then set missing PKs in unirefs
             try:
-                maxpk = Lineage.objects.latest('pk').pk
-            except Lineage.DoesNotExist:
+                maxpk = Taxon.objects.latest('pk').pk
+            except Taxon.DoesNotExist:
                 maxpk = 0
-            Lineage.objects.bulk_create(
-                (Lineage.from_name_pks(i) for i in new_lineages.keys())
+            Taxon.objects.bulk_create(
+                (Taxon.from_string(i) for i in new_taxa.keys())
             )
-            for i in Lineage.objects.filter(pk__gt=maxpk):
-                for j in new_lineages[i.get_name_pks()]:
+            for i in Taxon.objects.filter(pk__gt=maxpk):
+                for j in new_taxa[i.get_name_pks()]:
                     objs[j].lineage_id = i.pk  # set lineage PK to UniRef obj
             del maxpk
 

@@ -12,7 +12,7 @@ from django.conf import settings
 from django.db.transaction import atomic, set_rollback
 
 from mibios.models import QuerySet
-from mibios_umrad.models import Lineage, TaxName, Taxon, UniRef100
+from mibios_umrad.models import Taxon, UniRef100
 from mibios_umrad.manager import Loader, Manager
 from mibios_umrad.utils import CSV_Spec, ProgressPrinter, ReturningGenerator
 
@@ -372,7 +372,7 @@ class ContigLikeLoader(SequenceLikeLoader):
             }
 
         if 'lca' in data:
-            str2lin = Lineage.get_parse_and_lookup_fun()
+            str2tax = Taxon.get_parse_and_lookup_fun()
             root_lin = str(Taxon.objects.get(taxid=1).lineage)
             new = defaultdict(list)
             str2pk = {}
@@ -382,8 +382,8 @@ class ContigLikeLoader(SequenceLikeLoader):
                     # FIXME: what to do with these?
                     val = root_lin
                 try:
-                    lin, missing_key = str2lin(val)
-                except TaxName.DoesNotExist as e:
+                    lin, missing_key = str2tax(val)
+                except Exception as e:  # FIXME
                     missing_taxnames.add(e.args[0])  # add (name, rankid) tuple
                     continue
                 if lin is None:
@@ -397,16 +397,16 @@ class ContigLikeLoader(SequenceLikeLoader):
                       ' '.join([str(i) for i in islice(missing_taxnames, 5)]))
             del missing_taxnames
 
-            # make missing LCA lineages
+            # make missing LCA Taxa
             if new:
                 try:
-                    maxpk = Lineage.objects.latest('pk').pk
-                except Lineage.DoesNotExist:
+                    maxpk = Taxon.objects.latest('pk').pk
+                except Taxon.DoesNotExist:
                     maxpk = 0
-                Lineage.objects.bulk_create(
-                    (Lineage.from_name_pks(i) for i in new)
+                Taxon.objects.bulk_create(
+                    (Taxon.from_name_pks(i) for i in new)
                 )
-                for i in Lineage.objects.filter(pk__gt=maxpk):
+                for i in Taxon.objects.filter(pk__gt=maxpk):
                     for j in new[i.get_name_pks()]:
                         str2pk[j] = i.pk  # set PK that ws missing earlier
                 del maxpk, new

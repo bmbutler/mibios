@@ -9,8 +9,8 @@ from django.db.transaction import atomic, set_rollback
 from mibios.data import TableConfig
 from mibios_umrad.fields import AccessionField
 from mibios_umrad.model_utils import digits, opt, fk_req, fk_opt, Model
-from mibios_umrad.models import (CompoundEntry, FuncRefDBEntry, TaxName, Taxon,
-                                 Lineage, UniRef100)
+from mibios_umrad.models import (CompoundEntry, FuncRefDBEntry, Taxon,
+                                 UniRef100)
 from mibios_umrad.utils import ProgressPrinter
 
 from . import managers, get_sample_model
@@ -533,7 +533,8 @@ class TaxonAbundance(Model):
     #  1 type
     #  2 source
     #  3 target
-    taxname = models.ForeignKey(TaxName, **fk_req, related_name='abundance')
+    # FIXME: taxname -> taxon
+    taxname = models.ForeignKey(Taxon, **fk_req, related_name='abundance')
     #  4 lin_cnt
     lin_cnt = models.PositiveIntegerField()
     #  5 lin_avg_prgc  (inconsistent precision)
@@ -690,8 +691,8 @@ class ContigLike(SequenceLike):
     frags_mapped = models.PositiveIntegerField(**opt)
     fpkm = models.DecimalField(decimal_places=4, max_digits=10, **opt)
     # taxon + lca from contigs file
-    taxon = models.ManyToManyField(Taxon)
-    lca = models.ForeignKey(Lineage, **fk_req)
+    taxon = models.ManyToManyField(Taxon, related_name='classified_%(class)s')
+    lca = models.ForeignKey(Taxon, **fk_req)
 
     class Meta:
         abstract = True
@@ -708,7 +709,7 @@ class ContigCluster(ContigLike):
     bin_m93 = models.ForeignKey(BinMET93, **fk_opt, related_name='members')
     bin_m97 = models.ForeignKey(BinMET97, **fk_opt, related_name='members')
     bin_m99 = models.ForeignKey(BinMET99, **fk_opt, related_name='members')
-    lca = models.ForeignKey(Lineage, **fk_opt)  # opt. for contigs w/o genes
+    lca = models.ForeignKey(Taxon, **fk_opt)  # opt. for contigs w/o genes
 
     loader = managers.ContigClusterLoader()
 

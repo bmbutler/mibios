@@ -1,5 +1,5 @@
 from collections import defaultdict
-from itertools import groupby, islice, zip_longest
+from itertools import groupby, islice
 from logging import getLogger
 from operator import itemgetter, length_hint
 from pathlib import Path
@@ -16,7 +16,7 @@ from mibios.models import (
     QuerySet as MibiosQuerySet,
 )
 
-from .utils import CSV_Spec, ProgressPrinter, siter
+from .utils import CSV_Spec, ProgressPrinter, atomic_dry
 
 
 log = getLogger(__name__)
@@ -637,56 +637,6 @@ class FuncRefDBEntryLoader(Loader):
             f'Function_Names_{settings.UMRAD_VERSION}.txt'
 
 
-class LineageLoader(Loader):
-    """ loader for lineage model """
-
-    @atomic
-    def load(self, path=None, dry_run=False):
-        """
-        Upload data to table
-
-        Returns list of (taxid, pk) tuples.
-        Method should be called from Taxon._load()
-        """
-        TaxName = import_string('mibios_umrad.models.TaxName')
-        rows = TaxName.loader.load(path)
-        name2pk = {
-            (i, j): k for i, j, k
-            in TaxName.objects.values_list('name', 'rank', 'pk').iterator()
-        }
-        rankid = {
-            j: i for i, j in TaxName.RANKS if j != 'root'
-        }
-        lin2taxids = defaultdict(list)  # maps name PK tuples to list of taxids
-        objs = []
-        fields = self.model.get_name_fields()
-        for row in rows:
-            obj = self.model()
-            # NOTE: row may have variable length
-            for f, val in zip_longest(fields, row[1:]):
-                if val:
-                    pk = name2pk[(val, rankid[f.name])]
-                    setattr(obj, f.name + '_id', pk)
-
-            if obj.get_name_pks() not in lin2taxids:
-                # first time seen
-                objs.append(obj)
-
-            lin2taxids[obj.get_name_pks()].append(row[0])
-
-        self.bulk_create(objs)
-        del objs
-
-        # return one to many mapping taxid -> lineage PK
-        tid2pk = {
-            tid: obj.pk
-            for obj in self.all().iterator()
-            for tid in lin2taxids[obj.get_name_pks()]
-        }
-        set_rollback(dry_run)
-        return tid2pk
-
-
 class ReactionLoader(Loader):
     """ loader for reaction data from all_reaction_info file """
 
@@ -888,69 +838,72 @@ class ReactionLoader(Loader):
         set_rollback(dry_run)
 
 
-class TaxNameLoader(Loader):
-    """ data loader for the TaxName model """
+class TaxonLoader(Loader):
+    """ loader for Taxon model """
 
-    @atomic
+    def get_file(self):
+        return settings.UMRAD_ROOT / 'TAXONOMY_DB.txt'
+
+    @atomic_dry
     def load(self, path=None, dry_run=False):
-        """
-        Reads TAXONOMY_DB and populates TaxName
-
-        Returns the rows for further processing.  Method should be called via
-        Taxon.load().
-        """
         if path is None:
-            path = self.get_file()
+            path = self.get_path()
 
-        data = []
+        if self.model.objects.exists():
+            raise RuntimeError('taxon table not empty')
+        objs = {}
+        objs[(0, 'root')] = (self.model(name='root', rank=0, lineage=''), [])
+        taxids = {}
+
         with path.open() as f:
             print(f'Reading from file {path} ...')
             f = ProgressPrinter('taxa found')(f)
             log.info(f'reading taxonomy: {path}')
+
             for line in f:
-                data.append(line.strip().split('\t'))
+                taxid, _, lineage = line.rstrip('\n').partition('\t')
+                lin_nodes = self.model.parse_string(lineage, sep='\t')
+                for i in range(len(lin_nodes)):
+                    rank, name = lin_nodes[i]
+                    ancestry = lin_nodes[:i]
+                    if (rank, name) in objs:
+                        obj, ancestry0 = objs[(rank, name)]
+                        if ancestry0 != ancestry:
+                            raise RuntimeError(
+                                f'inconsistent ancestry: {line=} {lineage=}'
+                            )
+                    else:
+                        obj = self.model(name=name, rank=rank, lineage='FIXME')
+                        objs[(rank, name)] = (obj, ancestry)
+                # assign taxid to last node of lineage
+                taxids[taxid] = (rank, name)
 
-        pp = ProgressPrinter('tax names processed')
-        rankids = [i[0] for i in self.model.RANKS[1:]]
-        names = dict()
-        for row in data:
-            for rid, name in zip_longest(rankids, row[1:]):
-                if rid is None:
-                    raise RuntimeError(f'unexpectedly low ranks: {row}')
-                if name is None:
-                    # no strain etc
-                    continue
-                key = (rid, name)
-                if key not in names:
-                    names[key] = self.model(rank=rid, name=name)
-                    pp.inc()
-        pp.finish()
+        # saving Taxon objects
+        self.bulk_create((i for i, _ in objs.values()))
 
-        log.info(f'Storing {len(names)} unique tax names to DB...')
-        self.bulk_create(names.values())
-        set_rollback(dry_run)
-        return data
+        # retrieving PKs
+        qs = self.model.objects.values_list('pk', 'rank', 'name')
+        obj_pks = {(rank, name): pk for pk, rank, name in qs.iterator()}
 
-    @classmethod
-    def get_file(cls):
-        return settings.UMRAD_ROOT / \
-            f'TAXONOMY_DB_{settings.UMRAD_VERSION}.txt'
+        # setting ancestry relations
+        Through = self.model._meta.get_field('ancestors').remote_field.through
+        through_objs = [
+            Through(
+                from_taxon_id=obj_pks[(obj.rank, obj.name)],
+                to_taxon_id=obj_pks[(rank, name)]
+            )
+            for obj, ancestry in objs.values()
+            for rank, name in ancestry
+        ]
+        self.bulk_create_wrapper(Through.objects.bulk_create)(through_objs)
 
-
-class TaxonLoader(Loader):
-    """ loader for Taxon model """
-
-    @atomic
-    def load(self, path=None, dry_run=False):
-        Lineage = import_string('mibios_umrad.models.Lineage')
-        taxid2linpk = Lineage.loader.load(path)
-
-        self.bulk_create(siter((
-            self.model(taxid=i, lineage_id=j)
-            for i, j in taxid2linpk.items()
-        ), len(taxid2linpk)))
-
-        set_rollback(dry_run)
+        # saving taxids
+        TaxID = self.model._meta.get_field('taxid').related_model
+        taxids = (
+            TaxID(taxid=tid, taxon_id=obj_pks[(rank, name)])
+            for tid, (rank, name) in taxids.items()
+        )
+        TaxID.objects.bulk_create(taxids)
 
 
 class BaseManager(MibiosBaseManager):
