@@ -433,8 +433,14 @@ class BaseLoader(DjangoManager):
                     pass
 
         Through = field.remote_field.through  # the intermediate model
-        our_id_name = self.model._meta.model_name + '_id'
-        other_id_name = model._meta.model_name + '_id'
+        if field.related_model == self.model:
+            # m2m on self
+            our_id_name = 'from_' + self.model._meta.model_name + '_id'
+            other_id_name = 'to_' + model._meta.model_name + '_id'
+        else:
+            # m2m between two distinct models
+            our_id_name = self.model._meta.model_name + '_id'
+            other_id_name = model._meta.model_name + '_id'
         through_objs = [
             Through(
                 **{our_id_name: i, other_id_name: j}
