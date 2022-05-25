@@ -243,7 +243,7 @@ class BaseLoader(DjangoManager):
                 dry_run=dry_run,
             )
 
-    @atomic
+    @atomic_dry
     def _load_lines(self, lines, sep='\t', dry_run=False, template={}):
         ncols = len(self.spec)
         split = self._split_m2m_input
@@ -355,8 +355,6 @@ class BaseLoader(DjangoManager):
             # collecting all m2m entries
             for field in (i for i in fields if i.many_to_many):
                 self._update_m2m(field.name, m2m_data)
-
-        set_rollback(dry_run)
 
     def _update_m2m(self, field_name, m2m_data):
         """
