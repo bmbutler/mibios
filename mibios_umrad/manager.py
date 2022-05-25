@@ -405,24 +405,33 @@ class BaseLoader(DjangoManager):
             else:
                 print()
 
-            model.objects.create_from_m2m_input(
-                new_accs,
-                source_model=self.model,
-                src_field_name=field_name,
-            )
+            if hasattr(model, 'loader'):
+                # assume here that we can't create these with only an accession
+                print(f'WARNING: missing {model} records can not be created '
+                      f'here, use {model}.loader.load()')
+            else:
+                model.objects.create_from_m2m_input(
+                    new_accs,
+                    source_model=self.model,
+                    src_field_name=field_name,
+                )
 
-            # get m2m field's key -> pk mapping
-            a2pk = dict(qs.iterator())
+                # get updated m2m field's key -> pk mapping
+                a2pk = dict(qs.iterator())
         else:
             print()
 
         # set relationships
         rels = []  # pairs of ours and other's PKs
         for i, other in m2m_data.items():
-            rels.extend((
-                (i, a2pk[acc_field.to_python(j)])
-                for j in other[field_name]
-            ))
+            for j in other[field_name]:
+                try:
+                    rels.append((i, a2pk[acc_field.to_python(j)]))
+                except KeyError:
+                    # ignore for now
+                    # FIXME
+                    pass
+
         Through = field.remote_field.through  # the intermediate model
         our_id_name = self.model._meta.model_name + '_id'
         other_id_name = model._meta.model_name + '_id'
@@ -934,8 +943,8 @@ class BaseManager(MibiosBaseManager):
         Inheriting classes should overwrite this method if more that the
         accession or other unique ID field is needed to create the instances.
         The basic implementation will assign the given value to the accession
-        field, if one exists, or to the first declared unique field, other
-        that the standard id AutoField.
+        field, if one exists, or to the first declared unique field, other than
+        the standard id AutoField.
 
         This method is responsible to set all required fields of the model,
         hence the default version should only be used with controlled
@@ -944,8 +953,7 @@ class BaseManager(MibiosBaseManager):
         # TODO: if need arises we can implement support for values to
         # contain tuples of values
         attr_name = self.model.get_accession_lookup_single()
-        model = self.model
-        objs = (model(**{attr_name: i}) for i in values)
+        objs = (self.model(**{attr_name: i}) for i in values)
         return self.bulk_create(objs)
 
 
