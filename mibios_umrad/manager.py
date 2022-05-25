@@ -866,7 +866,7 @@ class TaxonLoader(Loader):
     @atomic_dry
     def load(self, path=None, dry_run=False):
         if path is None:
-            path = self.get_path()
+            path = self.get_file()
 
         if self.model.objects.exists():
             raise RuntimeError('taxon table not empty')
@@ -885,6 +885,7 @@ class TaxonLoader(Loader):
                 for i in range(len(lin_nodes)):
                     rank, name = lin_nodes[i]
                     ancestry = lin_nodes[:i]
+                    lineage = ';'.join(lineage[:rank])
                     if (rank, name) in objs:
                         obj, ancestry0 = objs[(rank, name)]
                         if ancestry0 != ancestry:
@@ -892,7 +893,7 @@ class TaxonLoader(Loader):
                                 f'inconsistent ancestry: {line=} {lineage=}'
                             )
                     else:
-                        obj = self.model(name=name, rank=rank, lineage='FIXME')
+                        obj = self.model(name=name, rank=rank, lineage=lineage)
                         objs[(rank, name)] = (obj, ancestry)
                 # assign taxid to last node of lineage
                 taxids[taxid] = (rank, name)
