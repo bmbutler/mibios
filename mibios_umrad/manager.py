@@ -246,7 +246,6 @@ class BaseLoader(DjangoManager):
     @atomic_dry
     def _load_lines(self, lines, sep='\t', dry_run=False, template={}):
         ncols = len(self.spec)
-        split = self._split_m2m_input
         fields = [self.model._meta.get_field(i) for i in self.spec.keys]
         convfuncs = self.spec.convfuncs
         cut = self.spec.cut
@@ -293,7 +292,7 @@ class BaseLoader(DjangoManager):
                         break  # skips obj / avoids for-else block
 
                 if field.many_to_many:
-                    m2m[field.name] = split(value)
+                    m2m[field.name] = self.split_m2m_value(value)
                 elif field.many_to_one:
                     if not isinstance(value, tuple):
                         value = (value, )  # fkmap keys are tuples
@@ -449,7 +448,8 @@ class BaseLoader(DjangoManager):
         ]
         self.bulk_create_wrapper(Through.objects.bulk_create)(through_objs)
 
-    def _split_m2m_input(self, value):
+    @classmethod
+    def split_m2m_value(cls, value):
         """
         Helper to split semi-colon-separated list-field values in import file
         """
@@ -464,8 +464,6 @@ class BaseLoader(DjangoManager):
         ncols = len(self.spec)
 
         data = []
-        split = self._split_m2m_input
-
         for line in lines:
             row = line.rstrip('\n').split(sep)
 
@@ -486,7 +484,7 @@ class BaseLoader(DjangoManager):
                     pass
                 else:
                     if field.many_to_many:
-                        value = split(value)
+                        value = self.split_m2m_value(value)
 
                 rec[key] = value
 
@@ -685,7 +683,7 @@ class ReactionLoader(Loader):
         m2mcols = [i for i in self.spec.all_keys if i not in ['accession', 'dir']]  # noqa:E501
         for row in super().load(max_rows=max_rows, parse_only=True):
             for i in m2mcols:
-                row[i] = self._split_m2m_input(row[i])
+                row[i] = self.split_m2m_value(row[i])
             data.append(row)
 
         urxns = []
