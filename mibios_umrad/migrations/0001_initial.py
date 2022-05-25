@@ -17,34 +17,6 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='Compound',
-            fields=[
-                ('id', mibios.models.AutoField(primary_key=True, serialize=False)),
-            ],
-            options={
-                'verbose_name': 'distinct compound',
-            },
-            managers=[
-                ('loader', django.db.models.manager.Manager()),
-            ],
-        ),
-        migrations.CreateModel(
-            name='CompoundEntry',
-            fields=[
-                ('id', mibios.models.AutoField(primary_key=True, serialize=False)),
-                ('accession', models.CharField(max_length=40, unique=True)),
-                ('db', models.CharField(choices=[('b', 'Biocyc'), ('c', 'ChEBI'), ('h', 'HMDB'), ('i', 'InChi'), ('k', 'KEGG'), ('p', 'PubChem')], db_index=True, max_length=1)),
-                ('formula', models.CharField(blank=True, max_length=32)),
-                ('charge', models.SmallIntegerField(blank=True, null=True)),
-                ('mass', models.CharField(blank=True, max_length=16)),
-                ('compound', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='group', to='mibios_umrad.Compound', verbose_name='distinct compound')),
-            ],
-            options={
-                'abstract': False,
-                'default_manager_name': 'objects',
-            },
-        ),
-        migrations.CreateModel(
             name='CompoundName',
             fields=[
                 ('id', mibios.models.AutoField(primary_key=True, serialize=False)),
@@ -52,6 +24,23 @@ class Migration(migrations.Migration):
             ],
             options={
                 'ordering': ['entry'],
+                'abstract': False,
+                'default_manager_name': 'objects',
+            },
+        ),
+        migrations.CreateModel(
+            name='CompoundRecord',
+            fields=[
+                ('id', mibios.models.AutoField(primary_key=True, serialize=False)),
+                ('accession', models.CharField(max_length=40, unique=True)),
+                ('source', models.CharField(choices=[('BC', 'Biocyc'), ('CH', 'ChEBI'), ('HM', 'HMDB'), ('PB', 'PathBank'), ('KG', 'KEGG'), ('PC', 'PubChem')], db_index=True, max_length=2)),
+                ('formula', models.CharField(blank=True, max_length=32)),
+                ('charge', models.SmallIntegerField(blank=True, null=True)),
+                ('mass', models.CharField(blank=True, max_length=16)),
+                ('names', models.ManyToManyField(to='mibios_umrad.CompoundName')),
+                ('others', models.ManyToManyField(to='mibios_umrad.CompoundRecord')),
+            ],
+            options={
                 'abstract': False,
                 'default_manager_name': 'objects',
             },
@@ -125,9 +114,20 @@ class Migration(migrations.Migration):
                 ('accession', mibios_umrad.fields.AccessionField()),
                 ('db', models.CharField(choices=[('b', 'Biocyc'), ('k', 'KEGG'), ('r', 'RHEA')], db_index=True, max_length=1)),
                 ('bi_directional', models.BooleanField(blank=True, null=True)),
-                ('left', models.ManyToManyField(related_name='to_reaction', to='mibios_umrad.CompoundEntry')),
+                ('left', models.ManyToManyField(related_name='to_reaction', to='mibios_umrad.CompoundRecord')),
                 ('reaction', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='mibios_umrad.Reaction')),
-                ('right', models.ManyToManyField(related_name='from_reaction', to='mibios_umrad.CompoundEntry')),
+                ('right', models.ManyToManyField(related_name='from_reaction', to='mibios_umrad.CompoundRecord')),
+            ],
+            options={
+                'abstract': False,
+                'default_manager_name': 'objects',
+            },
+        ),
+        migrations.CreateModel(
+            name='TaxID',
+            fields=[
+                ('id', mibios.models.AutoField(primary_key=True, serialize=False)),
+                ('taxid', models.PositiveIntegerField(unique=True, verbose_name='NCBI taxid')),
             ],
             options={
                 'abstract': False,
@@ -182,8 +182,8 @@ class Migration(migrations.Migration):
                 ('metal_binding', models.ManyToManyField(to='mibios_umrad.Metal')),
                 ('rhea_reactions', models.ManyToManyField(related_name='uniref_rhea', to='mibios_umrad.ReactionEntry')),
                 ('subcellular_locations', models.ManyToManyField(to='mibios_umrad.Location')),
-                ('taxa', models.ManyToManyField(related_name='classified_uniref100', to='mibios_umrad.Taxon')),
-                ('trans_compounds', models.ManyToManyField(related_name='uniref_trans', to='mibios_umrad.CompoundEntry')),
+                ('taxids', models.ManyToManyField(related_name='classified_uniref100', to='mibios_umrad.TaxID')),
+                ('trans_compounds', models.ManyToManyField(related_name='uniref_trans', to='mibios_umrad.CompoundRecord')),
                 ('uniprot', models.ManyToManyField(to='mibios_umrad.Uniprot')),
             ],
             options={
@@ -192,26 +192,14 @@ class Migration(migrations.Migration):
             },
             bases=(mibios_umrad.model_utils.LoadMixin, models.Model),
         ),
-        migrations.CreateModel(
-            name='TaxID',
-            fields=[
-                ('id', mibios.models.AutoField(primary_key=True, serialize=False)),
-                ('taxid', models.PositiveIntegerField(unique=True, verbose_name='NCBI taxid')),
-                ('taxon', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='mibios_umrad.Taxon')),
-            ],
-            options={
-                'abstract': False,
-                'default_manager_name': 'objects',
-            },
+        migrations.AddField(
+            model_name='taxid',
+            name='taxon',
+            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='mibios_umrad.Taxon'),
         ),
         migrations.AddField(
             model_name='funcrefdbentry',
             name='names',
             field=models.ManyToManyField(to='mibios_umrad.FunctionName'),
-        ),
-        migrations.AddField(
-            model_name='compoundentry',
-            name='names',
-            field=models.ManyToManyField(to='mibios_umrad.CompoundName'),
         ),
     ]

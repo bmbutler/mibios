@@ -23,7 +23,7 @@ from mibios_omics.models import (
     CompoundAbundance, FuncAbundance, TaxonAbundance
 )
 from mibios_umrad.models import (
-    CompoundEntry, CompoundName, FunctionName, FuncRefDBEntry,
+    CompoundRecord, CompoundName, FunctionName, FuncRefDBEntry,
 )
 from mibios_omics.models import Gene
 from . import models, tables
@@ -804,10 +804,10 @@ class SearchHitView(TemplateView):
 
             model_hits = []
             if model is CompoundName:
-                model_name = CompoundEntry._meta.model_name
+                model_name = CompoundRecord._meta.model_name
                 for obj in qs.iterator():
                     hit_value = getattr(obj, search_field_name)
-                    for i in obj.compoundentry_set.exclude(abundance=None):
+                    for i in obj.compoundrecord_set.exclude(abundance=None):
                         model_hits.append((i, str(i), hit_value))
             elif model is FunctionName:
                 model_name = FuncRefDBEntry._meta.model_name

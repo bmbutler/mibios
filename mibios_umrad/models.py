@@ -22,71 +22,35 @@ from .utils import CSV_Spec
 log = getLogger(__name__)
 
 
-class CompoundEntryManager(manager.Manager):
-    def create_from_m2m_input(self, values, source_model, src_field_name):
-        if source_model is UniRef100 and src_field_name == 'trans_compounds':
-            pass
-        else:
-            raise NotImplementedError(
-                'is only implemented for field UniRef100.trans_compound'
-            )
-
-        # create one unique reaction group per value
-        try:
-            last_pk = Compound.objects.order_by('pk').latest('pk').pk
-        except Compound.DoesNotExist:
-            last_pk = -1
-        Compound.objects.bulk_create(
-            (Compound() for _ in range(len(values))),
-            batch_size=500  # runs up at SQLITE_MAX_COMPOUND_SELECT,django bug?
-        )
-        cpd_pks = Compound.objects.filter(pk__gt=last_pk)\
-                          .values_list('pk', flat=True)
-        if len(values) != len(cpd_pks):
-            # just checking
-            raise RuntimeError('a bug making right number of Compound objects')
-
-        model = self.model
-        db = CompoundEntry.DB_CHEBI
-        objs = (model(accession=i, db=db, compound_id=j)
-                for i, j in zip(values, cpd_pks))
-        return self.bulk_create(objs)
-
-
-class CompoundEntry(Model):
+class CompoundRecord(Model):
     """ Reference DB's entry for chemical compound, reactant, or product """
-    DB_BIOCYC = 'b'
-    DB_CHEBI = 'c'
-    DB_HMDB = 'h'
-    DB_INCHI = 'i'
-    DB_KEGG = 'k'
-    DB_PUBCHEM = 'p'
+    DB_BIOCYC = 'BC'
+    DB_CHEBI = 'CH'
+    DB_HMDB = 'HM'
+    DB_PATHBANK = 'PB'
+    DB_KEGG = 'KG'
+    DB_PUBCHEM = 'PC'
     DB_CHOICES = (
         (DB_BIOCYC, 'Biocyc'),
         (DB_CHEBI, 'ChEBI'),
         (DB_HMDB, 'HMDB'),
-        (DB_INCHI, 'InChi'),
+        (DB_PATHBANK, 'PathBank'),
         (DB_KEGG, 'KEGG'),
         (DB_PUBCHEM, 'PubChem'),
     )
 
     accession = models.CharField(max_length=40, unique=True)
-    db = models.CharField(max_length=1, choices=DB_CHOICES, db_index=True)
+    source = models.CharField(max_length=2, choices=DB_CHOICES, db_index=True)
     formula = models.CharField(max_length=32, blank=True)
     charge = models.SmallIntegerField(blank=True, null=True)
     mass = models.CharField(max_length=16, blank=True)  # TODO: decimal??
     names = models.ManyToManyField('CompoundName')
-    compound = models.ForeignKey(
-        'Compound',
-        **fk_req,
-        related_name='group',
-        verbose_name='distinct compound',
-    )
+    others = models.ManyToManyField('self', symmetrical=False)
 
-    objects = CompoundEntryManager()
+    loader = manager.CompoundRecordLoader()
 
     def __str__(self):
-        return self.accession
+        return f'{self.get_source_display()}:{self.accession}'
 
     def group(self):
         """ return QuerySet of synonym/related compound entry group """
@@ -96,10 +60,7 @@ class CompoundEntry(Model):
         DB_BIOCYC: 'https://biocyc.org/compound?orgid=META&id={}',
         DB_CHEBI: 'https://www.ebi.ac.uk/chebi/searchId.do?chebiId={}',
         DB_HMDB: 'https://hmdb.ca/metabolites/{}',
-        DB_INCHI: (
-            'https://www.ebi.ac.uk/unichem/frontpage/results?queryText={}&kind=InChIKey',  # noqa: E501
-            lambda x: x.removeprefix('INCHI:')
-        ),
+        DB_PATHBANK: None,  # TODO
         DB_KEGG: 'https://www.kegg.jp/entry/{}',
         DB_PUBCHEM: (
             'https://pubchem.ncbi.nlm.nih.gov/compound/{}',
@@ -108,7 +69,7 @@ class CompoundEntry(Model):
     }
 
     def get_external_url(self):
-        url_spec = self.external_urls[self.db]
+        url_spec = self.external_urls[self.source]
         if not url_spec:
             return None
         elif isinstance(url_spec, str):
@@ -117,33 +78,6 @@ class CompoundEntry(Model):
         else:
             # assumme a tuple (templ, func)
             return url_spec[0].format(url_spec[1](self.accession))
-
-
-class Compound(Model):
-    """ Distinct source-DB-independent compounds """
-
-    # no fields hereQ
-
-    loader = manager.CompoundLoader()
-
-    class Meta:
-        verbose_name = 'distinct compound'
-
-    # spec: 2nd item is either base compound field name or compound model name
-    # for the reverse relation
-    loader_spec = CSV_Spec(
-        ('id', 'accession'),
-        ('form', 'formula'),
-        ('char', 'charge'),
-        ('mass', 'mass'),
-        ('hmdb', CompoundEntry.DB_HMDB),
-        ('inch', CompoundEntry.DB_INCHI),
-        ('bioc', CompoundEntry.DB_BIOCYC),
-        ('kegg', CompoundEntry.DB_KEGG),
-        ('pubc', CompoundEntry.DB_PUBCHEM),
-        ('cheb', CompoundEntry.DB_CHEBI),
-        ('name', 'names'),
-    )
 
 
 class CompoundName(VocabularyModel):
@@ -215,10 +149,10 @@ class ReactionEntry(Model):
     db = models.CharField(max_length=1, choices=DB_CHOICES, db_index=True)
     bi_directional = models.BooleanField(blank=True, null=True)
     left = models.ManyToManyField(
-        CompoundEntry, related_name='to_reaction',
+        CompoundRecord, related_name='to_reaction',
     )
     right = models.ManyToManyField(
-        CompoundEntry, related_name='from_reaction',
+        CompoundRecord, related_name='from_reaction',
     )
     reaction = models.ForeignKey('Reaction', **fk_req)
 
@@ -546,7 +480,7 @@ class UniRef100(LoadMixin, Model):
     # 24 PRODUCTS
     # 25 TRANS_CPD
     trans_compounds = models.ManyToManyField(
-        CompoundEntry,
+        CompoundRecord,
         related_name='uniref_trans',
     )
 
@@ -761,7 +695,7 @@ def delete_all_uniref100_etc():
 
 def load_umrad():
     """ load all of UMRAD from scratch, assuming an empty DB """
-    Compound.loader.load()
+    CompoundRecord.loader.load()
     Reaction.loader.load()
     Taxon.loader.load()
     FuncRefDBEntry.loader.load()

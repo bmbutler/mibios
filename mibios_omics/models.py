@@ -9,7 +9,7 @@ from django.db.transaction import atomic, set_rollback
 from mibios.data import TableConfig
 from mibios_umrad.fields import AccessionField
 from mibios_umrad.model_utils import digits, opt, fk_req, fk_opt, Model
-from mibios_umrad.models import (CompoundEntry, FuncRefDBEntry, Taxon,
+from mibios_umrad.models import (CompoundRecord, FuncRefDBEntry, Taxon,
                                  UniRef100)
 from mibios_umrad.utils import ProgressPrinter
 
@@ -610,7 +610,7 @@ class CompoundAbundance(AbstractAbundance):
         ('t', 'TRANSPORT'),
     )
     compound = models.ForeignKey(
-        CompoundEntry,
+        CompoundRecord,
         related_name='abundance',
         *fk_req,
     )

@@ -342,7 +342,7 @@ class Migration(migrations.Migration):
                 ('scos', models.DecimalField(decimal_places=2, max_digits=12)),
                 ('rpkm', models.DecimalField(decimal_places=2, max_digits=12)),
                 ('role', models.CharField(choices=[('r', 'REACTANT'), ('p', 'PRODUCT'), ('t', 'TRANSPORT')], max_length=1)),
-                ('compound', models.ForeignKey(on_delete='on_delete', related_name='abundance', to='mibios_umrad.CompoundEntry')),
+                ('compound', models.ForeignKey(on_delete='on_delete', related_name='abundance', to='mibios_umrad.CompoundRecord')),
                 ('sample', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.OMICS_SAMPLE_MODEL)),
             ],
             options={

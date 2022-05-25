@@ -502,148 +502,49 @@ class Loader(BulkCreateWrapperMixin, BaseLoader.from_queryset(QuerySet)):
     pass
 
 
-class CompoundLoader(Loader):
-    """ loader for compound data from all_compound_info file """
+class CompoundRecordLoader(Loader):
+    """ loader for compound data from MERGED_CPD_DB.txt file """
 
     def get_file(self):
-        return settings.UMRAD_ROOT \
-            / f'all_compound_info_{settings.UMRAD_VERSION}.txt'
+        return settings.UMRAD_ROOT / 'MERGED_CPD_DB.txt'
 
-    @atomic
-    def load(self, max_rows=None, dry_run=False):
-        # get related model classes here to avoid circular imports
-        CompoundEntry = import_string('mibios_umrad.models.CompoundEntry')
-        CompoundName = import_string('mibios_umrad.models.CompoundName')
+    def chargeconv(value, row):
+        """ convert '2+' -> 2 / '2-' -> -2 """
+        if value == '':
+            return None
+        elif value.endswith('-'):
+            return -int(value[:-1])
+        elif value.endswith('+'):
+            return int(value[:-1])
+        else:
+            return int(value)
 
-        refdb_names = [
-            i for i, _ in CompoundEntry.DB_CHOICES
-            if i in self.spec.keys
-        ]
+    def collect_others(value, row):
+        """ triggered on kegg columns, collects from other sources too """
+        # assume that value == row[7]
+        lst = CompoundRecordLoader.split_m2m_value(';'.join(row[7:12]))
+        try:
+            # remove the record itself
+            lst.remove(row[0])
+        except ValueError:
+            pass
+        return ';'.join(lst)
 
-        # get data and split m2m fields
-        data = []
-        for row in super().load(max_rows=max_rows, parse_only=True):
-            for i in refdb_names + ['names']:
-                row[i] = self._split_m2m_input(row[i])
-            data.append(row)
-
-        unicomps = []  # collector for unique compounds (this model)
-        name_data = {}  # accession/id to names association
-
-        grpk = itemgetter(*refdb_names)  # sort/group by related IDs columns
-        data = sorted(data, key=grpk)
-        pp = ProgressPrinter('compound records processed')
-        data = pp(data)
-        extra_ids = set()
-        for key, grp in groupby(data, grpk):
-            grp = list(grp)
-            all_ids = {i for j in key for i in j}  # flatten list-of-list
-            cgroup = []
-
-            if len(grp) < len(all_ids):
-                # NOTE: there are extra IDs in the xref columns for which we
-                # don't have a row, they will not enter the compound group, and
-                # get lost here
-                # print(f'WARNING: skipping for group size inconsistency: '
-                #       f'{len(grp)=} {len(all_ids)=} {key=}')
-
-                # TODO: make this raise when fixed in the source dataa?
-                # raise RuntimeError(
-                #     f'expected to have one group member per unique ID, but: '
-                #     f'{key=} {grp=}'
-                # )
-                grp_ids = [i['accession'] for i in grp]
-                extra_ids.update(all_ids.difference(grp_ids))
-                del grp_ids
-
-            elif len(grp) > len(all_ids):
-                # this case has not happend yet
-                raise RuntimeError(
-                    f'more group members ({len(grp)=}) than IDs '
-                    f'({len(all_ids)})? {key=} {grp=}'
-                )
-
-            for row in grp:
-                acc = row['accession']
-
-                # get the ref db for this row:
-                for refdb, ids in zip(refdb_names, key):
-                    if acc in ids:
-                        break
-                else:
-                    raise RuntimeError(
-                        f'accession {acc} not found in other ID fields: {grp}'
-                    )
-                del ids
-
-                comp_obj = CompoundEntry(
-                    accession=acc,
-                    db=refdb,
-                    formula=row['formula'],
-                    charge=None if row['charge'] == '' else row['charge'],
-                    mass=row['mass']
-                )
-                cgroup.append(comp_obj)
-                name_data[acc] = row['names']
-
-            unicomps.append(cgroup)
-
-        if extra_ids:
-            print(f'WARNING: Found {len(extra_ids)} distinct compound IDs that'
-                  ' didn\'t have a row in their group) that will be ignored:',
-                  ', '.join([str(i) for i in islice(extra_ids, 5)]),
-                  '...')
-
-        # create Compound objects and get PKs
-        objs = (self.model() for _ in range(len(unicomps)))
-        self.bulk_create(objs, batch_size=500)
-        pks = self.values_list('pk', flat=True)
-
-        # cross-link compound entries (and re-pack to one list)
-        comps = []
-        for pk, group in zip(pks, unicomps):
-            for i in group:
-                i.compound_id = pk
-                comps.append(i)
-        del pk, unicomps
-
-        # store compound entries
-        CompoundEntry.objects.bulk_create(comps)
-        del comps
-
-        # store names
-        uniq_names = set()
-        for items in name_data.values():
-            uniq_names.update(items)
-
-        name_objs = (CompoundName(entry=i) for i in uniq_names)
-        CompoundName.objects.bulk_create(name_objs)
-
-        # read back names with PKs
-        name_pk_map = dict(
-            CompoundName.objects.values_list('entry', 'pk').iterator()
-        )
-
-        # Set name relations
-        pk_map = dict(
-            CompoundEntry.objects.values_list('accession', 'pk').iterator()
-        )
-        rels = (  # the comp->name relation
-            (comp_pk, name_pk_map[name_entry])
-            for acc, comp_pk in pk_map.items()
-            for name_entry in name_data[acc]
-        )
-        through = CompoundEntry._meta.get_field('names').remote_field.through
-        through_objs = [
-            through(
-                **{'compoundentry_id': i, 'compoundname_id': j}
-            )
-            for i, j in rels
-        ]
-        self.bulk_create_wrapper(through.objects.bulk_create)(through_objs)
-
-        if dry_run:
-            set_rollback(True)
+    spec = CSV_Spec(
+        ('cpd', 'accession'),
+        ('src', 'source'),
+        ('form', 'formula'),
+        ('mass', 'mass'),
+        ('char', 'charge', chargeconv),
+        ('tcdb', None),
+        ('name', 'names'),
+        ('kegg', 'others', collect_others),
+        ('chebi', None),  # remaining columns processed by kegg
+        ('hmdb', None),
+        ('pubch', None),
+        ('inchi', None),
+        ('bioc', None),
+    )
 
 
 class FuncRefDBEntryLoader(Loader):
