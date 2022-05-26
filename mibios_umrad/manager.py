@@ -22,6 +22,15 @@ from .utils import CSV_Spec, ProgressPrinter, atomic_dry
 log = getLogger(__name__)
 
 
+class InputFileError(Exception):
+    """
+    malformed line in input file
+
+    We may expect this error and may tolerate it and skip the offending line
+    """
+    pass
+
+
 class BulkCreateWrapperMixin:
     """
     Mixin providing the bulk_create wrapper
@@ -181,7 +190,7 @@ class BaseLoader(DjangoManager):
             self.spec.setup()
 
     def load(self, max_rows=None, start=0, dry_run=False, sep='\t',
-             parse_only=False, file=None, template={}):
+             parse_only=False, file=None, template={}, skip_on_error=False):
         """
         Load data from file
 
@@ -190,6 +199,10 @@ class BaseLoader(DjangoManager):
             start loading, equivalent to number of non-header lines skipped.
         :param bool parse_only:
             Return each row as a dict and don't use the general loader logic.
+        :param bool skip_on_error:
+            If True, and an Exception is raised while processing a line of the
+            input file, the traceback will be written to file and the line
+            skipped.
 
         May assume empty table ?!?
         """
@@ -241,15 +254,19 @@ class BaseLoader(DjangoManager):
                 template=template,
                 sep=sep,
                 dry_run=dry_run,
+                skip_on_error=skip_on_error,
             )
 
     @atomic_dry
-    def _load_lines(self, lines, sep='\t', dry_run=False, template={}):
+    def _load_lines(self, lines, sep='\t', dry_run=False, template={},
+                    skip_on_error=False):
         ncols = len(self.spec)
         fields = [self.model._meta.get_field(i) for i in self.spec.keys]
         convfuncs = self.spec.convfuncs
         cut = self.spec.cut
         empty_extra = self.spec.empty_values
+        num_line_errors = 0
+        max_line_errors = 10
 
         # loading FK (acc,...)->pk mappings
         fkmap = {}
@@ -272,7 +289,7 @@ class BaseLoader(DjangoManager):
         skip_count = 0
         pk = None
 
-        for line in lines:
+        for linenum, line in enumerate(lines):
             obj = self.model(**template)
             m2m = {}
             row = line.rstrip('\n').split(sep)
@@ -285,11 +302,22 @@ class BaseLoader(DjangoManager):
 
             for field, fn, value in zip(fields, convfuncs, cut(row)):
                 if callable(fn):
-                    value = fn(value, row)
+                    try:
+                        value = fn(value, row)
+                    except InputFileError as e:
+                        if skip_on_error and num_line_errors < max_line_errors:
+                            print(f'ERROR on line {linenum}: {e} -- will skip '
+                                  f'offending line\n{line}')
+                            num_line_errors += 1
+                            break  # skips line
+                        else:
+                            if num_line_errors >= max_line_errors:
+                                print('ERROR: too many per-line errors')
+                            raise
                     if value is CSV_Spec.IGNORE_COLUMN:
                         continue  # treats value as empty
                     elif value is CSV_Spec.SKIP_ROW:
-                        break  # skips obj / avoids for-else block
+                        break  # skips line / avoids for-else block
 
                 if field.many_to_many:
                     m2m[field.name] = self.split_m2m_value(value)
@@ -305,7 +333,7 @@ class BaseLoader(DjangoManager):
                             pass
                         else:
                             skip_count += 1
-                            break  # will skip this obj / skips for-else block
+                            break  # skip this obj / skips for-else block
                     else:
                         setattr(obj, field.name + '_id', pk)
                 elif value not in empty_extra and value not in field.empty_values:  # noqa: E501
@@ -319,6 +347,7 @@ class BaseLoader(DjangoManager):
                 objs.append(obj)
                 if m2m:
                     m2m_data[obj.get_accessions()] = m2m
+
         del fkmap, field, value, row, pk, line, obj, m2m
 
         for fname, bad_ids in missing_fks.items():
@@ -406,8 +435,9 @@ class BaseLoader(DjangoManager):
 
             if hasattr(model, 'loader'):
                 # assume here that we can't create these with only an accession
-                print(f'WARNING: missing {model} records can not be created '
-                      f'here, use {model}.loader.load()')
+                print(f'WARNING: missing {model._meta.model_name} records can '
+                      f'not be created here, use {model.__name__}.loader.load('
+                      f')')
             else:
                 model.objects.create_from_m2m_input(
                     new_accs,
@@ -517,7 +547,10 @@ class CompoundRecordLoader(Loader):
         elif value.endswith('+'):
             return int(value[:-1])
         else:
-            return int(value)
+            try:
+                return int(value)
+            except ValueError as e:
+                raise InputFileError from e
 
     def collect_others(value, row):
         """ triggered on kegg columns, collects from other sources too """
