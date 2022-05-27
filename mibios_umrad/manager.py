@@ -4,6 +4,7 @@ from logging import getLogger
 from operator import itemgetter, length_hint
 from pathlib import Path
 import os
+from time import sleep
 
 from django.conf import settings
 from django.core.exceptions import FieldDoesNotExist, ValidationError
@@ -370,10 +371,15 @@ class BaseLoader(DjangoManager):
                     m2m_data[obj.get_accessions()] = m2m
 
         del fkmap, field, value, row, pk, line, obj, m2m
+        sleep(0.2)  # let the progress meter finish before printing warnings
 
         for fname, bad_ids in missing_fks.items():
-            print(f'WARNING: found {len(bad_ids)} distinct unknown {fname}'
-                  'IDs:', ' '.join([str(i) for i in islice(bad_ids, 5)]))
+            print(f'WARNING: found {len(bad_ids)} distinct unknown {fname} '
+                  'IDs:',
+                  ' '.join([
+                      '/'.join([str(j) for j in i]) for i in islice(bad_ids, 5)
+                  ]),
+                  '...' if len(bad_ids) > 5 else '')
         if skip_count:
             print(f'WARNING: skipped {skip_count} rows due to unknown but '
                   f'non-null FK IDs')
@@ -404,6 +410,8 @@ class BaseLoader(DjangoManager):
             # collecting all m2m entries
             for field in (i for i in fields if i.many_to_many):
                 self._update_m2m(field.name, m2m_data)
+
+        sleep(1)  # let progress meter finish
 
     def _update_m2m(self, field_name, m2m_data):
         """
