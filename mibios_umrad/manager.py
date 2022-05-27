@@ -6,7 +6,7 @@ from pathlib import Path
 import os
 
 from django.conf import settings
-from django.core.exceptions import FieldDoesNotExist
+from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db.models.manager import Manager as DjangoManager
 from django.db.transaction import atomic, set_rollback
 from django.utils.module_loading import import_string
@@ -190,7 +190,8 @@ class BaseLoader(DjangoManager):
             self.spec.setup()
 
     def load(self, max_rows=None, start=0, dry_run=False, sep='\t',
-             parse_only=False, file=None, template={}, skip_on_error=False):
+             parse_only=False, file=None, template={}, skip_on_error=False,
+             validate=False):
         """
         Load data from file
 
@@ -203,6 +204,11 @@ class BaseLoader(DjangoManager):
             If True, and an Exception is raised while processing a line of the
             input file, the traceback will be written to file and the line
             skipped.
+        :param bool validate:
+            Run full_clean() on new model instances.  By default we skip this
+            step as it hurts performance.  Turn this on if the DB raises in
+            issue as this way the error message will point to the offending
+            line.
 
         May assume empty table ?!?
         """
@@ -255,11 +261,12 @@ class BaseLoader(DjangoManager):
                 sep=sep,
                 dry_run=dry_run,
                 skip_on_error=skip_on_error,
+                validate=validate,
             )
 
     @atomic_dry
     def _load_lines(self, lines, sep='\t', dry_run=False, template={},
-                    skip_on_error=False):
+                    skip_on_error=False, validate=False):
         ncols = len(self.spec)
         fields = [self.model._meta.get_field(i) for i in self.spec.keys]
         convfuncs = self.spec.convfuncs
@@ -306,13 +313,13 @@ class BaseLoader(DjangoManager):
                         value = fn(value, row)
                     except InputFileError as e:
                         if skip_on_error and num_line_errors < max_line_errors:
-                            print(f'ERROR on line {linenum}: {e} -- will skip '
-                                  f'offending line\n{line}')
+                            print(f'\nERROR on line {linenum}: {e} -- will '
+                                  f'skip offending line\n{line}')
                             num_line_errors += 1
                             break  # skips line
                         else:
                             if num_line_errors >= max_line_errors:
-                                print('ERROR: too many per-line errors')
+                                print('\nERROR: too many per-line errors')
                             raise
                     if value is CSV_Spec.IGNORE_COLUMN:
                         continue  # treats value as empty
@@ -344,6 +351,20 @@ class BaseLoader(DjangoManager):
                     # empty field
                     pass
             else:
+                if validate:
+                    try:
+                        obj.full_clean()
+                    except ValidationError as e:
+                        if skip_on_error and num_line_errors < max_line_errors:
+                            print(f'\nERROR on line {linenum}: {e} -- will '
+                                  f'skip offending line\n{line}')
+                            num_line_errors += 1
+                            continue  # skips line
+                        else:
+                            if num_line_errors >= max_line_errors:
+                                print('\nERROR: too many per-line errors')
+                            raise
+
                 objs.append(obj)
                 if m2m:
                     m2m_data[obj.get_accessions()] = m2m
