@@ -422,7 +422,10 @@ class BaseLoader(DjangoManager):
         model = field.related_model
 
         # extract and flatten all accessions for field in m2m data
-        accs = (i for objdat in m2m_data.values() for i in objdat[field_name])
+        accs = (
+            i for objdat in m2m_data.values()
+            for i in objdat.get(field_name, [])
+        )
         acc_field = model.get_accession_field_single()
         if acc_field.get_internal_type().endswith('IntegerField'):
             # cast to right type as needed (integers only?)
