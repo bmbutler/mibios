@@ -1,7 +1,8 @@
 from collections import defaultdict
-from itertools import groupby, islice
+from functools import partial
+from itertools import islice
 from logging import getLogger
-from operator import itemgetter, length_hint
+from operator import length_hint
 from pathlib import Path
 import os
 from time import sleep
@@ -177,6 +178,7 @@ class BaseLoader(DjangoManager):
     def contribute_to_class(self, model, name):
         super().contribute_to_class(model, name)
         # get spec from model if none is declared in loader class
+        # FIXME: remove support for model-attached specs ??
         if self.spec is None:
             try:
                 self.spec = model.loader_spec
@@ -184,11 +186,7 @@ class BaseLoader(DjangoManager):
                 pass
 
         if self.spec is not None:
-            if self.spec.model is None:
-                self.spec.model = model
-
-            self.spec.loader = self
-            self.spec.setup()
+            self.spec.setup(loader=self)
 
     def load(self, max_rows=None, start=0, dry_run=False, sep='\t',
              parse_only=False, file=None, template={}, skip_on_error=False,
@@ -269,8 +267,8 @@ class BaseLoader(DjangoManager):
     def _load_lines(self, lines, sep='\t', dry_run=False, template={},
                     skip_on_error=False, validate=False):
         ncols = len(self.spec)
-        fields = [self.model._meta.get_field(i) for i in self.spec.keys]
-        convfuncs = self.spec.convfuncs
+        fields = self.spec.get_fields()
+        convfuncs = self.spec.get_convfuncs()
         cut = self.spec.cut
         empty_extra = self.spec.empty_values
         num_line_errors = 0
@@ -510,10 +508,25 @@ class BaseLoader(DjangoManager):
         ]
         self.bulk_create_wrapper(Through.objects.bulk_create)(through_objs)
 
-    @classmethod
-    def split_m2m_value(cls, value):
+    def get_choice_value_prep_function(self, field):
+        """
+        Return conversion/processing method for choice value prepping
+        """
+        prep_values = {j: i for i, j in field.choices}
+
+        def prep_choice_value(self, value, row=None):
+            """ get the prepared field value for a choice field """
+            return prep_values.get(value, value)
+
+        return partial(prep_choice_value, self)
+
+    def split_m2m_value(self, value, row=None):
         """
         Helper to split semi-colon-separated list-field values in import file
+
+        This will additionally sort and remove duplicates.  If you don't want
+        this use the split_m2m_value_simple() method.
+        A conversion/processing method.
         """
         # split and remove empties:
         items = (i for i in value.split(';') if i)
@@ -521,6 +534,14 @@ class BaseLoader(DjangoManager):
         # TODO: check with Teal if order matters or if it's okay to sort
         items = sorted(set(items))
         return items
+
+    def split_m2m_value_simple(self, value, row=None):
+        """
+        Helper to split semi-colon-separated list-field values in import file
+
+        A conversion/processing method.
+        """
+        return value.split(';')
 
     def _parse_lines(self, lines, sep='\t'):
         ncols = len(self.spec)
@@ -570,7 +591,7 @@ class CompoundRecordLoader(Loader):
     def get_file(self):
         return settings.UMRAD_ROOT / 'MERGED_CPD_DB.txt'
 
-    def chargeconv(value, row):
+    def chargeconv(self, value, row):
         """ convert '2+' -> 2 / '2-' -> -2 """
         if value == '':
             return None
@@ -584,10 +605,10 @@ class CompoundRecordLoader(Loader):
             except ValueError as e:
                 raise InputFileError from e
 
-    def collect_others(value, row):
+    def collect_others(self, value, row):
         """ triggered on kegg columns, collects from other sources too """
         # assume that value == row[7]
-        lst = CompoundRecordLoader.split_m2m_value(';'.join(row[7:12]))
+        lst = self.split_m2m_value(';'.join(row[7:12]))
         try:
             # remove the record itself
             lst.remove(row[0])

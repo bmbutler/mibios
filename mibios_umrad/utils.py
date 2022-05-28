@@ -1,5 +1,5 @@
 from datetime import datetime
-from functools import wraps
+from functools import partial, wraps
 from itertools import zip_longest
 from operator import length_hint
 import os
@@ -337,13 +337,19 @@ class CSV_Spec:
             raise ValueError('at least one column needs to be declared')
 
         self._spec = column_specs
+        self._fields = None
+        self._convfuncs = None
+        self.model = None
+        self.loader = None
 
-    def setup(self, column_specs=None):
+    def setup(self, loader, column_specs=None):
         """
         Setup method to be called once before loading data
 
         Intended to be called automatically by the loader.
         """
+        self.loader = loader
+        self.model = loader.model
         if column_specs is None:
             column_specs = self._spec
 
@@ -369,7 +375,7 @@ class CSV_Spec:
                         convfunc = convfunc[0]
                         if not callable(convfunc):
                             raise ValueError(f'not a callable: {convfunc}')
-                        conv.append(convfunc)
+                        conv.append(partial(convfunc, self.loader))
                     else:
                         conv.append(None)
             else:
@@ -389,10 +395,31 @@ class CSV_Spec:
         self.cols = cols
         self.all_keys = all_keys
         self.keys = keys
-        self.convfuncs = conv
+        self._convfuncs_raw = conv
 
     def __len__(self):
         return len(self._spec)
+
+    def get_fields(self):
+        if self._fields is None:
+            self._fields = \
+                tuple((self.model._meta.get_field(i) for i in self.keys))
+        return self._fields
+
+    def get_convfuncs(self):
+        if self._convfuncs is None:
+            convfuncs = []
+            for field, fn in zip(self.get_fields(), self._convfuncs_raw):
+                if fn is None and field.choices:
+                    # automaticall attach prep method for choice fields
+                    convfuncs.append(
+                        self.loader.get_choice_value_prep_function(field)
+                    )
+                else:
+                    convfuncs.append(fn)
+            self._convfuncs = convfuncs
+
+        return self._convfuncs
 
     def cut(self, row):
         """
