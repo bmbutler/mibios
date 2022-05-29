@@ -326,7 +326,19 @@ class BaseLoader(DjangoManager):
                         break  # skips line / avoids for-else block
 
                 if field.many_to_many:
-                    m2m[field.name] = self.split_m2m_value(value)
+                    # the "value" here is a list of tuples of through model
+                    # contructor parameters without the local object or objects
+                    # pk/id.  For normal, automatically generated, through
+                    # models this is just the remote object's accession (which
+                    # will later be replaced by the pk/id.)  If value comes in
+                    # as a str, this list-of-tuples is generated below.  If it
+                    # is not a str, the we assume that a conversion function
+                    # has taken care of everything.  For through models with
+                    # additional data the parameters must be in the correct
+                    # order.
+                    if isinstance(value, str):
+                        value = [(i, ) for i in self.split_m2m_value(value)]
+                    m2m[field.name] = value
                 elif field.many_to_one:
                     if not isinstance(value, tuple):
                         value = (value, )  # fkmap keys are tuples
@@ -429,7 +441,7 @@ class BaseLoader(DjangoManager):
 
         # extract and flatten all accessions for field in m2m data
         accs = (
-            i for objdat in m2m_data.values()
+            i[0] for objdat in m2m_data.values()
             for i in objdat.get(field_name, [])
         )
         acc_field = model.get_accession_field_single()
@@ -481,15 +493,17 @@ class BaseLoader(DjangoManager):
             print()
 
         # set relationships
-        rels = []  # pairs of ours and other's PKs
+        rels = []  # pairs of ours and other's PKs (+through params)
         for i, other in m2m_data.items():
-            for j in other[field_name]:
+            for j, *params in other[field_name]:
                 try:
-                    rels.append((i, a2pk[acc_field.to_python(j)]))
+                    pk = a2pk[acc_field.to_python(j)]
                 except KeyError:
                     # ignore for now
                     # FIXME
                     pass
+                else:
+                    rels.append((i, pk, *params))
 
         Through = field.remote_field.through  # the intermediate model
         if field.related_model == self.model:
@@ -500,11 +514,16 @@ class BaseLoader(DjangoManager):
             # m2m between two distinct models
             our_id_name = self.model._meta.model_name + '_id'
             other_id_name = model._meta.model_name + '_id'
+        # extra fields for complex through models: take all, except the first
+        # 3, which are the auto id and the FKs to and from, this must match the
+        # given extra parameters
+        extra_through_fields = [i.name for i in Through._meta.get_fields()[3:]]
         through_objs = [
             Through(
-                **{our_id_name: i, other_id_name: j}
+                **{our_id_name: i, other_id_name: j},
+                **dict(zip(extra_through_fields, params))
             )
-            for i, j in rels
+            for i, j, *params in rels
         ]
         self.bulk_create_wrapper(Through.objects.bulk_create)(through_objs)
 
