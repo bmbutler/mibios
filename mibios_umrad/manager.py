@@ -10,7 +10,6 @@ from time import sleep
 from django.conf import settings
 from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db.models.manager import Manager as DjangoManager
-from django.db.transaction import atomic, set_rollback
 from django.utils.module_loading import import_string
 
 from mibios.models import (
@@ -660,205 +659,129 @@ class FuncRefDBEntryLoader(Loader):
             f'Function_Names_{settings.UMRAD_VERSION}.txt'
 
 
-class ReactionLoader(Loader):
-    """ loader for reaction data from all_reaction_info file """
+class ReactionRecordLoader(Loader):
+    """ loader for reaction data from MERGED_RXN_DB.txt file """
+
+    def contribute_to_class(self, model, name):
+        super().contribute_to_class(model, name)
+        # init value prep for ReactionCompound field choices
+        ReactionCompound = \
+            self.model._meta.get_field('compound').remote_field.through
+        field = ReactionCompound._meta.get_field('side')
+        self._prep_side_val = self.get_choice_value_prep_function(field)
+        field = ReactionCompound._meta.get_field('location')
+        self._prep_loc_val = self.get_choice_value_prep_function(field)
+        field = ReactionCompound._meta.get_field('transport')
+        self._prep_trn_val = self.get_choice_value_prep_function(field)
+
+        self.loc_values = [i[0] for i in ReactionCompound.LOCATION_CHOICES]
 
     def get_file(self):
-        return settings.UMRAD_ROOT \
-            / f'all_reaction_info_{settings.UMRAD_VERSION}.txt'
+        return settings.UMRAD_ROOT / 'MERGED_RXN_DB.txt'
 
-    @atomic
-    def load(self, max_rows=None, dry_run=False):
-        # get related model classes here to avoid circular imports
-        Compound = import_string('mibios_umrad.models.Compound')
-        CompoundEntry = import_string('mibios_umrad.models.CompoundEntry')
-        ReactionEntry = import_string('mibios_umrad.models.ReactionEntry')
+    def errata_check(self, value, row):
+        """ skip extra header rows """
+        # FIXME: remove this function when source data is fixed
+        if value == 'rxn':
+            return CSV_Spec.SKIP_ROW
+        return value
 
-        refdbs = [
-            i for i, _ in ReactionEntry.DB_CHOICES
-            if i in self.spec.keys
-        ]
-        comp_cols = {
-            ReactionEntry.DB_KEGG: ('left_kegg', 'right_kegg'),
-            ReactionEntry.DB_BIOCYC: ('left_biocyc', 'right_biocyc'),
-            ReactionEntry.DB_RHEA: ('left_rhea', 'right_rhea'),
-        }
+    def process_xrefs(self, value, row):
+        """
+        collect data from all xref columns
 
-        # get data and split m2m fields
-        data = []
-        m2mcols = [i for i in self.spec.all_keys if i not in ['accession', 'dir']]  # noqa:E501
-        for row in super().load(max_rows=max_rows, parse_only=True):
-            for i in m2mcols:
-                row[i] = self.split_m2m_value(row[i])
-            data.append(row)
+        subsequenc rxn xref columns will then be skipped
+        Returns list of tuples.
+        """
+        xrefs = []
+        for i in row[3:6]:  # the alt_* columns
+            xrefs += self.split_m2m_value(i)
+        xrefs = [(i, ) for i in xrefs if i != row[0]]  # rm this rxn itself
+        return xrefs
 
-        urxns = []
+    def process_compounds(self, value, row):
+        """
+        collect data from the 18 compound columns
 
-        # sort/group and process by reaction group
-        grpk = itemgetter(*refdbs)
-        data = sorted(data, key=grpk)
-        pp = ProgressPrinter('reaction entry records processed')
-        data = pp(data)
-        extra_ids = set()
-        compounds = {}
-        for key, grp in groupby(data, grpk):
-            grp = list(grp)
-            all_ids = {i for j in key for i in j}  # flatten list-of-list
-            rxngroup = []
+        Will remove duplicates.  Other compound columns should be skipped
+        """
+        all_cpds = []
+        # outer loop: source values in order of column sets in input file
+        for i, src in enumerate(('CH', 'KG', 'BC')):
+            for j, side in enumerate(self.loc_values):
+                # excl. first 6, then take sets of 3
+                # i in {0,1,2} and j in {0,1}
+                offs = 6 + 6 * i + 3 * j
+                cpds, locs, trns = row[offs:offs + 3]
 
-            if len(grp) < len(all_ids):
-                # extra IDs / missing a row?  See similar check in Compounds
-                grp_ids = [i['accession'] for i in grp]
-                extra_ids.update(all_ids.difference(grp_ids))
-                del grp_ids
-
-            elif len(grp) > len(all_ids):
-                # this case has not happend yet ?
-                raise RuntimeError(
-                    f'more group members ({len(grp)=}) than IDs '
-                    f'({len(all_ids)})? {key=} {grp=}'
-                )
-
-            for row in grp:
-                acc = row['accession']
-
-                # get the ref db for this row:
-                for refdb, ids in zip(refdbs, key):
-                    if acc in ids:
-                        break
-                else:
-                    raise RuntimeError(
-                        f'accession {acc} not found in other ID fields: {grp}'
+                cpds = self.split_m2m_value_simple(cpds)
+                locs = self.split_m2m_value_simple(locs)
+                trns = self.split_m2m_value_simple(trns)
+                if not (len(cpds) == len(locs) == len(trns)):
+                    raise InputFileError(
+                        'inconsistent compound data list lengths: '
+                        f'{row[offs:offs + 3]=} '
+                        f'{cpds=} {locs=} {trns=}'
                     )
-                del ids
 
-                rxn_obj = ReactionEntry(
-                    accession=acc,
-                    db=refdb,
-                    bi_directional=True if row['dir'] == 'BOTH' else False
-                )
-                rxngroup.append(rxn_obj)
+                uniq_cpds = set()
+                for c, l, t in zip(cpds, locs, trns):
+                    cpd_dat = (
+                        c,
+                        src,
+                        self._prep_side_val(side),
+                        self._prep_loc_val(l),
+                        self._prep_trn_val(t),
+                    )
+                    if c in uniq_cpds:
+                        if cpd_dat in all_cpds:
+                            # skip duplicate
+                            continue
+                        else:
+                            # FIXME -- are bad dups a bug or a feature?
+                            # raise InputFileError(
+                            print(
+                                f'ERROR: (SKIPPING BAD DUPLICATE (FIXME)) '
+                                f'@row: {row[0]} '
+                                f'compound {c} occurs multiple times but '
+                                f'loc/trn data does not agree'
+                            )
+                            continue
+                    else:
+                        uniq_cpds.add(c)
 
-                for i, (left_col, right_col) in comp_cols.items():
-                    if i == refdb:
-                        compounds[acc] = refdb, row[left_col], row[right_col]
-                        break
-                    # TODO: account for what we miss here?
-                else:
-                    raise RuntimeError('logic bug: no match for db key')
+                    all_cpds.append(cpd_dat)
 
-            urxns.append(rxngroup)
+        return all_cpds
 
-        del key, grp, row, acc, rxn_obj, left_col, right_col
-
-        if extra_ids:
-            print(f'WARNING: Found {len(extra_ids)} distinct reaction IDs that'
-                  ' didn\'t have a row in their group) that will be ignored:',
-                  ', '.join([str(i) for i in islice(extra_ids, 5)]),
-                  '...')
-
-        # create Reaction objects and get PKs
-        objs = (self.model() for _ in range(len(urxns)))
-        self.bulk_create(objs, batch_size=500)
-        pks = self.values_list('pk', flat=True)
-
-        # cross-link reaction entries (and re-pack to one list)
-        rxns = []
-        for pk, group in zip(pks, urxns):
-            for i in group:
-                i.reaction_id = pk
-                rxns.append(i)
-        del pk, group, urxns
-
-        # store reaction entries
-        ReactionEntry.objects.bulk_create(rxns)
-        del rxns
-
-        # deal with unknown compounds
-        qs = CompoundEntry.objects.values_list('accession', flat=True)
-        known_cpd_accs = set(qs.iterator())
-        del qs
-        unknown_cpd_accs = {}
-        for rxndb, left, right in compounds.values():
-            for i in left + right:
-                if i in known_cpd_accs:
-                    continue
-                if i in unknown_cpd_accs:
-                    # just check dbkey
-                    if rxndb != unknown_cpd_accs[i]:
-                        raise RuntimeError('inconsistent db key: {i=} {dbkey=}'
-                                           '{unknown_cpd_accs[i]=}')
-                else:
-                    # add
-                    unknown_cpd_accs[i] = rxndb
-        del rxndb, left, right, known_cpd_accs
-        if unknown_cpd_accs:
-            print(f'Found {len(unknown_cpd_accs)} unknown compound IDs in '
-                  'reaction data:',
-                  ', '.join([str(i) for i in islice(unknown_cpd_accs, 5)]),
-                  '...')
-            max_pk = Compound.objects.order_by('pk').last().pk
-            unicomp_objs = (Compound() for _ in range(len(unknown_cpd_accs)))
-            Compound.objects.bulk_create(unicomp_objs, batch_size=500)
-            uni_pks = Compound.objects.filter(pk__gt=max_pk)\
-                              .values_list('pk', flat=True)
-            CompoundEntry.objects.bulk_create((
-                CompoundEntry(
-                    accession=acc,
-                    db=CompoundEntry.DB_CHEBI if rxndb == ReactionEntry.DB_RHEA else rxndb,  # noqa: E501
-                    compound_id=pk
-                )
-                for (acc, rxndb), pk in zip(unknown_cpd_accs.items(), uni_pks)
-            ))
-            del uni_pks, max_pk
-        del unknown_cpd_accs
-
-        # get reaction entry accession to PK mapping (with db info)
-        rxn_qs = ReactionEntry.objects.values_list('accession', 'db', 'pk')
-
-        # get compound acc->pk mapping (with db info)
-        qs = CompoundEntry.objects.values_list('accession', 'db', 'pk')
-        comp_acc2pk = {acc: (db, pk) for acc, db, pk in qs.iterator()}
-
-        # compile rxn<->compound relations
-        lefts, rights = [], []
-        for rxn_acc, rxndb, rxn_pk in rxn_qs.iterator():
-            cpddb, left_accs, right_accs = compounds[rxn_acc]
-            left = [(i, j) for i, j in (comp_acc2pk[k] for k in left_accs)]
-            right = [(i, j) for i, j in (comp_acc2pk[k] for k in right_accs)]
-            if not left and not right:
-                continue
-
-            # check db field aggreement
-            comp_db = {i for i, _ in left + right}
-            if len(comp_db) > 1:
-                raise RuntimeError(
-                    f'multiple compound DBs: {comp_db=} {rxn_acc=} {rxndb=} '
-                    f'{left_accs=} {right_accs=} {left=} {right=}'
-                )
-            comp_db = comp_db.pop()
-            if comp_db == rxndb or rxndb == ReactionEntry.DB_RHEA and comp_db == CompoundEntry.DB_CHEBI:  # noqa: E501
-                # DBs match
-                pass
-            else:
-                raise RuntimeError(
-                    f'db field inconsistency: {comp_db=} {rxn_acc=} {rxndb=} '
-                    f'{left_accs=} {right_accs=} {left=} {right=}'
-                )
-            lefts += [(rxn_pk, j) for _, j in left]
-            rights += [(rxn_pk, j) for _, j in right]
-
-        # save rxn<->compound relations
-        for direc, rels in [('left', lefts), ('right', rights)]:
-            through = ReactionEntry._meta.get_field(direc).remote_field.through
-            through_objs = [
-                through(**{'reactionentry_id': i, 'compoundentry_id': j})
-                for i, j in rels
-            ]
-            bc = self.bulk_create_wrapper(through.objects.bulk_create)
-            bc(through_objs)
-
-        set_rollback(dry_run)
+    spec = CSV_Spec(
+        ('rxn', 'accession', errata_check),
+        ('db_src', 'source'),
+        ('rxn_dir', 'direction'),
+        ('alt_rhea', 'others', process_xrefs),
+        ('alt_kegg', None),
+        ('alt_bioc', None),
+        ('rhea_lcpd', 'compound', process_compounds),
+        ('rhea_lloc', None),
+        ('rhea_ltrn', None),
+        ('rhea_rcpd', None),
+        ('rhea_rloc', None),
+        ('rhea_rtrn', None),
+        ('kegg_lcpd', None),
+        ('kegg_lloc', None),
+        ('kegg_ltrn', None),
+        ('kegg_rcpd', None),
+        ('kegg_rloc', None),
+        ('kegg_rtrn', None),
+        ('bioc_lcpd', None),
+        ('bioc_lloc', None),
+        ('bioc_ltrn', None),
+        ('bioc_rcpd', None),
+        ('bioc_rloc', None),
+        ('bioc_rtrn', None),
+        ('UPIDs', 'uniprot'),
+        ('ECs', 'ec'),
+    )
 
 
 class TaxonLoader(Loader):

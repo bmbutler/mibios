@@ -13,10 +13,9 @@ from mibios import get_registry
 from .fields import AccessionField
 from . import manager
 from .model_utils import (
-    ch_opt, fk_req, VocabularyModel, delete_all_objects_quickly,
+    ch_opt, fk_opt, fk_req, VocabularyModel, delete_all_objects_quickly,
     LoadMixin, Model
 )
-from .utils import CSV_Spec
 
 
 log = getLogger(__name__)
@@ -99,92 +98,72 @@ class Metal(VocabularyModel):
     pass
 
 
-class ReactionEntryManager(manager.Manager):
-    def create_from_m2m_input(self, values, source_model, src_field_name):
-        if source_model is not UniRef100:
-            raise NotImplementedError(
-                'can only create instance on behalf of UniRef100'
-            )
-        if src_field_name == 'kegg_reactions':
-            db = self.model.DB_KEGG
-        elif src_field_name == 'rhea_reactions':
-            db = self.model.DB_RHEA
-        elif src_field_name == 'biocyc_reactions':
-            db = self.model.DB_BIOCYC
-        else:
-            raise ValueError(f'unknown source field name: {src_field_name}')
-
-        # create one unique reaction group per value
-        try:
-            last_pk = Reaction.objects.order_by('pk').latest('pk').pk
-        except Reaction.DoesNotExist:
-            last_pk = -1
-        Reaction.objects.bulk_create(
-            (Reaction() for _ in range(len(values))),
-            batch_size=500,  # runs up at SQLITE_MAX_COMPOUND_SELECT
-        )
-        reaction_pks = Reaction.objects.filter(pk__gt=last_pk)\
-                               .values_list('pk', flat=True)
-        if len(values) != len(reaction_pks):
-            # just checking
-            raise RuntimeError('a bug making right number of Reaction objects')
-
-        model = self.model
-        objs = (model(accession=i, db=db, reaction_id=j)
-                for i, j in zip(values, reaction_pks))
-        return self.bulk_create(objs)
-
-
-class ReactionEntry(Model):
-    DB_BIOCYC = 'b'
-    DB_KEGG = 'k'
-    DB_RHEA = 'r'
-    DB_CHOICES = (
+class ReactionCompound(Model):
+    """ intermediate model for reaction -> l/r-compound m2m relations """
+    DB_BIOCYC = 'BC'
+    DB_KEGG = 'KG'
+    DB_RHEA = 'CH'
+    SRC_CHOICES = (
         (DB_BIOCYC, 'Biocyc'),
         (DB_KEGG, 'KEGG'),
         (DB_RHEA, 'RHEA'),
     )
-
-    accession = AccessionField()
-    db = models.CharField(max_length=1, choices=DB_CHOICES, db_index=True)
-    bi_directional = models.BooleanField(blank=True, null=True)
-    left = models.ManyToManyField(
-        CompoundRecord, related_name='to_reaction',
+    SIDE_CHOICES = ((True, 'left'), (False, 'right'))
+    LOCATION_CHOICES = ((True, 'INSIDE'), (False, 'OUTSIDE'))
+    TRANSPORT_CHOICES = (
+        ('BI', 'BIPORT'),
+        ('EX', 'EXPORT'),
+        ('IM', 'IMPORT'),
+        ('NO', 'NOPORT'),
     )
-    right = models.ManyToManyField(
-        CompoundRecord, related_name='from_reaction',
-    )
-    reaction = models.ForeignKey('Reaction', **fk_req)
 
-    objects = ReactionEntryManager()
+    # source and target field names correspond to what an automatic through
+    # model would have
+    reactionrecord = models.ForeignKey('ReactionRecord', **fk_req)
+    compoundrecord = models.ForeignKey('CompoundRecord', **fk_req)
+    source = models.CharField(max_length=2, choices=SRC_CHOICES, db_index=True)
+    side = models.BooleanField(choices=SIDE_CHOICES)
+    location = models.BooleanField(choices=LOCATION_CHOICES)
+    transport = models.CharField(max_length=2, choices=TRANSPORT_CHOICES)
+
+    class Meta:
+        unique_together = (
+            ('reactionrecord', 'compoundrecord', 'source', 'side'),
+        )
+
+    def __str__(self):
+        return (
+            f'{self.reactionrecord.accession}<>{self.compoundrecord.accession}'
+            f' {self.source} {self.get_side_display()}'
+        )
+
+
+class ReactionRecord(Model):
+    SRC_CHOICES = ReactionCompound.SRC_CHOICES
+    DIRECT_CHOICES = (
+        (True, 'BOTH'),
+        (False, 'LTR'),
+    )
+    accession = AccessionField(max_length=96)
+    source = models.CharField(max_length=2, choices=SRC_CHOICES, db_index=True)
+    direction = models.BooleanField(
+        choices=DIRECT_CHOICES,
+        blank=True,
+        null=True,
+    )
+    others = models.ManyToManyField('self', symmetrical=False)
+    compound = models.ManyToManyField(
+        CompoundRecord,
+        through=ReactionCompound,
+    )
+    uniprot = models.ManyToManyField('Uniprot')
+    ec = models.ForeignKey('FuncRefDBEntry', **fk_opt)
+
+    # objects = ReactionEntryManager()
+    loader = manager.ReactionRecordLoader()
 
     def __str__(self):
         return self.accession
-
-
-class Reaction(Model):
-    """ distinct DB-independent reaction """
-
-    # no fields here!
-
-    loader_spec = CSV_Spec(
-        ('ID', 'accession'),
-        ('dir', 'dir'),
-        ('left_kegg', 'left_kegg'),
-        ('left_biocyc', 'left_biocyc'),
-        ('left_rhea', 'left_rhea'),
-        ('right_kegg', 'right_kegg'),
-        ('right_biocyc', 'right_biocyc'),
-        ('right_rhea', 'right_rhea'),
-        ('kegg_rxn', ReactionEntry.DB_KEGG),
-        ('biocyc_rxn', ReactionEntry.DB_BIOCYC),
-        ('rhea_rxn', ReactionEntry.DB_RHEA),
-    )
-
-    loader = manager.ReactionLoader()
-
-    class Meta:
-        verbose_name = 'distinct reaction'
 
 
 class FuncRefDBEntry(Model):
@@ -465,15 +444,15 @@ class UniRef100(LoadMixin, Model):
     function_refs = models.ManyToManyField(FuncRefDBEntry)
     # 20-22 KEGG RHEA BIOCYC
     kegg_reactions = models.ManyToManyField(
-        ReactionEntry,
+        ReactionRecord,
         related_name='uniref_kegg',
     )
     rhea_reactions = models.ManyToManyField(
-        ReactionEntry,
+        ReactionRecord,
         related_name='uniref_rhea',
     )
     biocyc_reactions = models.ManyToManyField(
-        ReactionEntry,
+        ReactionRecord,
         related_name='uniref_biocyc',
     )
     # 23 REACTANTS
@@ -533,7 +512,7 @@ class UniRef100(LoadMixin, Model):
     def load(cls, max_rows=None, start=0, dry_run=False):
         # get data and split m2m fields
         refdb_keys = [i for i, _ in FuncRefDBEntry.DB_CHOICES]
-        rxndb_keys = [i for i, _ in ReactionEntry.DB_CHOICES]
+        rxndb_keys = [i for i, _ in ReactionRecord.SRC_CHOICES]
         field_names = [i.name for i in cls._meta.get_fields()]
 
         m2mcols = []
@@ -695,8 +674,8 @@ def delete_all_uniref100_etc():
 
 def load_umrad():
     """ load all of UMRAD from scratch, assuming an empty DB """
-    CompoundRecord.loader.load()
-    Reaction.loader.load()
     Taxon.loader.load()
+    CompoundRecord.loader.load()
+    ReactionRecord.loader.load()
     FuncRefDBEntry.loader.load()
     UniRef100.load()
