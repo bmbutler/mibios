@@ -861,6 +861,59 @@ class TaxonLoader(Loader):
         quickdel(self.model)
 
 
+class UniRef100Loader(Loader):
+    """ loader for UNIREF100_DB.txt """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._Taxon = import_string('mibios_umrad.models.Taxon')
+        FuncRefDBEntry = import_string('mibios_umrad.models.FuncRefDBEntry')
+        self.func_dbs = FuncRefDBEntry.DB_CHOICES
+
+    def get_file(self):
+        return settings.UMRAD_ROOT / f'UNIREF100_INFO_{settings.UMRAD_VERSION}.txt'  # noqa:E501
+
+    def process_func_xrefs(self, value, row):
+        """ collect COG through EC columns """
+        ret = []
+        for (db_code, _), vals in zip(self.func_dbs, row[13:19]):
+            for i in self.split_m2m_value(vals):
+                ret.append((i, db_code))
+        return ret
+
+    def process_lineage(self, value, row):
+        """ return (rank, name) of lineage """
+
+        return self._Taxon.parse_string(value)[-1]
+
+    spec = CSV_Spec(
+        ('UNIREF100', 'accession'),
+        ('NAME', 'function_names'),
+        ('LENGTH', 'length'),
+        ('UNIPROT_IDS', 'uniprot'),
+        ('UNIREF90', 'uniref90'),
+        ('TAXON_IDS', 'taxids'),
+        ('LINEAGE', 'lineage', process_lineage),
+        ('SIGALPEP', 'signal_peptide'),
+        ('TMS', 'tms'),
+        ('DNA', 'dna_binding'),
+        ('METAL', 'metal_binding'),
+        ('TCDB', 'tcdb'),
+        ('LOCATION', 'subcellular_locations'),
+        ('COG', 'function_refs', process_func_xrefs),
+        ('PFAM', None),
+        ('TIGR', None),
+        ('GO', None),
+        ('IPR', None),
+        ('EC', None),
+        ('KEGG', None,),
+        ('RHEA', None),
+        ('BIOCYC', None),
+        ('REACTANTS', None),
+        ('PRODUCTS', None),
+        ('TRANS_CPD', None),
+    )
+
+
 class BaseManager(MibiosBaseManager):
     """ Manager class for UMRAD data models """
     def create_from_m2m_input(self, values, source_model, src_field_name):
