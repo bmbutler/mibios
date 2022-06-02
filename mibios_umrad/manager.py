@@ -852,12 +852,15 @@ class TaxonLoader(Loader):
 
 
 class UniRef100Loader(Loader):
-    """ loader for UNIREF100_DB.txt """
+    """ loader for OUT_UNIREF.txt """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._Taxon = import_string('mibios_umrad.models.Taxon')
         FuncRefDBEntry = import_string('mibios_umrad.models.FuncRefDBEntry')
         self.func_dbs = FuncRefDBEntry.DB_CHOICES
+
+    def get_file(self):
+        return settings.UMRAD_ROOT / 'OUT_UNIREF.txt'
 
     @atomic_dry
     def load(self, *args, **kwargs):
@@ -876,9 +879,6 @@ class UniRef100Loader(Loader):
         pp = ProgressPrinter('func xrefs db values assigned')
         FuncRefDBEntry.objects.bulk_update(pp(objs), ['db'])
 
-    def get_file(self):
-        return settings.UMRAD_ROOT / f'UNIREF100_INFO_{settings.UMRAD_VERSION}.txt'  # noqa:E501
-
     def process_func_xrefs(self, value, row):
         """ collect COG through EC columns """
         ret = []
@@ -895,37 +895,39 @@ class UniRef100Loader(Loader):
                 ret.append((i, ))
         return ret
 
-    def process_lineage(self, value, row):
-        """ return (rank, name) of lineage """
-
-        return self._Taxon.parse_string(value)[-1]
+    def process_reactions(self, value, row):
+        """ collect all reactions """
+        rxns = set()
+        for i in row[17:20]:
+            items = self.split_m2m_value(i)
+            for j in items:
+                if j in rxns:
+                    raise InputFileError(f'reaction accession dupe: {row}')
+                else:
+                    rxns.add(j)
+        return [(i, ) for i in rxns]
 
     spec = CSV_Spec(
-        ('UNIREF100', 'accession'),
-        ('NAME', 'function_names'),
-        ('LENGTH', 'length'),
-        ('UNIPROT_IDS', 'uniprot'),
-        ('UNIREF90', 'uniref90'),
-        ('TAXON_IDS', 'taxids'),
-        ('LINEAGE', 'lineage', process_lineage),
-        ('SIGALPEP', 'signal_peptide'),
+        ('UR100', 'accession'),
+        ('UR90', 'uniref90'),
+        ('Name', 'function_names'),
+        ('Length', 'length'),
+        ('SigPep', 'signal_peptide'),
         ('TMS', 'tms'),
         ('DNA', 'dna_binding'),
-        ('METAL', 'metal_binding'),
-        ('TCDB', 'tcdb'),
-        ('LOCATION', 'subcellular_locations'),
-        ('COG', 'function_refs', process_func_xrefs),
-        ('PFAM', None),
-        ('TIGR', None),
-        ('GO', None),
-        ('IPR', None),
-        ('EC', None),
-        ('KEGG', None,),
-        ('RHEA', None),
-        ('BIOCYC', None),
-        ('REACTANTS', None),
-        ('PRODUCTS', None),
-        ('TRANS_CPD', None),
+        ('TaxonId', 'taxids'),
+        ('Metal', 'metal_binding'),
+        ('Loc', 'subcellular_locations'),
+        ('TCDB', 'function_refs', process_func_xrefs),
+        ('COG', None),
+        ('Pfam', None),
+        ('Tigr', None),
+        ('Gene_Ont', None),
+        ('InterPro', None),
+        ('ECs', None),
+        ('kegg', 'reactions', process_reactions),
+        ('rhea', None),
+        ('biocyc', None),
     )
 
 

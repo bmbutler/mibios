@@ -154,7 +154,6 @@ class ReactionRecord(Model):
     uniprot = models.ManyToManyField('Uniprot')
     ec = models.ForeignKey('FuncRefDBEntry', **fk_opt)
 
-    # objects = ReactionEntryManager()
     loader = manager.ReactionRecordLoader()
 
     def __str__(self):
@@ -162,14 +161,16 @@ class ReactionRecord(Model):
 
 
 class FuncRefDBEntry(Model):
-    DB_COG = 'cog'
+    DB_COG = 'cg'
     DB_EC = 'ec'
     DB_GO = 'go'
-    DB_IPR = 'ipr'
-    DB_PFAM = 'pfam'
-    DB_TIGR = 'tigr'
+    DB_IPR = 'ip'
+    DB_PFAM = 'pf'
+    DB_TCDB = 'tc'
+    DB_TIGR = 'ti'
     DB_CHOICES = (
-        # by order of input file columns
+        # by order of UNIREF input file columns
+        (DB_TCDB, 'TCDB'),
         (DB_COG, 'COG'),
         (DB_PFAM, 'Pfam'),
         (DB_TIGR, 'TIGR'),
@@ -178,7 +179,7 @@ class FuncRefDBEntry(Model):
         (DB_EC, 'EC'),
     )
     accession = AccessionField()
-    db = models.CharField(max_length=4, choices=DB_CHOICES, db_index=True)
+    db = models.CharField(max_length=2, choices=DB_CHOICES, db_index=True)
     names = models.ManyToManyField('FunctionName')
 
     name_loader = manager.FuncRefDBEntryLoader()
@@ -197,6 +198,7 @@ class FuncRefDBEntry(Model):
         DB_IPR: 'https://www.ebi.ac.uk/interpro/entry/InterPro/{}/',
         DB_PFAM: 'https://pfam.xfam.org/family/{}',
         DB_TIGR: '',
+        DB_TCDB: '',
     }
 
     def get_external_url(self):
@@ -408,56 +410,32 @@ class UniRef100(Model):
     Model for UniRef100 clusters
     """
     # The field comments below are based on the columns in
-    # UNIREF100_INFO_DEC_2021.txt in order.
+    # OUT_UNIREF.txt in order.
 
-    #  1 UNIREF100
+    #  1 UR100
     accession = AccessionField(prefix='UNIREF100_')
-    #  2 NAME
-    function_names = models.ManyToManyField(FunctionName)
-    #  3 LENGTH
-    length = models.PositiveIntegerField(blank=True, null=True)
-    #  4 UNIPROT_IDS
-    uniprot = models.ManyToManyField(Uniprot)
-    #  5 UNIREF90
+    #  2 UR90
     uniref90 = AccessionField(prefix='UNIREF90_', unique=False)
-    #  6 TAXON_IDS
-    taxids = models.ManyToManyField(TaxID, related_name='classified_uniref100')
-    #  7 LINEAGE
-    lineage = models.ForeignKey(Taxon, **fk_req)
-    #  8 SIGALPEP
+    #  3 Name
+    function_names = models.ManyToManyField(FunctionName)
+    #  4 Length
+    length = models.PositiveIntegerField(blank=True, null=True)
+    #  5 SigPep
     signal_peptide = models.CharField(max_length=32, **ch_opt)
-    #  9 TMS
+    #  6 TMS
     tms = models.CharField(max_length=128, **ch_opt)
-    # 10 DNA
+    #  7 DNA
     dna_binding = models.CharField(max_length=128, **ch_opt)
-    # 11 METAL
+    #  8 TaxonId
+    taxids = models.ManyToManyField(TaxID, related_name='classified_uniref100')
+    #  9 Metal
     metal_binding = models.ManyToManyField(Metal)
-    # 12 TCDB
-    tcdb = models.CharField(max_length=128, **ch_opt)  # TODO: what is this?
-    # 13 LOCATION
+    # 10 Loc
     subcellular_locations = models.ManyToManyField(Location)
-    # 14-19 COG PFAM TIGR GO IPR EC
+    # 11-17 TCDB COG Pfam Tigr Gene_Ont InterPro ECs
     function_refs = models.ManyToManyField(FuncRefDBEntry)
-    # 20-22 KEGG RHEA BIOCYC
-    kegg_reactions = models.ManyToManyField(
-        ReactionRecord,
-        related_name='uniref_kegg',
-    )
-    rhea_reactions = models.ManyToManyField(
-        ReactionRecord,
-        related_name='uniref_rhea',
-    )
-    biocyc_reactions = models.ManyToManyField(
-        ReactionRecord,
-        related_name='uniref_biocyc',
-    )
-    # 23 REACTANTS
-    # 24 PRODUCTS
-    # 25 TRANS_CPD
-    trans_compounds = models.ManyToManyField(
-        CompoundRecord,
-        related_name='uniref_trans',
-    )
+    # 18-20 kegg rhea biocyc
+    reactions = models.ManyToManyField(ReactionRecord)
 
     loader = manager.UniRef100Loader()
 
