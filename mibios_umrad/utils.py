@@ -482,8 +482,12 @@ def atomic_dry(f):
     def wrapper(self, *args, **kwargs):
         dbalias = router.db_for_write(self.model)
         with transaction.atomic(using=dbalias):
+            dry_run = kwargs.get('dry_run', None)
+            if dry_run is True:
+                # consume dry_run kw if True
+                kwargs.pop('dry_run')
             retval = f(self, *args, **kwargs)
-            if kwargs.get('dry_run', False):
+            if dry_run is True:
                 transaction.set_rollback(True, dbalias)
             return retval
     return wrapper
