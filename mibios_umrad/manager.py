@@ -174,19 +174,6 @@ class BaseLoader(DjangoManager):
     simple list, listing the fields in the right order.
     """
 
-    def contribute_to_class(self, model, name):
-        super().contribute_to_class(model, name)
-        # get spec from model if none is declared in loader class
-        # FIXME: remove support for model-attached specs ??
-        if self.spec is None:
-            try:
-                self.spec = model.loader_spec
-            except AttributeError:
-                pass
-
-        if self.spec is not None:
-            self.spec.setup(loader=self)
-
     def load(self, max_rows=None, start=0, dry_run=False, sep='\t',
              parse_only=False, file=None, template={}, skip_on_error=False,
              validate=False):
@@ -210,6 +197,9 @@ class BaseLoader(DjangoManager):
 
         May assume empty table ?!?
         """
+        # setup
+        self.spec.setup(loader=self)
+
         # ensure file is a Path
         if file is None:
             file = self.get_file()
