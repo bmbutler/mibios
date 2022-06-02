@@ -859,6 +859,23 @@ class UniRef100Loader(Loader):
         FuncRefDBEntry = import_string('mibios_umrad.models.FuncRefDBEntry')
         self.func_dbs = FuncRefDBEntry.DB_CHOICES
 
+    @atomic_dry
+    def load(self, *args, **kwargs):
+        self.funcref2db = {}
+        super().load(*args, **kwargs)
+        # set DB values for func xrefs -- can't do this in the regular load
+        # as there we only have the accession to work with with m2m-related
+        # objects
+        FuncRefDBEntry = import_string('mibios_umrad.models.FuncRefDBEntry')
+        a2objs = FuncRefDBEntry.objects.in_bulk(field_name='accession')
+        objs = []
+        for acc, db in self.funcref2db.items():
+            obj = a2objs[acc]
+            obj.db = db
+            objs.append(obj)
+        pp = ProgressPrinter('func xrefs db values assigned')
+        FuncRefDBEntry.objects.bulk_update(pp(objs), ['db'])
+
     def get_file(self):
         return settings.UMRAD_ROOT / f'UNIREF100_INFO_{settings.UMRAD_VERSION}.txt'  # noqa:E501
 
@@ -867,7 +884,15 @@ class UniRef100Loader(Loader):
         ret = []
         for (db_code, _), vals in zip(self.func_dbs, row[13:19]):
             for i in self.split_m2m_value(vals):
-                ret.append((i, db_code))
+                try:
+                    db = self.funcref2db[i]
+                except KeyError:
+                    self.funcref2db[i] = db_code
+                else:
+                    # consistency check
+                    if db != db_code:
+                        raise RuntimeError('func xref db inconsistency')
+                ret.append((i, ))
         return ret
 
     def process_lineage(self, value, row):

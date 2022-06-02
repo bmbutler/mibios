@@ -167,22 +167,21 @@ class FuncRefDBEntry(Model):
     DB_GO = 'go'
     DB_IPR = 'ipr'
     DB_PFAM = 'pfam'
-    DB_TCDB = 'tcdb'
     DB_TIGR = 'tigr'
     DB_CHOICES = (
+        # by order of input file columns
         (DB_COG, 'COG'),
-        (DB_EC, 'EC'),
+        (DB_PFAM, 'Pfam'),
+        (DB_TIGR, 'TIGR'),
         (DB_GO, 'GO'),
         (DB_IPR, 'InterPro'),
-        (DB_PFAM, 'Pfam'),
-        (DB_TCDB, 'TCDB'),
-        (DB_TIGR, 'TIGR'),
+        (DB_EC, 'EC'),
     )
     accession = AccessionField()
     db = models.CharField(max_length=4, choices=DB_CHOICES, db_index=True)
     names = models.ManyToManyField('FunctionName')
 
-    loader = manager.FuncRefDBEntryLoader()
+    name_loader = manager.FuncRefDBEntryLoader()
 
     class Meta(Model.Meta):
         verbose_name = 'Function Ref DB Entry'
@@ -197,7 +196,6 @@ class FuncRefDBEntry(Model):
         DB_GO: 'http://amigo.geneontology.org/amigo/term/{}',
         DB_IPR: 'https://www.ebi.ac.uk/interpro/entry/InterPro/{}/',
         DB_PFAM: 'https://pfam.xfam.org/family/{}',
-        DB_TCDB: '',
         DB_TIGR: '',
     }
 
@@ -489,6 +487,6 @@ def load_umrad():
     """ load all of UMRAD from scratch, assuming an empty DB """
     Taxon.loader.load()
     CompoundRecord.loader.load(skip_on_error=True)
-    FuncRefDBEntry.loader.load()
-    ReactionRecord.loader.load(skip_on_error=True)
     UniRef100.loader.load()
+    FuncRefDBEntry.name_loader.load()
+    ReactionRecord.loader.load(skip_on_error=True)
