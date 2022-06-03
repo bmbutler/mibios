@@ -612,7 +612,7 @@ class CompoundAbundance(AbstractAbundance):
     compound = models.ForeignKey(
         CompoundRecord,
         related_name='abundance',
-        *fk_req,
+        **fk_req,
     )
     role = models.CharField(max_length=1, choices=ROLE_CHOICES)
 
