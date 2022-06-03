@@ -465,6 +465,6 @@ def load_umrad():
     """ load all of UMRAD from scratch, assuming an empty DB """
     Taxon.loader.load()
     CompoundRecord.loader.load(skip_on_error=True)
-    UniRef100.loader.load()
-    FuncRefDBEntry.name_loader.load()
     ReactionRecord.loader.load(skip_on_error=True)
+    UniRef100.loader.load(skip_on_error=True)
+    FuncRefDBEntry.name_loader.load()

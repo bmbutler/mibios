@@ -186,9 +186,9 @@ class BaseLoader(DjangoManager):
         :param bool parse_only:
             Return each row as a dict and don't use the general loader logic.
         :param bool skip_on_error:
-            If True, and an Exception is raised while processing a line of the
-            input file, the traceback will be written to file and the line
-            skipped.
+            If True, then certain Exceptions raised while processing a line of
+            the input file cause the line to be skipped and an error message to
+            be printed.
         :param bool validate:
             Run full_clean() on new model instances.  By default we skip this
             step as it hurts performance.  Turn this on if the DB raises in
@@ -260,14 +260,14 @@ class BaseLoader(DjangoManager):
 
     @atomic_dry
     def _load_lines(self, lines, sep='\t', dry_run=False, template={},
-                    skip_on_error=False, validate=False):
+                    skip_on_error=False, validate=False, update=False):
         ncols = len(self.spec)
         fields = self.spec.get_fields()
         convfuncs = self.spec.get_convfuncs()
         cut = self.spec.cut
         empty_extra = self.spec.empty_values
         num_line_errors = 0
-        max_line_errors = 10
+        max_line_errors = 10  # > 0
 
         pp = ProgressPrinter(f'{self.model._meta.model_name} records read')
         lines = pp(lines)
@@ -294,30 +294,34 @@ class BaseLoader(DjangoManager):
         pk = None
 
         for linenum, line in enumerate(lines):
+            if num_line_errors >= max_line_errors:
+                raise RuntimeError('ERROR: too many per-line errors')
+
             obj = self.model(**template)
             m2m = {}
             row = line.rstrip('\n').split(sep)
 
             if len(row) != ncols:
-                raise ValueError(
-                    f'bad num of cols ({len(row)}), {row=} '
-                    f'{ncols=}'
-                )
+                err_msg = (f'\nERROR: on line {linenum}: bad num of cols: '
+                           f'{len(row)} expected: {ncols=}')
+                if skip_on_error:
+                    print(err_msg)
+                    num_line_errors += 1
+                    continue
+                raise InputFileError(err_msg)
 
             for field, fn, value in zip(fields, convfuncs, cut(row)):
                 if callable(fn):
                     try:
                         value = fn(value, row)
                     except InputFileError as e:
-                        if skip_on_error and num_line_errors < max_line_errors:
+                        if skip_on_error:
                             print(f'\nERROR on line {linenum}: {e} -- will '
                                   f'skip offending line\n{line}')
                             num_line_errors += 1
                             break  # skips line
-                        else:
-                            if num_line_errors >= max_line_errors:
-                                print('\nERROR: too many per-line errors')
-                            raise
+                        raise
+
                     if value is CSV_Spec.IGNORE_COLUMN:
                         continue  # treats value as empty
                     elif value is CSV_Spec.SKIP_ROW:
@@ -364,15 +368,12 @@ class BaseLoader(DjangoManager):
                     try:
                         obj.full_clean()
                     except ValidationError as e:
-                        if skip_on_error and num_line_errors < max_line_errors:
+                        if skip_on_error:
                             print(f'\nERROR on line {linenum}: {e} -- will '
                                   f'skip offending line\n{line}')
                             num_line_errors += 1
                             continue  # skips line
-                        else:
-                            if num_line_errors >= max_line_errors:
-                                print('\nERROR: too many per-line errors')
-                            raise
+                        raise
 
                 objs.append(obj)
                 if m2m:
