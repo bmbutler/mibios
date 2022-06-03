@@ -3,11 +3,19 @@ from functools import partial, wraps
 from itertools import zip_longest
 from operator import length_hint
 import os
-from threading import Lock, Timer
+from threading import local, Timer
 from string import Formatter
 import sys
 
 from django.db import router, transaction
+
+
+thread_data = local()
+thread_data.timer = None
+
+
+def get_last_timer():
+    return thread_data.timer
 
 
 class ReturningGenerator:
@@ -34,6 +42,27 @@ class ReturningGenerator:
 
     def __iter__(self):
         self.value = yield from self.generator
+
+
+class RepeatTimer(Timer):
+    """
+    Run given function repeatedly and wait a given interval between invocations
+
+    From an answer to stackoverflow.com/questions/12435211
+    """
+    def __init__(self, *args, owner=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.owner = owner
+        # let main thread exit if we're forgotten and never stop ticking
+        self.daemon = True
+
+    def start(self):
+        thread_data.timer = self
+        super().start()
+
+    def run(self):
+        while not self.finished.wait(self.interval):
+            self.function(*self.args, **self.kwargs)
 
 
 class ProgressPrinter():
@@ -70,6 +99,9 @@ class ProgressPrinter():
             show_rate=True,
             length=None,
     ):
+        if interval <= 0:
+            raise ValueError('interval must be greater than zero')
+
         self.template, self.template_var = self._init_template(template)
         self.interval = interval
         self.output_file = output_file
@@ -77,27 +109,29 @@ class ProgressPrinter():
         self.to_terminal = output_file.isatty()
         self.length = length
         self.it = None
-        self.current = None
-        self.timer_lock = Lock()
         self.timer = None
+        # start metering here, assuming inc() calls commence soon:
+        self.reset_state()
+        self.timer.start()
 
     def __call__(self, it):
         self.it = it
-        self._reset_state()
         for elem in it:
             yield elem
             self.inc()
         self.it = None
         self.finish()
 
-    def _reset_state(self):
+    def reset_state(self):
         """
         reset the variable state
 
-        Must be called before inc() or the timer is started
+        Must be called before inc().  Will start the timer and progress
+        metering and printing.
         """
+        self.reset_timer()
         self.current = 0
-        self.last = None
+        self.last = 0
         self.at_previous_ring = None
         self.max_width = 0
         self.ring_time = None
@@ -120,6 +154,14 @@ class ProgressPrinter():
                     self._length = hint
         else:
             self._length = self.length
+
+    def reset_timer(self):
+        """
+        Initializes or resets the timer but does not start() it.
+        """
+        if self.timer is not None:
+            self.timer.cancel()
+        self.timer = RepeatTimer(self.interval, self._ring, owner=self)
 
     def _init_template(self, template):
         """
@@ -153,77 +195,41 @@ class ProgressPrinter():
 
         Turn on time if needed
         """
-        if self.current is None:
-            self._reset_state()
-
-        if self.current == 0:
-            self._set_timer()
+        if self.current == self.at_previous_ring:
+            # timer was stopped at last ring
+            try:
+                self.timer.start()
+            except RuntimeError:
+                # if the timer thread is still in reset_timer(), we can't
+                # re-start the old timer thread; pass here and start new timer
+                # at next inc()
+                pass
 
         self.last = self.current
         self.current += step
 
-    def _set_timer(self, reset=False):
-        """
-        Set or reset the timer
-
-        param: reset -- True if we were called via _ring(), assumed to be False
-                        for the initial call via inc()
-        """
-        # this can be called (1) by inc() of main thread and (2) by _ring() of
-        # timer thread.  In either case, we (re-)set the timer only if we get
-        # the non-blocking lock and think that no timer is currently running.
-        # If the lock it taken, assume the other thread will reset it.
-        if self.timer_lock.acquire(blocking=False):
-            if reset or self.timer is None:
-                self.timer = Timer(self.interval, self._ring)
-                self.timer.start()
-            else:
-                # never start a second timer, we shouldn't get here by normal
-                # use, but someone might call _set_timer() manually or so
-                pass
-            self.timer_lock.release()
-
     def finish(self):
         """ Stop the timer and print a final result """
-        if self.current is None:
-            # zero-length iterator?
-            # populate variables needed for printing
-            self._reset_state()
         total_seconds = (datetime.now() - self.time_zero).total_seconds()
-
-        self.timer_lock.acquire()
-        # get lock so we don't cancel while also trying to re-set the timer in
-        # _set_timer()
-        try:
-            self.timer.cancel()
-        except Exception:
-            pass
-        self.timer_lock.release()
-
         avg_txt = (f'(total: {total_seconds:.1f}s '
                    f'avg: {self.current / total_seconds:.1f}/s)')
         self.print_progress(avg_txt=avg_txt, end='\n')  # print with totals/avg
-        self._reset_state()
+        self.reset_state()
 
     def _ring(self):
-        """ Print and restart timer """
-        if self.current == 0:
-            # finish() called
-            return
-
-        now = datetime.now()
-        self.ring_time = now
-
+        """ Print progress """
+        self.ring_time = datetime.now()
         self.print_progress()
 
         if self.current == self.at_previous_ring:
             # maybe we just iterate very slowly relative to the timer interval,
             # but probably some exception occurred in the main thread; have to
             # stop the timer or we'll get an infinite loop
+            # When inc() is called again a new timer will be used.
+            self.reset_timer()
             return
 
         self.at_previous_ring = self.current
-        self._set_timer(reset=True)
 
     def estimate(self):
         """

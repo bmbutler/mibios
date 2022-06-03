@@ -17,7 +17,7 @@ from mibios.models import (
     QuerySet as MibiosQuerySet,
 )
 
-from .utils import CSV_Spec, ProgressPrinter, atomic_dry
+from .utils import CSV_Spec, ProgressPrinter, atomic_dry, get_last_timer
 
 
 log = getLogger(__name__)
@@ -232,9 +232,6 @@ class BaseLoader(DjangoManager):
                 # assume no header
                 pass
 
-            pp = ProgressPrinter(f'{self.model._meta.model_name} records read')
-            f = pp(f)
-
             if max_rows is None and start == 0:
                 file_it = f
             else:
@@ -243,14 +240,23 @@ class BaseLoader(DjangoManager):
             if parse_only:
                 return self._parse_lines(file_it, sep=sep)
 
-            return self._load_lines(
-                file_it,
-                template=template,
-                sep=sep,
-                dry_run=dry_run,
-                skip_on_error=skip_on_error,
-                validate=validate,
-            )
+            try:
+                return self._load_lines(
+                    file_it,
+                    template=template,
+                    sep=sep,
+                    dry_run=dry_run,
+                    skip_on_error=skip_on_error,
+                    validate=validate,
+                )
+            except Exception:
+                # cleanup progress printing (if any)
+                try:
+                    get_last_timer().cancel()
+                    print()
+                except Exception:
+                    pass
+                raise
 
     @atomic_dry
     def _load_lines(self, lines, sep='\t', dry_run=False, template={},
@@ -262,6 +268,9 @@ class BaseLoader(DjangoManager):
         empty_extra = self.spec.empty_values
         num_line_errors = 0
         max_line_errors = 10
+
+        pp = ProgressPrinter(f'{self.model._meta.model_name} records read')
+        lines = pp(lines)
 
         # loading FK (acc,...)->pk mappings
         fkmap = {}
