@@ -471,7 +471,9 @@ def delete_all_objects_quickly(model):
     """
     db_alias = router.db_for_write(model)
     with connections[db_alias].cursor() as cur:
-        cur.execute(f'delete from {model._meta.db_table}')
+        sql = f'delete from {model._meta.db_table}'
+        print('INFO:', sql)
+        cur.execute(sql)
         res = cur.fetchall()
     if res != []:
         raise RuntimeError('expected empty list returned')
