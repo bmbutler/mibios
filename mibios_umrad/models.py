@@ -93,8 +93,12 @@ class Metal(VocabularyModel):
     pass
 
 
-class ReactionCompound(Model):
-    """ intermediate model for reaction -> l/r-compound m2m relations """
+class ReactionCompound(models.Model):
+    """
+    intermediate model for reaction -> l/r-compound m2m relations
+
+    This is an ordinary django.db.models.Model
+    """
     DB_BIOCYC = 'BC'
     DB_KEGG = 'KG'
     DB_RHEA = 'CH'
