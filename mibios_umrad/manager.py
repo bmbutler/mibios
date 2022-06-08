@@ -248,6 +248,7 @@ class BaseLoader(DjangoManager):
                     dry_run=dry_run,
                     skip_on_error=skip_on_error,
                     validate=validate,
+                    first_lineno=start + 2 if self.spec.has_header else 1,
                 )
             except Exception:
                 # cleanup progress printing (if any)
@@ -260,7 +261,8 @@ class BaseLoader(DjangoManager):
 
     @atomic_dry
     def _load_lines(self, lines, sep='\t', dry_run=False, template={},
-                    skip_on_error=False, validate=False, update=False):
+                    skip_on_error=False, validate=False, update=False,
+                    first_lineno=None):
         ncols = len(self.spec)
         fields = self.spec.get_fields()
         convfuncs = self.spec.get_convfuncs()
@@ -293,7 +295,7 @@ class BaseLoader(DjangoManager):
         skip_count = 0
         pk = None
 
-        for linenum, line in enumerate(lines):
+        for lineno, line in enumerate(lines, start=first_lineno):
             if num_line_errors >= max_line_errors:
                 raise RuntimeError('ERROR: too many per-line errors')
 
@@ -302,7 +304,7 @@ class BaseLoader(DjangoManager):
             row = line.rstrip('\n').split(sep)
 
             if len(row) != ncols:
-                err_msg = (f'\nERROR: on line {linenum}: bad num of cols: '
+                err_msg = (f'\nERROR: on line {lineno}: bad num of cols: '
                            f'{len(row)} expected: {ncols=}')
                 if skip_on_error:
                     print(err_msg)
@@ -316,7 +318,7 @@ class BaseLoader(DjangoManager):
                         value = fn(value, row)
                     except InputFileError as e:
                         if skip_on_error:
-                            print(f'\nERROR on line {linenum}: {e} -- will '
+                            print(f'\nERROR on line {lineno}: {e} -- will '
                                   f'skip offending line\n{line}')
                             num_line_errors += 1
                             break  # skips line
@@ -369,7 +371,7 @@ class BaseLoader(DjangoManager):
                         obj.full_clean()
                     except ValidationError as e:
                         if skip_on_error:
-                            print(f'\nERROR on line {linenum}: {e} -- will '
+                            print(f'\nERROR on line {lineno}: {e} -- will '
                                   f'skip offending line\n{line}')
                             num_line_errors += 1
                             continue  # skips line
