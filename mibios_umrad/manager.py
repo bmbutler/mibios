@@ -654,11 +654,56 @@ class CompoundRecordLoader(Loader):
 
 
 class FuncRefDBEntryLoader(Loader):
+    """
+    Loads data from Function_Names.txt
+
+    Run load() after UniRef100 data is loaded.  May add to function name table
+    and add links between function cross refs and names.
+    """
     spec = CSV_Spec('accession', 'names')
 
     def get_file(self):
-        return settings.UMRAD_ROOT / \
-            f'Function_Names_{settings.UMRAD_VERSION}.txt'
+        return settings.UMRAD_ROOT / 'Function_Names.txt'
+
+    @atomic_dry
+    def load(self, dry_run=False):
+        field = self.model._meta.get_field('names')  # the m2m field
+        FunctionName = field.related_model
+
+        xref2pk = {i.accession: i.pk for i in self.model.objects.iterator()}
+        known_names = set(FunctionName.objects.values_list('entry', flat=True))
+
+        new_names = set()
+        data = {}
+        unknown_xrefs = set()
+
+        with self.get_file().open() as f:
+            f = ProgressPrinter(f'lines read from {f.name}')(f)
+            for line in f:
+                xref, names = line.rstrip('\n').split('\t')
+                names = names.split(';')
+                if xref in data:
+                    raise InputFileError(f'duplicate: {line}')
+
+                pk = xref2pk.get(xref, None)
+                if pk is None:
+                    unknown_xrefs.add(xref)
+                    continue
+                for i in names:
+                    if i not in known_names:
+                        new_names.add(i)
+                data[pk] = {'names': (names, )}  # mimic m2m_data in super load
+
+        if unknown_xrefs:
+            print(f'WARNING: found {len(unknown_xrefs)} unknown function xrefs'
+                  f': {[i for _, i in zip(range(5), unknown_xrefs)]}')
+
+        print(f'func names known: {len(known_names)}, new: {len(new_names)}')
+        if new_names:
+            name_objs = (FunctionName(entry=i) for i in new_names)
+            FunctionName.objects.bulk_create(name_objs)
+
+        self._update_m2m('names', data)
 
 
 class ReactionRecordLoader(Loader):
