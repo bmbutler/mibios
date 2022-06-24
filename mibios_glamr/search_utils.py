@@ -4,7 +4,7 @@ Stuff related to search and search suggestions
 from logging import getLogger
 
 from django.conf import settings
-from django.db import connection
+from django.db import connections
 from django.db.backends.signals import connection_created
 from django.db.utils import OperationalError
 from django.dispatch import receiver
@@ -15,6 +15,7 @@ from mibios_umrad.models import (
     FuncRefDBEntry, ReactionRecord, Taxon, Uniprot, UniRef100,
 )
 
+OMICS_DB_ALIAS = 'omics'
 
 log = getLogger(__name__)
 
@@ -62,6 +63,8 @@ def update_spellfix(spellfix_ext_path=None):
 
     This needs to run once, before get_suggestions() can be called.
     """
+    connection = connections[OMICS_DB_ALIAS]
+
     if spellfix_ext_path is not None:
         connection.ensure_connection()
         load_sqlite_spellfix_extension(
@@ -94,7 +97,7 @@ def get_suggestions(query):
     if not settings.SPELLFIX_EXT_PATH:
         return []
 
-    with connection.cursor() as cur:
+    with connections[OMICS_DB_ALIAS].cursor() as cur:
         try:
             cur.execute(
                 f'select word from {SPELLFIX_TABLE} where word match %s '
