@@ -226,6 +226,13 @@ class TaxID(Model):
     # disable auto-creation as m2m target
     loader = None
 
+    def __str__(self):
+        return str(self.taxid)
+
+    def get_external_url(self):
+        return (f'https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id='
+                f'{self.taxid}')
+
 
 class Taxon(Model):
     RANKS = (
