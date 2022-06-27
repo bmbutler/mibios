@@ -1,10 +1,11 @@
 """
 Stuff related to search and search suggestions
 """
+from functools import cache
 from logging import getLogger
 
 from django.conf import settings
-from django.db import connections
+from django.db import connections, router
 from django.db.backends.signals import connection_created
 from django.db.utils import OperationalError
 from django.dispatch import receiver
@@ -15,19 +16,31 @@ from mibios_umrad.models import (
     FuncRefDBEntry, ReactionRecord, Taxon, Uniprot, UniRef100,
 )
 
-OMICS_DB_ALIAS = 'omics'
-
 log = getLogger(__name__)
 
 
 spellfix_models = [
     CompoundRecord, ReactionRecord, CompoundName,
-    FunctionName, Location, Metal, FuncRefDBEntry,
+    FunctionName, Location, Metal, FuncRefDBEntry, Taxon,
 ]
 searchable_models = spellfix_models + [
-    Taxon, UniRef100, Uniprot, get_sample_model(),
+    UniRef100, Uniprot, get_sample_model(),
 ]
 SPELLFIX_TABLE = 'searchterms'
+
+
+@cache
+def get_connection(for_write=False):
+    """
+    Gets the DB connection for accessing the spellfix tables
+
+    This basically assumes that all spellfixed models must be on the same DB
+    """
+    if for_write:
+        alias = router.db_for_write(spellfix_models[0])
+    else:
+        alias = router.db_for_read(spellfix_models[0])
+    return connections[alias]
 
 
 @receiver(connection_created)
@@ -63,7 +76,7 @@ def update_spellfix(spellfix_ext_path=None):
 
     This needs to run once, before get_suggestions() can be called.
     """
-    connection = connections[OMICS_DB_ALIAS]
+    connection = get_connection(for_write=True)
 
     if spellfix_ext_path is not None:
         connection.ensure_connection()
@@ -97,7 +110,7 @@ def get_suggestions(query):
     if not settings.SPELLFIX_EXT_PATH:
         return []
 
-    with connections[OMICS_DB_ALIAS].cursor() as cur:
+    with get_connection().cursor() as cur:
         try:
             cur.execute(
                 f'select word from {SPELLFIX_TABLE} where word match %s '
@@ -107,7 +120,7 @@ def get_suggestions(query):
         except OperationalError as e:
             if e.args[0] == f'no such table: {SPELLFIX_TABLE}':
                 log.warning('Search suggestions were not set up, '
-                            'setup_spellfix() needs to be run!')
+                            'update_spellfix() needs to be run!')
             else:
                 raise
         return [i[0] for i in cur.fetchall()]
