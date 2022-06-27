@@ -163,7 +163,7 @@ class SampleLoader(Loader):
             spec.append((col_name, i))
         self.spec = CSV_Spec(*spec)
         self.spec.empty_values = ['NA']
-        self.spec.setup()
+        self.spec.setup(loader=self)
 
         # FIXME: need some proper source for dataset
         dset = self.model._meta.get_field('group').related_model(
