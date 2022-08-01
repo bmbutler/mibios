@@ -1,0 +1,16 @@
+{% extends "mibios_glamr/base.html" %}
+{% load static %}
+{% block content %}
+{% if app_name %}
+<h3>DB schema for {{ app_name }}:</h3>
+<p><img src="{% get_static_prefix %}{{ image_file_name }}" style="max-width:100%"></p>
+{% else %}
+<h3>available schemata</h3>
+<ul>
+    {% for i in available_apps %}
+    <li><a href="{% url 'app_schema' app_name=i %}">{{ i }}</a></li>
+    {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}
+

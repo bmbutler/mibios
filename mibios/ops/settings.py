@@ -140,6 +140,9 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/2.2/howto/static-files/
 
+STATIC_VAR_DIR = 'static_var'  # for dynamically generated files
+STATICFILES_DIRS = [STATIC_VAR_DIR]
+
 STATIC_URL = '/static/'
 DJANGO_TABLES2_TEMPLATE = "django_tables2/bootstrap.html"
 STATIC_ROOT = 'static'

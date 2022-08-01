@@ -7,7 +7,6 @@ import pandas
 from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import FieldDoesNotExist, FieldError
-from django.core.management import call_command
 from django.db.models import Count, Field, URLField
 from django.http import Http404, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
@@ -536,7 +535,7 @@ class DemoFrontPageView(SingleTableView):
         return ctx
 
     def make_ratios_plot(self):
-        imgpath = settings.MEDIA_ROOT + 'var/mappedratios.png'
+        imgpath = settings.STATIC_VAR_DIR + '/mappedratios.png'
         ratios = pandas.DataFrame([
             (i.reads_mapped_contigs / i.read_count,
              i.reads_mapped_genes / i.read_count)
@@ -545,29 +544,6 @@ class DemoFrontPageView(SingleTableView):
         ], columns=['contigs', 'genes'])
         plot = ratios.plot(x='contigs', y='genes', kind='scatter')
         plot.figure.savefig(imgpath)
-
-
-class ModelGraphView(TemplateView):
-    template_name = 'mibios_glamr/model_graphs.html'
-
-    def get_context_data(self, **ctx):
-        ctx = super().get_context_data(**ctx)
-        ctx['graphs'] = self.make_graphs()
-        return ctx
-
-    def make_graphs(self):
-        apps = ['mibios_umrad', 'mibios_omics', 'mibios_glamr']
-        graphs = {i: f'var/{i}.png' for i in apps}
-        if 'django_extensions' in settings.INSTALLED_APPS:
-            for app_name, output in graphs.items():
-                call_command(
-                    'graph_models',
-                    app_name,
-                    output=settings.MEDIA_ROOT + output,
-                    exclude_models=['Model'],
-                    no_inheritance=True,
-                )
-        return graphs
 
 
 class ReferenceView(BaseDetailView):

@@ -10,6 +10,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
+from django.core.management import call_command
 from django.http import Http404, HttpResponse, StreamingHttpResponse
 from django.urls import reverse
 from django.utils.html import format_html
@@ -1173,3 +1174,45 @@ class LogView(BaseMixin, CuratorRequiredMixin, TemplateView):
         except ImportFile.DoesNotExist:
             raise Http404
         return super().get(request, *args, **kwargs)
+
+
+class ModelGraphView(TemplateView):
+    template_name = 'mibios/model_graphs.html'
+
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+        self.available_apps = [
+            i for i in get_registry().apps.keys()
+            if i != 'mibios'
+        ]
+        if 'app_name' in kwargs:
+            self.app_name = kwargs['app_name']
+            if self.app_name in self.available_apps:
+                self.image_file_name = f'{self.app_name}.png'
+                self.make_graph(self.app_name)
+            else:
+                raise Http404('invalid app name')
+        else:
+            # None triggers displaying the app list
+            self.app_name = None
+            self.image_file_name = None
+
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['app_name'] = self.app_name
+        ctx['image_file_name'] = self.image_file_name
+        ctx['available_apps'] = self.available_apps
+        return ctx
+
+    def make_graph(self, app_name):
+        if 'django_extensions' in settings.INSTALLED_APPS:
+            call_command(
+                'graph_models',
+                self.app_name,
+                output=settings.STATIC_VAR_DIR + '/' + self.image_file_name,
+                exclude_models=['Model'],
+                no_inheritance=True,
+            )
+        else:
+            pass
+            # raise RuntimeError('sss')
