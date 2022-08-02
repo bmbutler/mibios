@@ -1,5 +1,6 @@
 from datetime import datetime
 from functools import partial, wraps
+from inspect import signature
 from itertools import zip_longest
 from operator import length_hint
 import os
@@ -489,8 +490,10 @@ def atomic_dry(f):
         dbalias = router.db_for_write(self.model)
         with transaction.atomic(using=dbalias):
             dry_run = kwargs.get('dry_run', None)
-            if dry_run is True:
-                # consume dry_run kw if True
+            if dry_run is True or 'dry_run' not in signature(f).parameters:
+                # consume dry_run kw if True as to avoid nested rollback
+                # but pass on dry_run=False if wrapped function supports it, as
+                # to override any nested defaults saying otherwise
                 kwargs.pop('dry_run')
             retval = f(self, *args, **kwargs)
             if dry_run is True:
