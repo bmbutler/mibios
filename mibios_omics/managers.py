@@ -12,7 +12,7 @@ from django.conf import settings
 from django.db.transaction import atomic, set_rollback
 
 from mibios.models import QuerySet
-from mibios_umrad.models import Taxon, UniRef100
+from mibios_umrad.models import TaxID, Taxon, UniRef100
 from mibios_umrad.manager import Loader, Manager
 from mibios_umrad.utils import CSV_Spec, ProgressPrinter, ReturningGenerator
 
@@ -208,7 +208,7 @@ class ContigLikeLoader(SequenceLikeLoader):
         m2m_data = self.get_pks_for_rel(m2m_data)
         objs = self._join_cov_data(objs, cov, fk_data)
         self.bulk_create(objs)
-        self.set_taxon_m2m_relations(sample, m2m_data['taxon'])
+        self.set_m2m_relations(sample, m2m_data['taxid'])
         self.process_coverage_header_data(sample, cov.value)
         setattr(sample, self.is_loaded_attr, True)
         sample.save()
@@ -362,54 +362,50 @@ class ContigLikeLoader(SequenceLikeLoader):
               lineage (PK == 1)
             * taxid 0 is changed to taxid 1
         """
-        if 'taxon' in data:
+        if 'taxid' in data:
             taxid2pk = dict(
-                Taxon.objects.values_list('taxid', 'pk').iterator()
+                TaxID.objects.values_list('taxid', 'pk').iterator()
             )
-            data['taxon'] = {
+            data['taxid'] = {
                 i: [taxid2pk[j if j else 1] for j in taxids]  # taxid 0 -> 1
-                for i, taxids in data['taxon'].items()
+                for i, taxids in data['taxid'].items()
             }
 
         if 'lca' in data:
             str2tax = Taxon.get_parse_and_lookup_fun()
-            root_lin = str(Taxon.objects.get(taxid=1).lineage)
-            new = defaultdict(list)
+            unknown = defaultdict(list)
             str2pk = {}
-            missing_taxnames = set()
+
             for i, val in data['lca'].items():
                 if val.startswith('NCA-') or val == 'NOVEL':
-                    # FIXME: what to do with these?
-                    val = root_lin
-                try:
-                    lin, missing_key = str2tax(val)
-                except Exception as e:  # FIXME
-                    missing_taxnames.add(e.args[0])  # add (name, rankid) tuple
-                    continue
-                if lin is None:
-                    new[missing_key].append(i)
+                    # treat as root
+                    val = ''
+                taxon, missing_key = str2tax(val)
+                if taxon is None:
+                    unknown[missing_key].append(i)
                 else:
-                    str2pk[i] = lin.pk
+                    str2pk[i] = taxon.pk
 
-            if missing_taxnames:
-                print(f'WARNING: got {len(missing_taxnames)} unknown taxnames '
-                      'in lca column:',
-                      ' '.join([str(i) for i in islice(missing_taxnames, 5)]))
-            del missing_taxnames
+            if unknown:
+                print(f'WARNING: got {len(unknown)} unknown lineages')
+                print(f'across {sum((len(i) for i in unknown.values()))} rows')
+                for k, v in unknown.items():
+                    print('unknown key:', k)
+                    print('   ', str(v)[:222])
 
-            # make missing LCA Taxa
-            if new:
+            if False:
+                # DEPRECATED? FIXME
                 try:
                     maxpk = Taxon.objects.latest('pk').pk
                 except Taxon.DoesNotExist:
                     maxpk = 0
                 Taxon.objects.bulk_create(
-                    (Taxon.from_name_pks(i) for i in new)
+                    (Taxon.from_name_pks(i) for i in unknown)
                 )
                 for i in Taxon.objects.filter(pk__gt=maxpk):
-                    for j in new[i.get_name_pks()]:
+                    for j in unknown[i.get_name_pks()]:
                         str2pk[j] = i.pk  # set PK that ws missing earlier
-                del maxpk, new
+                del maxpk, unknown
             data['lca'] = str2pk
             del str2pk
 
@@ -439,27 +435,29 @@ class ContigLikeLoader(SequenceLikeLoader):
 
         return data
 
-    def set_taxon_m2m_relations(self, sample, taxon_m2m_data):
+    def set_m2m_relations(self, sample, taxid_m2m_data):
         """
-        Set contig-like <-> taxon relations
+        Set contig-like <-> taxid/taxon relations
 
-        :param dict taxon_m2m_data:
-            A dict mapping contig/gene ID to a list of Taxon PKs
+        :param dict m2m_data:
+            A dict mapping contig/gene ID to lists of TaxID PKs
         """
-        thing_id2pk = dict(
+        obj_id2pk = dict(
             self.filter(sample=sample)
             .values_list(self.model.id_field_name, 'pk')
             .iterator()
         )
+
+        # taxid
         rels = (
-            (thing_id2pk[i], j)
-            for i, tlist in taxon_m2m_data.items()
+            (obj_id2pk[i], j)
+            for i, tlist in taxid_m2m_data.items()
             for j in tlist
-            if i in thing_id2pk  # to support load_sample()'s limit option
+            if i in obj_id2pk  # to support load_sample()'s limit option
         )
-        through = self.model.get_field('taxon').remote_field.through
+        through = self.model.get_field('taxid').remote_field.through
         us = self.model._meta.model_name + '_id'
-        objs = (through(**{us: i, 'taxon_id': j}) for i, j in rels)
+        objs = (through(**{us: i, 'taxid_id': j}) for i, j in rels)
         self.bulk_create_wrapper(through.objects.bulk_create)(objs)
 
 
@@ -489,7 +487,7 @@ class ContigClusterLoader(ContigLikeLoader):
             taxid_data[cont_id] = [int(i) for i in contids.split(';')]
             lca_data[cont_id] = conlca
 
-        return {'lca': lca_data}, {'taxon': taxid_data}
+        return {'lca': lca_data}, {'taxid': taxid_data}
 
     def process_coverage_header_data(self, sample, data):
         """ Add header data to sample """
@@ -568,7 +566,7 @@ class GeneLoader(ContigLikeLoader):
                     besthit_data[gene_id] = row[20]
 
         return ({'lca': lca_data, 'besthit': besthit_data},
-                {'taxon': taxid_data})
+                {'taxid': taxid_data})
 
     def process_coverage_header_data(self, sample, data):
         """ Add header data to sample """

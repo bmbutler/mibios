@@ -844,8 +844,8 @@ class TaxonLoader(Loader):
 
         if self.model.objects.exists():
             raise RuntimeError('taxon table not empty')
+
         objs = {}
-        objs[(0, 'root')] = (self.model(name='root', rank=0, lineage=''), [])
         taxids = {}
 
         with path.open() as f:
@@ -906,6 +906,37 @@ class TaxonLoader(Loader):
         quickdel(self.model._meta.get_field('taxid').related_model)
         quickdel(self.model._meta.get_field('ancestors').remote_field.through)
         quickdel(self.model)
+
+    @atomic_dry
+    def fix_root_area(self):
+        """
+        Re-arrange some stuff near root
+
+        To be run after load()
+        """
+        # 1. re-name root
+        try:
+            root = self.get(name='QUIDDAM')
+        except self.model.DoesNotExist:
+            print('WARNING: no such taxon: QUIDDAM')
+        else:
+            root.name = 'root'
+            root.rank = 0
+            root.save()
+            print(f'root renamed: {root}')
+
+        # 2. remove superfluous node
+        try:
+            unknown_root = self.get(name='UNKNOWN_ROOT')
+        except self.model.DoesNotExist:
+            print('WARNING: no such taxon: UNKNOWN_ROOT')
+        else:
+            unknown_root.delete()
+            print(f'deleted: {unknown_root}')
+
+        # 3. set the UNKNOWN_ from phylum to species
+        n = root.descendants.filter(name__startswith='UNKNOWN_').update(rank=7)
+        print(f'set {n} UNKNOWN_ descendants of root to species')
 
 
 class UniRef100Loader(Loader):

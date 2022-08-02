@@ -235,8 +235,17 @@ class TaxID(Model):
 
 
 class Taxon(Model):
+    """
+    A taxonomic tree
+
+    Implementation of a taxonomic tree with 9 ranks.  Each node is a (rank,
+    name) pair.  Except for the root, the ancestor relation is the transitive
+    closure of the parent/child links.  Not all ranks have to be present in a
+    lineage.  For efficiency, relations to the root are implied, that is, the
+    root is not related to any other node.
+    """
     RANKS = (
-        (0, 'root'),
+        (0, 'root'),  # implied only, no root object saved in DB
         (1, 'domain'),
         (2, 'phylum'),
         (3, 'class'),
@@ -267,25 +276,64 @@ class Taxon(Model):
         return f'{self.get_rank_display()} {self.name}'
 
     def get_parent(self):
-        return self.ancestors.order_by('rank').last()
+        """
+        Get the nearest ancestor, the parent.
 
-    def as_lineage(self):
-        """ format taxon as lineage """
+        Returns None for the root
+        """
+        parent = self.ancestors.order_by('rank').last()
+        if parent is None:
+            # no ancestors
+            if self.rank == 0:
+                # we're root, no parent
+                return None
+            else:
+                # root is parent
+                return Taxon.objects.get(rank=0)
+        return parent
+
+    def as_lineage(self, to_species=False):
+        """
+        format taxon as lineage
+
+        Start with kingdom ranks, fill in gaps with placeholder names.
+
+        to_species: for higher-level taxa, if needed, auto-fill placeholder
+                    names until species
+        """
+        # last: remembers the stem to be used for unclassified parts
+        last = None
+        nodes = list(self.ancestors.order_by('rank')) + [self]
         parts = []
-        ancestors = list(self.ancestors.order_by('rank'))
         for i, rank_name in self.RANKS[1:]:
-            if ancestors:
-                taxon = ancestors.pop(0)
+            if nodes:
+                taxon = nodes[0]
+                if taxon.rank > i:
+                    if i == 7:
+                        parts.append(f'{last}_SP')
+                    else:
+                        parts.append(
+                            f'UNCLASSIFIED_{last}_{rank_name.upper()}'
+                        )
+                else:
+                    parts.append(taxon.name)
+                    last = taxon.name
+                    nodes.pop(0)
+
+            elif to_species and i < 8:
+                if i < 7:
+                    # auto-fill part before species
+                    parts.append(f'UNCLASSIFIED_{last}_{rank_name.upper()}')
+                elif i == 7:
+                    # auto-fill species and be done
+                    parts.append(f'{last}_SP')
+                    break
+                else:
+                    raise RuntimeError('a logic bug')
             else:
+                # all done
                 break
-            if taxon.rank > i:
-                try:
-                    parts.append(f'UNCLASSIFIED_{parts[-1]}_{rank_name}')
-                except IndexError:
-                    print(f'BORK {self=} {parts=} {i=} {ancestors=} {taxon=}')
-                    raise
-            else:
-                parts.append(taxon.name)
+
         return ';'.join(parts)
 
     @classmethod
@@ -295,19 +343,39 @@ class Taxon(Model):
     @classmethod
     def get_lineage_rep_lookupper(cls):
         """
-        helper to build lineage representation to object lookup dictionary
+        helper to build lineage-representation-to-object lookup dictionary
 
         Expensive to call, about 40s
         """
+        root = cls.objects.get(rank=0)
         objs = {obj.pk: obj for obj in cls.objects.iterator()}
-        thru = cls._meta.get_field('ancestors').remote_field.through
-        qs = thru.objects.values_list('from_taxon_id', 'to_taxon_id')
-        qs = qs.order_by('from_taxon_id')
         lin2obj = {}
+
+        # empty lineage maps to root
+        lin2obj[()] = cls.objects.get(rank=0)
+
+        # orphans / phylum-level nodes below root (no ancestors, remember:
+        # unrelated root)
+        for i in cls.objects.filter(ancestors=None, rank__gt=0):
+            lin2obj[((i.rank, i.name), )] = i
+
+        # UNKNOWN_ special cases: suggesting length-2 lineages: [<root>;<org>]
+        # NOTE: these have not shown up in UNIREF_INFO nor _contigs_ files yet
+        for i in root.descendants.all():
+            lin = ((root.rank, root.name), (i.rank, i.name))
+            lin2obj[lin] = i
+
+        # regular inner nodes (not UNKNOWN_[...], which link to root)
+        # for each inner node, collect all ancestors -> lineage
+        thru = cls._meta.get_field('ancestors').remote_field.through
+        qs = thru.objects.exclude(to_taxon=root)
+        qs = qs.values_list('from_taxon_id', 'to_taxon_id')
+        qs = qs.order_by('from_taxon_id')
         for from_id, grp in groupby(qs.iterator(), key=lambda x: x[0]):
-            rep = [(objs[i].rank, objs[i].name) for _, i in grp]
-            rep.append((objs[from_id].rank, objs[from_id].name))
-            lin2obj[tuple(rep)] = objs[from_id]
+            lin = [(objs[i].rank, objs[i].name) for _, i in grp]
+            lin.append((objs[from_id].rank, objs[from_id].name))
+            lin2obj[tuple(lin)] = objs[from_id]
+
         return lin2obj
 
     @classmethod
@@ -330,10 +398,20 @@ class Taxon(Model):
     def parse_string(cls, lineage, sep=';'):
         """
         Parse a lineage string into list of (rank, name) pairs
+
+        For an empty string an empty list is returned.
         """
+        if not sep:
+            raise ValueError('separator must not be empty')
+
+        if not lineage:
+            # avoid ''.split(sep) -> ['']
+            return []
+
         specials = ('MICROBIOME',)
         lst = []
         check_species = False
+
         for rank, name in enumerate(lineage.split(sep), start=1):
             if rank < 7 and name.startswith('UNCLASSIFIED_'):
                 # skipping these

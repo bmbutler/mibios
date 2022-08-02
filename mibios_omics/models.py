@@ -9,7 +9,7 @@ from django.db.transaction import atomic, set_rollback
 from mibios.data import TableConfig
 from mibios_umrad.fields import AccessionField
 from mibios_umrad.model_utils import digits, opt, fk_req, fk_opt, Model
-from mibios_umrad.models import (CompoundRecord, FuncRefDBEntry, Taxon,
+from mibios_umrad.models import (CompoundRecord, FuncRefDBEntry, TaxID, Taxon,
                                  UniRef100)
 from mibios_umrad.utils import ProgressPrinter
 
@@ -691,7 +691,7 @@ class ContigLike(SequenceLike):
     frags_mapped = models.PositiveIntegerField(**opt)
     fpkm = models.DecimalField(decimal_places=4, max_digits=10, **opt)
     # taxon + lca from contigs file
-    taxon = models.ManyToManyField(Taxon, related_name='classified_%(class)s')
+    taxid = models.ManyToManyField(TaxID, related_name='classified_%(class)s')
     lca = models.ForeignKey(Taxon, **fk_req)
 
     class Meta:
