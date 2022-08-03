@@ -4,7 +4,6 @@ from itertools import islice
 from logging import getLogger
 from operator import length_hint
 from pathlib import Path
-import os
 from time import sleep
 
 from django.conf import settings
@@ -174,15 +173,17 @@ class BaseLoader(DjangoManager):
     simple list, listing the fields in the right order.
     """
 
-    def load(self, max_rows=None, start=0, dry_run=False, sep='\t',
+    def load(self, start=0, limit=None, dry_run=False, sep=None,
              parse_only=False, file=None, template={}, skip_on_error=False,
              validate=False):
         """
         Load data from file
 
         :param int start:
-            0-based input file line (not counting any header) from which to
-            start loading, equivalent to number of non-header lines skipped.
+            Skip this many records at beginning of file (not counting header)
+        :param int limit:
+            Stop after reading this many records.  If None (the default), then
+            load all data.
         :param bool parse_only:
             Return each row as a dict and don't use the general loader logic.
         :param bool skip_on_error:
@@ -198,7 +199,9 @@ class BaseLoader(DjangoManager):
         May assume empty table ?!?
         """
         # setup
-        self.spec.setup(loader=self)
+        if self.spec is None:
+            raise NotImplementedError(f'{self}: loader spec not set')
+        self.spec.setup(loader=self, sep=sep)
 
         # ensure file is a Path
         if file is None:
@@ -206,73 +209,49 @@ class BaseLoader(DjangoManager):
         elif isinstance(file, str):
             file = Path(file)
 
-        with file.open() as f:
-            print(f'File opened: {f.name}')
-            os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
-            if self.spec is None:
-                raise NotImplementedError(f'{self}: loader spec not set')
+        row_it = self.spec.iterrows(file)
 
-            if self.spec.has_header:
-                # check header
-                head = f.readline().rstrip('\n').split(sep)
-                cols = self.spec.all_cols
-                for i, (a, b) in enumerate(zip(head, cols), start=1):
-                    # ignore column number differences here, will catch later
-                    if a != b:
-                        raise ValueError(
-                            f'Unexpected header row: first mismatch in column '
-                            f'{i}: got "{a}", expected "{b}"'
-                        )
-                if len(head) != len(self.spec):
-                    raise ValueError(
-                        f'expecting {len(self.spec)} columns but got '
-                        f'{len(head)} in header row'
-                    )
+        if start > 0 or limit is not None:
+            if limit is None:
+                stop = None
             else:
-                # assume no header
-                pass
+                stop = start + limit
+            row_it = islice(row_it, start, stop)
 
-            if max_rows is None and start == 0:
-                file_it = f
-            else:
-                file_it = islice(f, start, start + max_rows)
+        if parse_only:
+            return self._parse_rows(row_it)
 
-            if parse_only:
-                return self._parse_lines(file_it, sep=sep)
-
+        try:
+            return self._load_rows(
+                row_it,
+                template=template,
+                sep=sep,
+                dry_run=dry_run,
+                skip_on_error=skip_on_error,
+                validate=validate,
+                first_lineno=start + 2 if self.spec.has_header else 1,
+            )
+        except Exception:
+            # cleanup progress printing (if any)
             try:
-                return self._load_lines(
-                    file_it,
-                    template=template,
-                    sep=sep,
-                    dry_run=dry_run,
-                    skip_on_error=skip_on_error,
-                    validate=validate,
-                    first_lineno=start + 2 if self.spec.has_header else 1,
-                )
+                get_last_timer().cancel()
+                print()
             except Exception:
-                # cleanup progress printing (if any)
-                try:
-                    get_last_timer().cancel()
-                    print()
-                except Exception:
-                    pass
-                raise
+                pass
+            raise
 
     @atomic_dry
-    def _load_lines(self, lines, sep='\t', dry_run=False, template={},
-                    skip_on_error=False, validate=False, update=False,
-                    first_lineno=None):
+    def _load_rows(self, rows, sep='\t', dry_run=False, template={},
+                   skip_on_error=False, validate=False, update=False,
+                   first_lineno=None):
         ncols = len(self.spec)
         fields = self.spec.get_fields()
-        convfuncs = self.spec.get_convfuncs()
-        cut = self.spec.cut
         empty_extra = self.spec.empty_values
         num_line_errors = 0
         max_line_errors = 10  # > 0
 
         pp = ProgressPrinter(f'{self.model._meta.model_name} records read')
-        lines = pp(lines)
+        rows = pp(rows)
 
         # loading FK (acc,...)->pk mappings
         fkmap = {}
@@ -295,13 +274,12 @@ class BaseLoader(DjangoManager):
         skip_count = 0
         pk = None
 
-        for lineno, line in enumerate(lines, start=first_lineno):
+        for lineno, row in enumerate(rows, start=first_lineno):
             if num_line_errors >= max_line_errors:
                 raise RuntimeError('ERROR: too many per-line errors')
 
             obj = self.model(**template)
             m2m = {}
-            row = line.rstrip('\n').split(sep)
 
             if len(row) != ncols:
                 err_msg = (f'\nERROR: on line {lineno}: bad num of cols: '
@@ -312,14 +290,14 @@ class BaseLoader(DjangoManager):
                     continue
                 raise InputFileError(err_msg)
 
-            for field, fn, value in zip(fields, convfuncs, cut(row)):
+            for field, fn, value in self.spec.row_data(row):
                 if callable(fn):
                     try:
                         value = fn(value, row)
                     except InputFileError as e:
                         if skip_on_error:
                             print(f'\nERROR on line {lineno}: {e} -- will '
-                                  f'skip offending line\n{line}')
+                                  f'skip offending row\n{row}')
                             num_line_errors += 1
                             break  # skips line
                         raise
@@ -372,7 +350,7 @@ class BaseLoader(DjangoManager):
                     except ValidationError as e:
                         if skip_on_error:
                             print(f'\nERROR on line {lineno}: {e} -- will '
-                                  f'skip offending line\n{line}')
+                                  f'skip offending row\n{row}')
                             num_line_errors += 1
                             continue  # skips line
                         raise
@@ -381,7 +359,7 @@ class BaseLoader(DjangoManager):
                 if m2m:
                     m2m_data[obj.get_accessions()] = m2m
 
-        del fkmap, field, value, row, pk, line, obj, m2m
+        del fkmap, field, value, row, pk, obj, m2m
         sleep(0.2)  # let the progress meter finish before printing warnings
 
         for fname, bad_ids in missing_fks.items():
@@ -563,13 +541,11 @@ class BaseLoader(DjangoManager):
         """
         return value.split(';')
 
-    def _parse_lines(self, lines, sep='\t'):
+    def _parse_rows(self, rows):
         ncols = len(self.spec)
 
         data = []
-        for line in lines:
-            row = line.rstrip('\n').split(sep)
-
+        for row in rows:
             if len(row) != ncols:
                 raise ValueError(
                     f'bad num of cols ({len(row)}), {row=} '

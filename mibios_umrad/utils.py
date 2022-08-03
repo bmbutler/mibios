@@ -326,7 +326,7 @@ def chunker(iterable, n):
             yield grp
 
 
-class CSV_Spec:
+class InputFileSpec:
     IGNORE_COLUMN = object()
     SKIP_ROW = object()
 
@@ -418,23 +418,74 @@ class CSV_Spec:
             convfuncs = []
             for field, fn in zip(self.get_fields(), self._convfuncs_raw):
                 if fn is None and field.choices:
-                    # automaticall attach prep method for choice fields
+                    # automatically attach prep method for choice fields
                     convfuncs.append(
                         self.loader.get_choice_value_prep_function(field)
                     )
                 else:
                     convfuncs.append(fn)
-            self._convfuncs = convfuncs
+            self._convfuncs = tuple(convfuncs)
 
         return self._convfuncs
 
-    def cut(self, row):
+    def iterrows(self, path):
+        raise NotImplementedError
+
+    def row_data(self, row):
         """
-        A method that cuts out the right values of an input file row
+        List a row as tuples (field, func, value)
+
+        :param list row: A list of str
         """
+        row_data = []
+        fields = list(self.get_fields())
+        convfuncs = list(self.get_convfuncs())
         for key, value in zip(self.all_keys, row):
             if key is not None:
-                yield value
+                row_data.append((fields.pop(0), convfuncs.pop(0), value))
+        return row_data
+
+
+class CSV_Spec(InputFileSpec):
+    def __init__(self, *column_specs, sep='\t'):
+        super().__init__(*column_specs)
+        self.sep = sep
+
+    def setup(self, loader, column_specs=None, sep=None):
+        super().setup(loader, column_specs)
+
+    def iterrows(self, path):
+        """
+        An iterator over the csv file's rows
+
+        :param pathlib.Path path: path to the data file
+        """
+        with path.open() as f:
+            print(f'File opened: {f.name}')
+            os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
+
+            if self.has_header:
+                # check header
+                head = f.readline().rstrip('\n').split(self.sep)
+                cols = self.all_cols
+                for i, (a, b) in enumerate(zip(head, cols), start=1):
+                    # ignore column number differences here, will catch later
+                    if a != b:
+                        raise ValueError(
+                            f'Unexpected header row: first mismatch in column '
+                            f'{i}: got "{a}", expected "{b}"'
+                        )
+                if len(head) != len(self):
+                    raise ValueError(
+                        f'expecting {len(self)} columns but got '
+                        f'{len(head)} in header row'
+                    )
+            else:
+                # assume no header
+                pass
+
+            for line in f:
+                yield line.rstrip('\n').split(self.sep)
 
 
 class SizedIterator:
