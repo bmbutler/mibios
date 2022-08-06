@@ -14,9 +14,11 @@ from django.db.transaction import atomic, set_rollback
 from mibios.models import QuerySet
 from mibios_umrad.models import TaxID, Taxon, UniRef100
 from mibios_umrad.manager import Loader, Manager
-from mibios_umrad.utils import CSV_Spec, ProgressPrinter, ReturningGenerator
+from mibios_umrad.utils import (
+    CSV_Spec, ProgressPrinter, ReturningGenerator, atomic_dry,
+)
 
-from . import get_sample_model
+from . import get_sample_model, get_sample_group_model
 from .utils import get_fasta_sequence
 
 
@@ -586,28 +588,105 @@ class GeneLoader(ContigLikeLoader):
 class SampleManager(Manager):
     """ Manager for the Sample """
     def get_file(self):
-        return settings.OMICS_DATA_ROOT / 'sample_list.txt'
+        """ get the metagenomic pipeline import log """
+        return settings.OMICS_DATA_ROOT / 'data' / 'import_log.tsv'
 
-    @atomic
-    def sync(self, source_file=None, dry_run=False, **kwargs):
+    @atomic_dry
+    def sync(self, source_file=None):
+        """
+        Update sample table with analysis status
+
+
+        """
         if source_file is None:
             source_file = self.get_file()
 
         with open(source_file) as f:
+            # check assumptions on columns
+            SAMPLE_ID = 0
+            PROJECT = 1
+            TYPE = 2
+            TRACKING_ID = 7
+            DATA_DIR = 12
+            SUCCESS = 16
+            cols = (
+                (SAMPLE_ID, 'Sample'),
+                (PROJECT, 'Project'),
+                (TYPE, 'sample_type'),
+                (TRACKING_ID, 'sampleID'),
+                (DATA_DIR, 'sample_dir'),
+                (SUCCESS, 'import_sucess'),  # [sic]
+            )
+
+            head = f.readline().rstrip('\n').split('\t')
+            for index, column in cols:
+                if head[index] != column:
+                    raise RuntimeError(
+                        f'unexpected header in {f.name}: 0-based column '
+                        f'{index} is {head[index]} but {column} is expected'
+                    )
+
             seen = []
+            track_id_seen = set()
             for line in f:
-                obj, isnew = self.get_or_create(
-                    accession=line.strip()
-                )
+                row = line.rstrip('\n').split('\t')
+                sample_id = row[SAMPLE_ID]
+                group = row[PROJECT]
+                sample_type = row[TYPE]
+                tracking_id = row[TRACKING_ID]
+                data_dir = row[DATA_DIR]
+                success = row[SUCCESS]
+
+                if not all([sample_id, tracking_id, data_dir, success]):
+                    raise RuntimeError(f'field is empty in row: {row}')
+
+                if tracking_id in track_id_seen:
+                    # skip rev line
+                    continue
+                else:
+                    track_id_seen.add(tracking_id)
+
+                if success != 'TRUE':
+                    log.info(f'ignoring {sample_id}: no import success')
+
+                try:
+                    obj = self.get(
+                        sample_id=sample_id,
+                        group__short_name=group,
+                    )
+                except self.model.DoesNotExist:
+                    grp_model = get_sample_group_model()
+                    group, new = grp_model.objects.get_or_create(
+                        short_name=group,
+                    )
+                    if new:
+                        log.info(f'add sample group: {group}')
+
+                    obj = self.model(
+                        tracking_id=tracking_id,
+                        sample_id=sample_id,
+                        group=group,
+                        sample_type=sample_type,
+                        analysis_dir=data_dir,
+                    )
+                    obj.full_clean()
+                    obj.save()
+                    log.info(f'add sample: {obj}')
+                else:
+                    if obj.tracking_id != tracking_id:
+                        # TODO add type check, others?
+                        log.error(
+                            f'Inconsistency between for known sample '
+                            f'{sample_id}/{group}, ignoring this line in '
+                            f'{source_file}'
+                        )
+
                 seen.append(obj.pk)
-                if isnew:
-                    log.info(f'new sample: {obj}')
 
         not_in_src = self.exclude(pk__in=seen)
         if not_in_src.exists():
             log.warning(f'Have {not_in_src.count()} extra samples in DB not '
                         f'found in {source_file}')
-        set_rollback(dry_run)
 
     def status(self):
         if not self.exists():

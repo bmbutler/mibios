@@ -42,7 +42,7 @@ class Dataset(AbstractSampleGroup):
     )
     scheme = models.CharField(
         max_length=512,
-        blank=False,
+        blank=True,
         verbose_name='location and sampling scheme',
     )
     sequencing_data_type = models.CharField(
@@ -88,24 +88,24 @@ class Dataset(AbstractSampleGroup):
     def __init__(self, *args, orphan_group=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.orphan_group = orphan_group
-        if not self.scheme:
-            self.scheme = self.orphan_group_description
+        if not self.short_name:
+            self.short_name = self.orphan_group_description
 
     def __str__(self):
         if self.orphan_group:
             return self.orphan_group_description
         if self.reference_id is None:
-            ref_str = ''
+            ref = ''
         else:
-            ref_str = self.reference.short_reference
-        maxlen = 60 - len(ref_str)  # max length available for scheme part
-        scheme_str = self.scheme
-        if len(scheme_str) > maxlen:
-            scheme_str = scheme_str[:maxlen]
+            ref = self.reference.short_reference
+        maxlen = 60 - len(ref)  # max length available for scheme part
+        scheme = self.scheme
+        if len(scheme) > maxlen:
+            scheme = scheme[:maxlen]
             # remove last word and add [...]
-            scheme_str = ' '.join(scheme_str.split(' ')[:-1]) + '[\u2026]'
+            scheme = ' '.join(scheme.split(' ')[:-1]) + '[\u2026]'
 
-        return ' - '.join(filter(None, [scheme_str, ref_str]))
+        return ' - '.join(filter(None, [scheme, ref])) or self.short_name
 
     def get_accession_url(self):
         if self.accession_db == self.DB_NCBI:

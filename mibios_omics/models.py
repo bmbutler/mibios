@@ -37,10 +37,24 @@ class AbstractAbundance(Model):
 
 
 class AbstractSample(Model):
-    accession = AccessionField()
+    tracking_id = models.CharField(
+        # length of md5 checksum, 128 bit as hex string
+        max_length=32,
+        unique=True,
+        **opt,
+        help_text='internal uniform hex id',
+    )
+    sample_id = models.CharField(
+        max_length=256,
+        help_text='sample ID given by study',
+    )
     group = models.ForeignKey(
         settings.OMICS_SAMPLE_GROUP_MODEL,
         **fk_opt,
+    )
+    sample_type = models.CharField(
+        max_length=32,
+        **opt,
     )
 
     # data accounting
@@ -77,6 +91,11 @@ class AbstractSample(Model):
         help_text='Compound abundance data loaded',
     )
 
+    analysis_dir = models.CharField(
+        max_length=256,
+        **opt,
+        help_text='path to results of analysis, relative to OMICS_DATA_ROOT',
+    )
     # mapping data / header items from bbmap output:
     read_count = models.PositiveIntegerField(
         **opt,
@@ -96,9 +115,12 @@ class AbstractSample(Model):
 
     class Meta:
         abstract = True
+        unique_together = (
+            ('group', 'sample_id'),
+        )
 
     def __str__(self):
-        return self.accession
+        return self.sample_id
 
     def load_bins(self):
         if not self.binning_ok:
@@ -160,6 +182,13 @@ class AbstractSampleGroup(Model):
 
     To be used by apps that implement meta data models.
     """
+    short_name = models.CharField(
+        max_length=64,
+        unique=True,
+        help_text='a short name or description, for internal use, not '
+                  '(necessarily) for public display',
+    )
+
     class Meta:
         abstract = True
 
