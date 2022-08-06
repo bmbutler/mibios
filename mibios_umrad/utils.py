@@ -379,10 +379,29 @@ class InputFileSpec:
                 else:
                     keys.append(key)
                     if convfunc:
+                        if len(convfunc) > 1:
+                            raise ValueError(
+                                f'too many items in spec for {colname}/{key}'
+                            )
                         convfunc = convfunc[0]
-                        if not callable(convfunc):
+                        if isinstance(convfunc, str):
+                            convfunc_name = convfunc
+                            # getattr gives us abound method:
+                            convfunc = getattr(loader, convfunc_name)
+                            if not callable(convfunc):
+                                raise ValueError(
+                                    f'not the name of a {self.loader} method: '
+                                    f'{convfunc_name}'
+                                )
+                        elif callable(convfunc):
+                            # Assume it's a function that takes the loader as
+                            # 1st arg.  We get this when the previoudsly
+                            # delclared method's identifier is passed directly
+                            # in the spec's declaration.
+                            convfunc = partial(convfunc, self.loader)
+                        else:
                             raise ValueError(f'not a callable: {convfunc}')
-                        conv.append(partial(convfunc, self.loader))
+                        conv.append(convfunc)
                     else:
                         conv.append(None)
             else:
