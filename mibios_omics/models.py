@@ -8,7 +8,9 @@ from django.db.transaction import atomic, set_rollback
 
 from mibios.data import TableConfig
 from mibios_umrad.fields import AccessionField
-from mibios_umrad.model_utils import digits, opt, fk_req, fk_opt, Model
+from mibios_umrad.model_utils import (
+    digits, opt, fk_req, fk_opt, uniq_opt, Model,
+)
 from mibios_umrad.models import (CompoundRecord, FuncRefDBEntry, TaxID, Taxon,
                                  UniRef100)
 from mibios_umrad.utils import ProgressPrinter
@@ -184,7 +186,7 @@ class AbstractSampleGroup(Model):
     """
     short_name = models.CharField(
         max_length=64,
-        unique=True,
+        **uniq_opt,
         help_text='a short name or description, for internal use, not '
                   '(necessarily) for public display',
     )

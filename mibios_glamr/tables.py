@@ -125,32 +125,44 @@ class DatasetTable(Table):
         linkify=lambda record: record.get_samples_url,
     )
     scheme = Column(
+        empty_values=(),  # so render_foo can still take over for blank scheme
         verbose_name='description',
         linkify=True,
     )
     reference = Column(
         linkify=lambda value: getattr(value, 'doi'),
     )
+    water_bodies = Column(
+        verbose_name='Water bodies',
+    )
+    material_type = Column()
+    sample_type = Column(
+        empty_values=(),
+        verbose_name='sample type',
+    )
     accession = Column(
         verbose_name='data repository',
         linkify=lambda record: record.get_accession_url(),
     )
-    gene_target = Column(
-        verbose_name='other info',
-    )
 
     def render_scheme(self, value, record):
-        if record.material_type:
-            value += f' | {record.material_type}'
-        if record.water_bodies:
-            value += f' @ {record.water_bodies}'
-        return value
+        r = record
+        return r.scheme or r.short_name or r.accession or r.bioproject \
+            or r.jgi_project or r.gold_id or '???'
 
     def render_accession(self, record):
         return f'{record.accession_db}: {record.accession}'
 
-    def render_other(self, record):
-        return f'{record.gene_target} {record.size_fraction}'
+    def render_sample_type(self, record):
+        types = record.sample_set.values_list('sample_type', flat=True)
+        types = types.distinct()
+        values = list(types)
+        values += [
+            record.gene_target,
+            record.size_fraction,
+        ]
+        values = filter(None, values)
+        return ' '.join(list(values))
 
     def render_samples(self, record):
         return f'{record.sample_count}'
@@ -175,12 +187,13 @@ class SingleColumnRelatedTable(Table):
 
 class SampleTable(Table):
 
-    accession = Column(
-        verbose_name='accession',  # FIXME: verbose_name
+    sample_id = Column(
+        # verbose_name='ac',  # FIXME: verbose_name
         # linkify=lambda record: get_sample_url(record),
         linkify=lambda record: reverse('sample', args=[record.pk]),
     )
     group = Column(verbose_name='dataset')
+    sample_type = Column()
     read_count = Column()
     reads_mapped_contigs = Column()
     reads_mapped_genes = Column()

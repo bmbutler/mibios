@@ -5,10 +5,11 @@ from django.db import models
 from django.urls import reverse
 
 from mibios_omics.models import AbstractSampleGroup, AbstractSample
+from mibios_umrad.fields import AccessionField
 from mibios_umrad.models import Model
-from mibios_umrad.model_utils import fk_opt
+from mibios_umrad.model_utils import ch_opt, fk_opt, uniq_opt
 
-from .load import DatasetLoader, SampleLoader
+from .load import DatasetLoader, ReferenceLoader, SampleLoader
 
 
 class Dataset(AbstractSampleGroup):
@@ -17,6 +18,11 @@ class Dataset(AbstractSampleGroup):
     """
     # FIXME: it's not clear which field identifies a "data set", which field
     # may not be blank, and which shall be unique
+    accession = AccessionField(
+        max_length=32,
+        **uniq_opt,
+        help_text='accession to data set/study/project',
+    )
     reference = models.ForeignKey('Reference', **fk_opt)
     DB_GLAMR = 'GLAMR',
     DB_NCBI = 'NCBI'
@@ -29,41 +35,43 @@ class Dataset(AbstractSampleGroup):
         ('Camera', DB_CAMERA),
         ('VAMPS', DB_VAMPS),
     )
-    accession = models.CharField(
-        max_length=32,
-        blank=True,
-        help_text='accession to data set/study/project',
-    )
     accession_db = models.CharField(
+        # NOTE: review needed, keep this field?
         max_length=8,
-        blank=True,
+        **ch_opt,
         choices=ACCESSION_DB_CHOICES,
         help_text='Database associated with accession',
     )
+    bioproject = AccessionField(**uniq_opt)
+    jgi_project = AccessionField(**uniq_opt)
+    gold_id = AccessionField(**uniq_opt)
+    other_databases = models.CharField(max_length=64, **ch_opt)
     scheme = models.CharField(
         max_length=512,
-        blank=True,
+        **ch_opt,
         verbose_name='location and sampling scheme',
     )
     sequencing_data_type = models.CharField(
         max_length=128,
-        blank=True,
+        **ch_opt,
         help_text='e.g. amplicon, metagenome',
     )
     material_type = models.CharField(
         max_length=128,
+        **ch_opt,
     )
     water_bodies = models.CharField(
         max_length=256,
+        **ch_opt,
         help_text='list or description of sampled bodies of water',
     )
     primers = models.CharField(
         max_length=64,
-        blank=True,
+        **ch_opt,
     )
     gene_target = models.CharField(
         max_length=64,
-        blank=True,
+        **ch_opt,
     )
     sequencing_platform = models.CharField(
         max_length=64,
@@ -71,10 +79,10 @@ class Dataset(AbstractSampleGroup):
     )
     size_fraction = models.CharField(
         max_length=32,
-        blank=True,
+        **ch_opt,
         help_text='e.g.: >0.22µm or 0.22-1.6µm',
     )
-    note = models.TextField(blank=True)
+    note = models.TextField(**ch_opt)
 
     loader = DatasetLoader()
     orphan_group_description = 'samples without a data set'
@@ -82,30 +90,29 @@ class Dataset(AbstractSampleGroup):
     class Meta:
         default_manager_name = 'objects'
         unique_together = (
-            'reference', 'accession', 'accession_db',
+            ('accession', 'bioproject', 'jgi_project', 'gold_id'),
         )
 
     def __init__(self, *args, orphan_group=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.orphan_group = orphan_group
-        if not self.short_name:
+        if orphan_group and not self.short_name:
             self.short_name = self.orphan_group_description
 
     def __str__(self):
-        if self.orphan_group:
-            return self.orphan_group_description
         if self.reference_id is None:
             ref = ''
         else:
             ref = self.reference.short_reference
         maxlen = 60 - len(ref)  # max length available for scheme part
         scheme = self.scheme
-        if len(scheme) > maxlen:
+        if scheme and len(scheme) > maxlen:
             scheme = scheme[:maxlen]
             # remove last word and add [...]
             scheme = ' '.join(scheme.split(' ')[:-1]) + '[\u2026]'
 
-        return ' - '.join(filter(None, [scheme, ref])) or self.short_name
+        return ' - '.join(filter(None, [scheme, ref])) or self.short_name \
+            or super().__str__()
 
     def get_accession_url(self):
         if self.accession_db == self.DB_NCBI:
@@ -146,6 +153,8 @@ class Reference(Model):
     key_words = models.CharField(max_length=128, blank=True)
     publication = models.CharField(max_length=128)
     doi = models.URLField()
+
+    loader = ReferenceLoader()
 
     class Meta:
         unique_together = (

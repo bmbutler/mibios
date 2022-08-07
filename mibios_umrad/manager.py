@@ -3,7 +3,6 @@ from functools import partial
 from itertools import islice
 from logging import getLogger
 from operator import length_hint
-from pathlib import Path
 from time import sleep
 
 from django.conf import settings
@@ -16,7 +15,8 @@ from mibios.models import (
     QuerySet as MibiosQuerySet,
 )
 
-from .utils import CSV_Spec, ProgressPrinter, atomic_dry, get_last_timer
+from .utils import (CSV_Spec, InputFileSpec, ProgressPrinter, atomic_dry,
+                    get_last_timer,)
 
 
 log = getLogger(__name__)
@@ -201,15 +201,12 @@ class BaseLoader(DjangoManager):
         # setup
         if self.spec is None:
             raise NotImplementedError(f'{self}: loader spec not set')
-        self.spec.setup(loader=self, sep=sep)
+        setup_kw = {}
+        if sep is not None:
+            setup_kw['sep'] = sep
+        self.spec.setup(loader=self, path=file, **setup_kw)
 
-        # ensure file is a Path
-        if file is None:
-            file = self.get_file()
-        elif isinstance(file, str):
-            file = Path(file)
-
-        row_it = self.spec.iterrows(file)
+        row_it = self.spec.iterrows()
 
         if start > 0 or limit is not None:
             if limit is None:
@@ -302,9 +299,9 @@ class BaseLoader(DjangoManager):
                             break  # skips line
                         raise
 
-                    if value is CSV_Spec.IGNORE_COLUMN:
+                    if value is InputFileSpec.IGNORE_COLUMN:
                         continue  # treats value as empty
-                    elif value is CSV_Spec.SKIP_ROW:
+                    elif value is InputFileSpec.SKIP_ROW:
                         break  # skips line / avoids for-else block
 
                 if field.many_to_many:

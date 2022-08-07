@@ -1,32 +1,57 @@
 from itertools import groupby
 
+from pandas import isna
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db.models.manager import BaseManager
-from django.db.transaction import atomic, set_rollback
 
-from mibios_umrad.manager import Loader
-from mibios_umrad.utils import CSV_Spec
+from mibios_umrad.manager import InputFileError, Loader
+from mibios_umrad.utils import ExcelSpec, CSV_Spec, atomic_dry
 
 
-class DatasetLoader(BaseManager):
-    empty_values = ['NA', 'Not Listed']
+class DatasetLoader(Loader):
+    empty_values = ['NA', 'Not Listed', 'NF']
 
     def get_file(self):
         return settings.GLAMR_META_ROOT\
-            / 'Great_Lakes_Amplicon_Datasets.xlsx - Database.tsv'
+            / 'Great_Lakes_Amplicon_Datasets.xlsx'
 
-    cols = (
-        ('Reference', 'short_reference'),
-        ('Authors', 'authors'),
-        ('Paper', 'title'),
-        ('Abstract', 'abstract'),
-        ('Key Words', 'key_words'),
-        ('Journal', 'publication'),
-        ('DOI', 'doi'),
-        # --- divides reference and data set columns ---
-        ('Accession  Number', 'accession'),  # two spaces !!!
-        ('Database', 'accession_db'),
+    def ensure_id(self, value, row):
+        """ skip rows without some id """
+        for i in ['StudyID', 'NCBI_BioProject', 'JGI_Project_ID', 'GOLD_ID']:
+            if row[i]:
+                break
+        else:
+            return self.spec.SKIP_ROW
+
+        return value
+
+    def get_reference_ids(self, value, row):
+        if value is None or value == '':
+            return self.spec.IGNORE_COLUMN
+
+        Reference = self.model._meta.get_field('reference').related_model
+        id_lookups = Reference.get_accession_lookups()
+
+        try:
+            ref = Reference.objects.get(short_reference=value)
+        except Reference.DoesNotExist as e:
+            msg = f'unknown reference: {value}'
+            raise InputFileError(msg) from e
+        except Reference.MultipleObjectsReturned as e:
+            # FIXME: keep this for initial dev
+            msg = f'reference is not unique: {value}'
+            raise InputFileError(msg) from e
+
+        return tuple((getattr(ref, i) for i in id_lookups))
+
+    spec = ExcelSpec(
+        ('StudyID', 'accession', ensure_id),
+        ('Reference', 'reference', get_reference_ids),
+        ('NCBI_BioProject', 'bioproject'),
+        ('JGI_Project_ID', 'jgi_project'),
+        ('GOLD_ID', 'gold_id'),
+        ('Other_Databases', None),
         ('Location and Sampling Scheme', 'scheme'),
         ('Material Type', 'material_type'),
         ('Water Bodies', 'water_bodies'),
@@ -35,74 +60,40 @@ class DatasetLoader(BaseManager):
         ('Sequencing Platform', 'sequencing_platform'),
         ('Size Fraction(s)', 'size_fraction'),
         ('Notes', 'note'),
+        sheet_name='studies',
     )
 
-    @atomic
-    def load(self, dry_run=False):
-        refs = self.load_references(dry_run=False)
-        with self.get_file().open() as f:
-            head = f.readline().rstrip('\n').split('\t')
-            if head != [i for i, _ in self.cols]:
-                raise RuntimeError(f'unexpected header in {f.name}: {head}')
+class RefSpec(ExcelSpec):
+    """ allow skipping of empty rows """
+    def iterrows(self):
+        for row in super().iterrows():
+            if isna(row['Reference']) or row['Reference'] == '':
+                # empty row or no ref
+                continue
+            yield row
 
-            field_names = [i for _, i in self.cols[7:]]
-            rows = (line.rstrip('\n').split('\t')[7:] for line in f)
-            for i, row in enumerate(rows):
-                kw = dict((
-                    (i, j) for i, j in zip(field_names, row)
-                    if j and j not in self.empty_values
-                ))
-                kw['reference'] = refs[i]
-                obj = self.model(**kw)
-                try:
-                    obj.full_clean()
-                except ValidationError:
-                    print(f'invalid at line {i + 2} -- {vars(obj)=}')
-                    raise
-                obj.save()
 
-        set_rollback(dry_run)
+class ReferenceLoader(Loader):
+    empty_values = ['NA', 'Not Listed']
 
-    @atomic
-    def load_references(self, dry_run=False):
-        cols = self.cols[:7]  # pick reference columns
-        ref_model = self.model._meta.get_field('reference').related_model
-        refs = {}  # return value, maps row number to reference
-        with self.get_file().open() as f:
-            head = f.readline().rstrip('\n').split('\t')[:7]
-            if head != [i for i, _ in cols]:
-                raise RuntimeError(f'unexpected header in {f.name}: {head}')
-            rows = (line.rstrip('\n').split('\t') for line in f)
-            rows = enumerate(rows)
+    def get_file(self):
+        return settings.GLAMR_META_ROOT\
+            / 'Great_Lakes_Amplicon_Datasets.xlsx'
 
-            def getrefcols(item):
-                """ the sort/group key, get reference columns """
-                # FIXME: only picks row up to Journal but not DOI, need to find
-                # out why we have multiple DOIs per reference in source file
-                return item[1][:6]
-            for row, grp in groupby(sorted(rows, key=getrefcols), getrefcols):
-                grp = list(grp)
-                kwargs = {
-                    field_name: value
-                    for field_name, value in zip([i for _, i in cols[:6]], row)
-                }
-                doi = grp[0][1][6]  # use 1st doi in group
-                if 'doi-org.proxy.lib.umich.edu' in doi:
-                    # fix, don't require umich weblogin
-                    doi = doi.replace('doi-org.proxy.lib.umich.edu', 'doi.org')
-                kwargs['doi'] = doi
-                obj = ref_model(**kwargs)
-                try:
-                    obj.full_clean()
-                except ValidationError:
-                    print(f'invalid: {vars(obj)=}')
-                    raise
-                obj.save()
-                for (i, _) in grp:
-                    refs[i] = obj
+    spec = RefSpec(
+        ('Reference', 'short_reference'),
+        ('Authors', 'authors'),
+        ('Paper', 'title'),
+        ('Abstract', 'abstract'),
+        ('Key Words', 'key_words'),
+        ('Journal', 'publication'),
+        ('DOI', 'doi'),
+        sheet_name='studies',
+    )
 
-        set_rollback(dry_run)
-        return refs
+    @atomic_dry
+    def XXX_load(self):
+        pass
 
 
 class SampleLoader(Loader):

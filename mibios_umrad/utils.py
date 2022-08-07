@@ -4,9 +4,12 @@ from inspect import signature
 from itertools import zip_longest
 from operator import length_hint
 import os
+from pathlib import Path
 from threading import local, Timer
 from string import Formatter
 import sys
+
+import pandas
 
 from django.db import router, transaction
 
@@ -330,9 +333,6 @@ class InputFileSpec:
     IGNORE_COLUMN = object()
     SKIP_ROW = object()
 
-    model = None
-    loader = None
-
     empty_values = []
     """
     A list of input-file-wide extra empty values.  For the purpose of loading
@@ -348,8 +348,9 @@ class InputFileSpec:
         self._convfuncs = None
         self.model = None
         self.loader = None
+        self.path = None
 
-    def setup(self, loader, column_specs=None):
+    def setup(self, loader, column_specs=None, path=None):
         """
         Setup method to be called once before loading data
 
@@ -359,6 +360,13 @@ class InputFileSpec:
         self.model = loader.model
         if column_specs is None:
             column_specs = self._spec
+
+        if path is None:
+            self.path = self.loader.get_file()
+        elif isinstance(path, str):
+            self.path = Path(path)
+
+        self.empty_values += self.loader.empty_values
 
         cols = []  # used column header
         all_cols = []  # all column headers, as in file
@@ -447,7 +455,7 @@ class InputFileSpec:
 
         return self._convfuncs
 
-    def iterrows(self, path):
+    def iterrows(self):
         raise NotImplementedError
 
     def row_data(self, row):
@@ -470,16 +478,18 @@ class CSV_Spec(InputFileSpec):
         super().__init__(*column_specs)
         self.sep = sep
 
-    def setup(self, loader, column_specs=None, sep=None):
-        super().setup(loader, column_specs)
+    def setup(self, *args, sep=None, **kwargs):
+        super().setup(*args, **kwargs)
+        if sep is not None:
+            self.sep = sep
 
-    def iterrows(self, path):
+    def iterrows(self):
         """
         An iterator over the csv file's rows
 
         :param pathlib.Path path: path to the data file
         """
-        with path.open() as f:
+        with self.path.open() as f:
             print(f'File opened: {f.name}')
             os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
 
@@ -505,6 +515,35 @@ class CSV_Spec(InputFileSpec):
 
             for line in f:
                 yield line.rstrip('\n').split(self.sep)
+
+
+class ExcelSpec(InputFileSpec):
+    def __init__(self, *column_specs, sheet_name=None):
+        super().__init__(*column_specs)
+        self.sheet_name = sheet_name
+
+    def get_dataframe(self):
+        """ Return file as pandas.DataFrame """
+        df = pandas.read_excel(
+            str(self.path),
+            sheet_name=self.sheet_name,
+            usecols=self.all_cols,
+            na_values=self.empty_values,
+            keep_default_na=False,
+        )
+        # turn NaNs (all the empty cells) into Nones
+        # Else we'd have to tell load() to treat NaNs as empty
+        df = df.where(pandas.notnull(df), None)
+        return df
+
+    def iterrows(self):
+        """
+        An iterator over the table's rows, yields Pandas.Series instances
+
+        :param pathlib.Path path: path to the data file
+        """
+        for _, row in self.get_dataframe().iterrows():
+            yield row
 
 
 class SizedIterator:
