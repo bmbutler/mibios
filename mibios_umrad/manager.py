@@ -198,13 +198,12 @@ class BaseLoader(DjangoManager):
 
         May assume empty table ?!?
         """
-        # setup
-        if self.spec is None:
-            raise NotImplementedError(f'{self}: loader spec not set')
         setup_kw = {}
         if sep is not None:
             setup_kw['sep'] = sep
-        self.spec.setup(loader=self, path=file, **setup_kw)
+        if file is not None:
+            setup_kw['path'] = file
+        self.setup_spec(**setup_kw)
 
         row_it = self.spec.iterrows()
 
@@ -236,6 +235,14 @@ class BaseLoader(DjangoManager):
             except Exception:
                 pass
             raise
+
+    def setup_spec(self, spec=None, **kwargs):
+        if spec is None:
+            if self.spec is None:
+                raise NotImplementedError(f'{self}: loader spec not set')
+        else:
+            self.spec = spec
+        self.spec.setup(loader=self, **kwargs)
 
     @atomic_dry
     def _load_rows(self, rows, sep='\t', dry_run=False, template={},

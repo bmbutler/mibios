@@ -340,10 +340,7 @@ class InputFileSpec:
     """
 
     def __init__(self, *column_specs):
-        if not column_specs:
-            raise ValueError('at least one column needs to be declared')
-
-        self._spec = column_specs
+        self._spec = column_specs or None
         self._fields = None
         self._convfuncs = None
         self.model = None
@@ -360,6 +357,11 @@ class InputFileSpec:
         self.model = loader.model
         if column_specs is None:
             column_specs = self._spec
+        else:
+            self._spec = column_specs
+
+        if not column_specs:
+            raise ValueError('at least one column needs to be declared')
 
         if path is None:
             self.path = self.loader.get_file()
