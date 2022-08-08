@@ -98,12 +98,19 @@ class ReferenceLoader(Loader):
 
 class SampleLoader(Loader):
 
+    spec = CSV_Spec()
+
     def get_file(self):
         return settings.GLAMR_META_ROOT / '2014_metaG_metadata.tsv'
 
-    def load(self):
+    def fix_sample_id(self, value, row):
+        """ Remove leading "SAMPLE_" from accession value """
+        return value.removeprefix('Sample_')
+
+    @atomic_dry
+    def load_erie2014(self, update=False):
         fnames = [
-            'accession',
+            'sample_id',
             'site',
             'fraction',
             'sample_name',
@@ -144,24 +151,22 @@ class SampleLoader(Loader):
             'Volatile_suspended_solids']
 
         # get column headers from verbose names!
-        spec = []
+        specs = []
         for i in fnames:
-            field = self.model._meta.get_field(i)
-            if i == 'accession':
-                col_name = 'accession'
+            # column spec format is:
+            # (<colum header>, <field name>, [conversion function])
+            if i == 'sample_id':
+                specs.append(('accession', i, 'fix_sample_id'))
             else:
-                col_name = field.verbose_name
-            spec.append((col_name, i))
-        self.spec = CSV_Spec(*spec)
-        self.spec.empty_values = ['NA']
-        self.spec.setup(loader=self)
+                field = self.model._meta.get_field(i)
+                specs.append((field.verbose_name, i))
+        self.empty_values = ['NA']
+        self.spec.setup(loader=self, column_specs=specs)
 
         # FIXME: need some proper source for dataset
-        dset = self.model._meta.get_field('group').related_model(
-            scheme='Lake Erie CIGLR weekly monitoring data',
-            water_bodies='Lake Erie',
-            sequencing_data_type='metagenome',
+        Dataset = self.model._meta.get_field('group').related_model
+        dset, new = Dataset.objects.get_or_create(
+            short_name='2014 Metagenomes',
         )
-        dset.save()
         template = dict(group=dset)
-        super().load(template=template)
+        super().load(update=update, template=template)

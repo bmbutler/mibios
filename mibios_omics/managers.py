@@ -673,13 +673,14 @@ class SampleManager(Manager):
                     obj.save()
                     log.info(f'add sample: {obj}')
                 else:
-                    if obj.tracking_id != tracking_id:
-                        # TODO add type check, others?
-                        log.error(
-                            f'Inconsistency between for known sample '
-                            f'{sample_id}/{group}, ignoring this line in '
-                            f'{source_file}'
-                        )
+                    if obj.tracking_id is not None:
+                        if obj.tracking_id != tracking_id:
+                            # TODO add type check, others?
+                            log.error(
+                                f'Inconsistency between for known sample '
+                                f'{sample_id}/{group}, ignoring this line in '
+                                f'{source_file}'
+                            )
 
                 seen.append(obj.pk)
 
