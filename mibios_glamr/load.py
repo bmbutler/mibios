@@ -1,9 +1,6 @@
-from itertools import groupby
-
 from pandas import isna
 
 from django.conf import settings
-from django.core.exceptions import ValidationError
 
 from mibios_umrad.manager import InputFileError, Loader
 from mibios_umrad.utils import ExcelSpec, CSV_Spec, atomic_dry
@@ -63,6 +60,7 @@ class DatasetLoader(Loader):
         sheet_name='studies',
     )
 
+
 class RefSpec(ExcelSpec):
     """ allow skipping of empty rows """
     def iterrows(self):
@@ -90,10 +88,6 @@ class ReferenceLoader(Loader):
         ('DOI', 'doi'),
         sheet_name='studies',
     )
-
-    @atomic_dry
-    def XXX_load(self):
-        pass
 
 
 class SampleLoader(Loader):

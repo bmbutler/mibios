@@ -6,8 +6,5 @@
 {% include "mibios_glamr/search_form_simple.html" %}
 <h3>Available data sets</h3>
 {% render_table table %}
-<p><a href="{% url 'top' %}">table interface</a></p>
-<h3>Ratios of mapped reads, contigs vs genes</h3>
-<p><img src="{% get_static_prefix %}mappedratios.png"></p>
 
 {% endblock %}
