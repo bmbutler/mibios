@@ -600,14 +600,17 @@ def atomic_dry(f):
     def wrapper(self, *args, **kwargs):
         dbalias = router.db_for_write(self.model)
         with transaction.atomic(using=dbalias):
-            dry_run = kwargs.get('dry_run', None)
-            if dry_run is True or 'dry_run' not in signature(f).parameters:
-                # consume dry_run kw if True as to avoid nested rollback
-                # but pass on dry_run=False if wrapped function supports it, as
-                # to override any nested defaults saying otherwise
-                kwargs.pop('dry_run')
+            if 'dry_run' in kwargs:
+                dry_run = kwargs['dry_run']
+                if dry_run or 'dry_run' not in signature(f).parameters:
+                    # consume dry_run kw if True as to avoid nested rollback
+                    # but pass on a dry_run=False if wrapped function supports
+                    # it, as to override any nested defaults saying otherwise
+                    kwargs.pop('dry_run')
+            else:
+                dry_run = None
             retval = f(self, *args, **kwargs)
-            if dry_run is True:
+            if dry_run:
                 transaction.set_rollback(True, dbalias)
             return retval
     return wrapper
