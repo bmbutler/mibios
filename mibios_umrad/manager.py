@@ -160,6 +160,8 @@ class BaseLoader(DjangoManager):
     """
     A manager providing functionality to load data from file
     """
+    empty_values = []
+
     def get_file(self):
         """
         Return pathlib.Path to input data file
