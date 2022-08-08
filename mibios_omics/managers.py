@@ -607,14 +607,14 @@ class SampleManager(Manager):
             PROJECT = 1
             TYPE = 2
             TRACKING_ID = 7
-            DATA_DIR = 12
+            ANALYSIS_DIR = 12
             SUCCESS = 16
             cols = (
                 (SAMPLE_ID, 'Sample'),
                 (PROJECT, 'Project'),
                 (TYPE, 'sample_type'),
                 (TRACKING_ID, 'sampleID'),
-                (DATA_DIR, 'sample_dir'),
+                (ANALYSIS_DIR, 'sample_dir'),
                 (SUCCESS, 'import_sucess'),  # [sic]
             )
 
@@ -628,16 +628,17 @@ class SampleManager(Manager):
 
             seen = []
             track_id_seen = set()
+            unchanged = 0
             for line in f:
                 row = line.rstrip('\n').split('\t')
                 sample_id = row[SAMPLE_ID]
                 group = row[PROJECT]
                 sample_type = row[TYPE]
                 tracking_id = row[TRACKING_ID]
-                data_dir = row[DATA_DIR]
+                analysis_dir = row[ANALYSIS_DIR]
                 success = row[SUCCESS]
 
-                if not all([sample_id, tracking_id, data_dir, success]):
+                if not all([sample_id, tracking_id, analysis_dir, success]):
                     raise RuntimeError(f'field is empty in row: {row}')
 
                 if tracking_id in track_id_seen:
@@ -646,15 +647,17 @@ class SampleManager(Manager):
                 else:
                     track_id_seen.add(tracking_id)
 
-                if success != 'TRUE':
-                    log.info(f'ignoring {sample_id}: no import success')
-
+                need_save = False
                 try:
                     obj = self.get(
                         sample_id=sample_id,
                         group__short_name=group,
                     )
                 except self.model.DoesNotExist:
+                    if success != 'TRUE':
+                        log.info(f'ignoring {sample_id}: no import success')
+                        continue
+
                     grp_model = get_sample_group_model()
                     group, new = grp_model.objects.get_or_create(
                         short_name=group,
@@ -667,22 +670,40 @@ class SampleManager(Manager):
                         sample_id=sample_id,
                         group=group,
                         sample_type=sample_type,
-                        analysis_dir=data_dir,
+                        analysis_dir=analysis_dir,
                     )
-                    obj.full_clean()
-                    obj.save()
-                    log.info(f'add sample: {obj}')
+                    need_save = True
+                    save_info = f'new sample: {obj}'
                 else:
-                    if obj.tracking_id is not None:
-                        if obj.tracking_id != tracking_id:
-                            # TODO add type check, others?
-                            log.error(
-                                f'Inconsistency between for known sample '
-                                f'{sample_id}/{group}, ignoring this line in '
-                                f'{source_file}'
-                            )
+                    if success != 'TRUE':
+                        log.warning(f'{sample_id}: no import success -- but it'
+                                    f'is already in the DB -- skipping')
+                        continue
 
-                seen.append(obj.pk)
+                    updateable = ['tracking_id', 'sample_type', 'analysis_dir']
+                    changed = []
+                    for attr in updateable:
+                        val = locals()[attr]
+                        if getattr(obj, attr) != val:
+                            setattr(obj, attr, val)
+                            changed.append(attr)
+                    if changed:
+                        need_save = True
+                        save_info = (f'update: {obj} changed: '
+                                     f'{", ".join(changed)}')
+                    else:
+                        unchanged += 1
+                finally:
+                    if need_save:
+                        obj.full_clean()
+                        obj.save()
+                        log.info(save_info)
+
+                    seen.append(obj.pk)
+
+        if unchanged:
+            log.info(f'Data for {unchanged} samples are already in the DB and '
+                     f'remain unchanged')
 
         not_in_src = self.exclude(pk__in=seen)
         if not_in_src.exists():
