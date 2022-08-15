@@ -346,6 +346,7 @@ class InputFileSpec:
         self.model = None
         self.loader = None
         self.path = None
+        self.has_header = None
 
     def setup(self, loader, column_specs=None, path=None):
         """
@@ -364,9 +365,10 @@ class InputFileSpec:
             raise ValueError('at least one column needs to be declared')
 
         if path is None:
-            self.path = self.loader.get_file()
-        elif isinstance(path, str):
-            self.path = Path(path)
+            path = self.loader.get_file()
+        if isinstance(path, str):
+            path = Path(path)
+        self.path = path
 
         self.empty_values += self.loader.empty_values
 
@@ -377,55 +379,68 @@ class InputFileSpec:
         conv = []  # conversion functions, one (or None) per used columns
 
         for row in column_specs:
-            if isinstance(row, tuple):
-                # table with header
-                self.has_header = True
-                colname, key, *convfunc = row
+            # TODO: re-write as match statement?
+            # FIXME: two-str-items format can be <col> <field> OR <field> <fun>
+            # with no super easy way to distinguish them
+            orig_row = row
+            if not isinstance(row, tuple):
+                # no-header-simple-format
+                row = (row, )
+
+            if self.has_header is None:
+                # detect header presence from first spec piece
+                if len(row) == 1:
+                    self.has_header = False
+                elif len(row) == 2 and callable(row[1]):
+                    self.has_header = False
+                else:
+                    self.has_header = True
+
+            if not self.has_header:
+                # add None as column header
+                row = (None, *row)
+
+            colname, key, *convfunc = row
+            if self.has_header:
                 all_cols.append(colname)
-                all_keys.append(key)
-                if key is None:
-                    # ignore this column
-                    pass
-                else:
-                    keys.append(key)
-                    if convfunc:
-                        if len(convfunc) > 1:
-                            raise ValueError(
-                                f'too many items in spec for {colname}/{key}'
-                            )
-                        convfunc = convfunc[0]
-                        if isinstance(convfunc, str):
-                            convfunc_name = convfunc
-                            # getattr gives us abound method:
-                            convfunc = getattr(loader, convfunc_name)
-                            if not callable(convfunc):
-                                raise ValueError(
-                                    f'not the name of a {self.loader} method: '
-                                    f'{convfunc_name}'
-                                )
-                        elif callable(convfunc):
-                            # Assume it's a function that takes the loader as
-                            # 1st arg.  We get this when the previoudsly
-                            # delclared method's identifier is passed directly
-                            # in the spec's declaration.
-                            convfunc = partial(convfunc, self.loader)
-                        else:
-                            raise ValueError(f'not a callable: {convfunc}')
-                        conv.append(convfunc)
-                    else:
-                        conv.append(None)
             else:
-                # table without header
-                self.has_header = False
-                key = row
-                all_keys.append(key)
-                if key is None:
-                    # ignore this column
-                    pass
+                if colname is not None:
+                    raise RuntimeError(
+                        f'got column name but assumed no header: {orig_row}')
+
+            all_keys.append(key)
+
+            if key is None:
+                # ignore this column
+                pass
+            else:
+                keys.append(key)
+                if convfunc:
+                    if len(convfunc) > 1:
+                        raise ValueError(
+                            f'too many items in spec for {colname}/{key}'
+                        )
+                    convfunc = convfunc[0]
+                    if isinstance(convfunc, str):
+                        convfunc_name = convfunc
+                        # getattr gives us abound method:
+                        convfunc = getattr(loader, convfunc_name)
+                        if not callable(convfunc):
+                            raise ValueError(
+                                f'not the name of a {self.loader} method: '
+                                f'{convfunc_name}'
+                            )
+                    elif callable(convfunc):
+                        # Assume it's a function that takes the loader as
+                        # 1st arg.  We get this when the previoudsly
+                        # delclared method's identifier is passed directly
+                        # in the spec's declaration.
+                        convfunc = partial(convfunc, self.loader)
+                    else:
+                        raise ValueError(f'not a callable: {convfunc}')
+                    conv.append(convfunc)
                 else:
-                    keys.append(key)
                     conv.append(None)
-                # cols/all_cols stay empty
 
         self.all_cols = all_cols
         self.cols = cols
@@ -458,6 +473,12 @@ class InputFileSpec:
         return self._convfuncs
 
     def iterrows(self):
+        """
+        A generator for the records/rows of the input file
+
+        This method must be implemented by inheriting classes.  The generator
+        should yield a sequence of items for each record or row.
+        """
         raise NotImplementedError
 
     def row_data(self, row):
@@ -485,6 +506,29 @@ class CSV_Spec(InputFileSpec):
         if sep is not None:
             self.sep = sep
 
+    def process_header(self, file):
+        """
+        consumes and checks a single line of columns headers
+
+        Overwrite this method if your file has a more complex layout.  Make
+        sure this method consumes all non-data rows at the beginning of the
+        file.
+        """
+        head = file.readline().rstrip('\n').split(self.sep)
+        cols = self.all_cols
+        for i, (a, b) in enumerate(zip(head, cols), start=1):
+            # ignore column number differences here, will catch later
+            if a != b:
+                raise ValueError(
+                    f'Unexpected header row: first mismatch in column '
+                    f'{i}: got "{a}", expected "{b}"'
+                )
+        if len(head) != len(self):
+            raise ValueError(
+                f'expecting {len(self)} columns but got '
+                f'{len(head)} in header row'
+            )
+
     def iterrows(self):
         """
         An iterator over the csv file's rows
@@ -496,24 +540,7 @@ class CSV_Spec(InputFileSpec):
             os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
 
             if self.has_header:
-                # check header
-                head = f.readline().rstrip('\n').split(self.sep)
-                cols = self.all_cols
-                for i, (a, b) in enumerate(zip(head, cols), start=1):
-                    # ignore column number differences here, will catch later
-                    if a != b:
-                        raise ValueError(
-                            f'Unexpected header row: first mismatch in column '
-                            f'{i}: got "{a}", expected "{b}"'
-                        )
-                if len(head) != len(self):
-                    raise ValueError(
-                        f'expecting {len(self)} columns but got '
-                        f'{len(head)} in header row'
-                    )
-            else:
-                # assume no header
-                pass
+                self.process_header(f)
 
             for line in f:
                 yield line.rstrip('\n').split(self.sep)
