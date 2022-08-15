@@ -3,7 +3,7 @@ Module for data load managers
 """
 from collections import defaultdict
 from functools import wraps
-from itertools import chain, groupby, islice, zip_longest
+from itertools import groupby, islice, zip_longest
 from logging import getLogger
 from operator import itemgetter
 import os
@@ -25,28 +25,112 @@ from .utils import get_fasta_sequence
 log = getLogger(__name__)
 
 
+# FIXME move function to good home
+def resolve_glob(path, pat):
+    value = None
+    for i in path.glob(pat):
+        if value is None:
+            return i
+        else:
+            raise RuntimeError(f'glob is not unique: {i}')
+    raise FileNotFoundError(f'glob does not resolve: {path / pat}')
+
+
+class BBMap_RPKM_Spec(CSV_Spec):
+    def process_header(self, file):
+        # skip initial non-rows
+        pos = file.tell()
+        while True:
+            line = file.readline()
+            if line.startswith('#'):
+                if line.startswith('#Name'):
+                    file.seek(pos)
+                    return super().process_header(file)
+                else:
+                    # TODO: process rpkm header data
+                    pos = file.tell()
+            else:
+                raise RuntimeError(
+                    f'rpkm header lines must start with #, column header with '
+                    f'#Name, got: {line}'
+                )
+
+
 class SampleLoadMixin:
     """ Mixin for Loader class that loads per-sample files """
-    ok_field_name = None
 
-    @atomic
-    def load_sample(self, sample, start=0, max_rows=None, dry_run=False):
-        if self.ok_field_name is not None:
-            if getattr(sample, self.ok_field_name):
-                raise RuntimeError(f'data already loaded: {sample}')
+    @atomic_dry
+    def load_sample(self, sample, flag, **kwargs):
+        if not kwargs.get('update', False) and getattr(sample, flag):
+            raise RuntimeError(f'data already loaded: {flag} -> {sample}')
 
+        if 'file' not in kwargs:
+            kwargs.update(file=self.get_file(sample))
+
+        self.load(template={'sample': sample}, **kwargs)
+
+        setattr(sample, flag, True)
+        sample.save()
+
+
+class AlignmentLoader(Loader):
+    """ loader XX_GENES.m8 files """
+
+    def get_m8_path(self, sample):
+        return sample.get_metagenome_path() / 'annotation' \
+            / f'{sample.tracking_id}_GENES.m8'
+
+    def query2gene(self, value, row):
+        """
+        get gene id from qseqid column for genes
+
+        The query column has all that's in the fasta header, incl. the prodigal
+        data.  Also add the sample pk (gene is a FK field).
+        """
+        gene_id = value.split(maxsplit=1)[0].upper()
+        return (self.sample.pk, gene_id)
+
+    def upper(self, value, row):
+        """
+        upper-case the uniref100 id
+
+        the incoming prefixes have mixed case
+        """
+        return value.upper()
+
+    spec = CSV_Spec(
+        ('gene', query2gene),  # qseqid
+        (None, ),  # qlen
+        ('ref', upper),  # sseqid
+        (None, ),  # slen
+        (None, ),  # qstart
+        (None, ),  # qend
+        (None, ),  # sstart
+        (None, ),  # send
+        (None, ),  # evalue
+        (None, ),  # pident
+        (None, ),  # mismatch
+        (None, ),  # qcovhsp
+        (None, ),  # scovhsp
+    )
+
+    @atomic_dry
+    def load_m8_sample(self, sample, file=None, **kwargs):
+        if sample.gene_alignment_hits_loaded:
+            raise RuntimeError(f'alignment data already loaded: {sample}')
+
+        if file is None:
+            file = self.get_m8_path(sample)
+
+        self.sample = sample
         self.load(
-            file=self.get_file(sample),
-            template={'sample': sample},
-            start=start,
-            max_rows=max_rows,
+            spec=self.spec,
+            file=file,
+            **kwargs,
         )
-
-        if self.ok_field_name is not None:
-            setattr(sample, self.ok_field_name, True)
-            sample.save()
-
-        set_rollback(dry_run)
+        # TODO: filter by top parameter
+        sample.gene_alignment_hits_loaded = True
+        sample.save()
 
 
 class CompoundAbundanceLoader(Loader, SampleLoadMixin):
@@ -64,8 +148,10 @@ class CompoundAbundanceLoader(Loader, SampleLoadMixin):
     )
 
     def get_file(self, sample):
-        return settings.OMICS_DATA_ROOT / 'GENES' \
-            / f'{sample.accession}_compounds_{settings.OMICS_DATA_VERSION}.txt'
+        return resolve_glob(
+            sample.get_metagenome_path() / 'annotation',
+            f'{sample.tracking_id}_compounds_*.txt'
+        )
 
 
 class SequenceLikeQuerySet(QuerySet):
@@ -77,7 +163,7 @@ class SequenceLikeQuerySet(QuerySet):
         """
         files = {}
         lines = []
-        fields = ('seq_offset', 'seq_bytes', 'gene_id', 'sample__accession')
+        fields = ('fasta_offset', 'fasta_len', 'gene_id', 'sample__accession')
         qs = self.select_related('sample').values_list(*fields)
         try:
             for offs, length, gene_id, sampid in qs.iterator():
@@ -100,8 +186,12 @@ class SequenceLikeQuerySet(QuerySet):
 SequenceLikeManager = Manager.from_queryset(SequenceLikeQuerySet)
 
 
-class SequenceLikeLoader(SequenceLikeManager):
-    """ Loader manager for the SequenceLike abstract model """
+class SequenceLikeLoader(SampleLoadMixin, Loader):
+    """
+    Loader manager for the SequenceLike abstract model
+
+    Provides the load_fasta_sample() method.
+    """
 
     def get_fasta_path(self, sample):
         """
@@ -119,20 +209,30 @@ class SequenceLikeLoader(SequenceLikeManager):
         """
         return {}
 
-    @atomic
-    def load_sample(self, sample, limit=None, verbose=False, dry_run=False):
+    @atomic_dry
+    def load_fasta_sample(self, sample, start=0, limit=None, validate=False):
         """
         import sequence data for one sample
 
         limit - limit to that many contigs, for testing only
         """
-        extra = self.get_load_sample_fasta_extra_kw(sample)
-        objs = self.from_sample_fasta(sample, limit=limit, verbose=verbose,
-                                      **extra)
-        self.bulk_create(objs)
-        set_rollback(dry_run)
+        if getattr(sample, self.fasta_load_flag):
+            raise RuntimeError(
+                'data already loaded - update not supported: '
+                '{self.fasta_load_flag} -> {sample}'
+            )
 
-    def from_sample_fasta(self, sample, limit=None, **extra):
+        extra = self.get_load_sample_fasta_extra_kw(sample)
+        objs = self.from_sample_fasta(sample, start=start, limit=limit,
+                                      **extra)
+        if validate:
+            objs = ((i for i in objs if i.full_clean() or True))
+        self.bulk_create(objs)
+
+        setattr(sample, self.fasta_load_flag, True)
+        sample.save()
+
+    def from_sample_fasta(self, sample, start=0, limit=None, **extra):
         """
         Generate instances for given sample
         """
@@ -140,54 +240,78 @@ class SequenceLikeLoader(SequenceLikeManager):
             os.posix_fadvise(fa.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
             print(f'reading {fa.name} ...')
             obj = None
-            count = 0
-            pos = 0
-            eof = ''  # end of file
-            for line in chain(fa, [eof]):
-                if limit and count >= limit:
-                    break
-                pos += len(line)
-                if line == eof or line.startswith('>'):
-                    if obj is None:
-                        pass  # first line
-                    else:
-                        obj.seq_bytes = pos - obj.seq_offset
-                        # obj.full_clean()  # way too slow
-                        yield obj
-                        count += 1
+            data = self._fasta_parser(fa)
+            for header, offs, byte_len in islice(data, start, limit):
+                obj = self.model(
+                    sample=sample,
+                    fasta_offset=offs,
+                    fasta_len=byte_len,
+                )
+                try:
+                    obj.set_from_fa_head(header, **extra)
+                except Exception as e:
+                    raise RuntimeError(
+                        f'failed parsing fa head in file {fa.name}: '
+                        f'{e.__class__.__name__}: {e}:{header}'
+                    ) from e
+                yield obj
 
-                    if line == eof:
-                        break
+    def _fasta_parser(self, file):
+        """ helper to iterate over fasta record infos """
+        header = None
+        record_offs = None
+        while True:
+            pos = file.tell()
+            line = file.readline()
+            if line.startswith('>') or not line:
+                if header is not None:
+                    yield header, record_offs, pos - record_offs
+                header = line.lstrip('>').rstrip()
+                record_offs = pos
 
-                    # make next obj
-                    obj = self.model(
-                        sample=sample,
-                        seq_offset=pos,
-                    )
-                    try:
-                        obj.set_from_fa_head(line, **extra)
-                    except Exception as e:
-                        raise RuntimeError(
-                            f'failed parsing fa head in file {fa.name}: '
-                            f'{e.__class__.__name__}: {e}, line:\n{line}'
-                        ) from e
+            if not line:
+                # EOF
+                break
 
 
 class ContigLikeLoader(SequenceLikeLoader):
     """ Manager for ContigLike abstract model """
-    is_loaded_attr = None  # set in inheriting class
+    abundance_load_flag = None  # set in inheriting class
 
     def get_contigs_file_path(self, sample):
-        return settings.OMICS_DATA_ROOT / 'GENES' \
-            / f'{sample.accession}_contigs_{settings.OMICS_DATA_VERSION}.txt'
+        return resolve_glob(
+            sample.get_metagenome_path() / 'annotation',
+            f'{sample.tracking_id}_contigs_*.txt'
+        )
 
     def process_coverage_header_data(self, sample, data):
         """ Add header data to sample """
         # must be implemented by inheriting class
         raise NotImplementedError
 
+    rpkm_spec = None
+    """ rpkm_spec must be set in inheriting classes """
+
+    @atomic_dry
+    def load_abundance_sample(self, sample, file=None, **kwargs):
+        """
+        Load data from bbmap *.rpkm files
+
+        Assumes that fasta data was loaded previously.
+        """
+        if file is None:
+            file = self.get_rpkm_path(sample)
+
+        self.load_sample(
+            sample,
+            flag=self.abundance_load_flag,
+            spec=self.rpkm_spec,
+            file=file,
+            update=True,
+            **kwargs)
+
     @atomic
-    def load_sample(self, sample, limit=None, dry_run=False):
+    def XXX_load_sample(self, sample, limit=None, dry_run=False):
         """
         import sequence/coverage data for one sample
 
@@ -463,17 +587,33 @@ class ContigLikeLoader(SequenceLikeLoader):
         self.bulk_create_wrapper(through.objects.bulk_create)(objs)
 
 
-class ContigClusterLoader(ContigLikeLoader):
-    """ Manager for the ContigCluster model """
-    is_loaded_attr = 'contigs_ok'
+class ContigLoader(ContigLikeLoader):
+    """ Manager for the Contig model """
+    fasta_load_flag = 'contig_fasta_loaded'
+    abundance_load_flag = 'contigs_abundance_loaded'
 
     def get_fasta_path(self, sample):
-        return settings.OMICS_DATA_ROOT / 'ASSEMBLIES' / 'MERGED' \
-            / (sample.accession + '_MCDD.fa')
+        return sample.get_metagenome_path() / 'annotation' \
+            / (sample.tracking_id + '_MCDD.fa')
 
-    def get_coverage_path(self, sample):
-        return settings.OMICS_DATA_ROOT / 'ASSEMBLIES' / 'COVERAGE' \
-            / f'{sample.accession}_READSvsCONTIGS.rpkm'
+    def get_rpkm_path(self, sample):
+        return sample.get_metagenome_path() / 'annotation' \
+            / f'{sample.tracking_id}_READSvsCONTIGS.rpkm'
+
+    def upper(self, value, record):
+        """ upper case contig ids """
+        return value.upper()
+
+    rpkm_spec = BBMap_RPKM_Spec(
+        ('#Name', 'contig_id', upper),
+        ('Length', 'length'),
+        ('Bases', 'bases'),
+        ('Coverage', 'coverage'),
+        ('Reads', 'reads_mapped'),
+        ('RPKM', 'rpkm'),
+        ('Frags', 'frags_mapped'),
+        ('FPKM', 'fpkm'),
+    )
 
     def read_contigs_file(self, sample):
         """
@@ -509,8 +649,10 @@ class FuncAbundanceLoader(Loader, SampleLoadMixin):
     ok_field_name = 'func_abund_ok'
 
     def get_file(self, sample):
-        return settings.OMICS_DATA_ROOT / 'GENES' \
-            / f'{sample.accession}_functions_{settings.OMICS_DATA_VERSION}.txt'
+        return resolve_glob(
+            sample.get_metagenome_path() / 'annotation',
+            f'{sample.tracking_id}_functionss_*.txt'
+        )
 
     spec = CSV_Spec(
         ('fid', 'function'),
@@ -524,27 +666,47 @@ class FuncAbundanceLoader(Loader, SampleLoadMixin):
 
 class GeneLoader(ContigLikeLoader):
     """ Manager for the Gene model """
-    is_loaded_attr = 'genes_ok'
+    fasta_load_flag = 'gene_fasta_loaded'
+    abundance_load_flag = 'contigs_abundance_loaded'
+
+    def get_rpkm_path(self, sample):
+        return sample.get_metagenome_path() / 'annotation' \
+            / f'{sample.tracking_id}_READSvsGENES.rpkm'
+
+    def extract_gene_id(self, value, record):
+        """ get just the gene id from what was a post-prodigal fasta header """
+        return value.split(maxsplit=1)[0].upper()
+
+    rpkm_spec = BBMap_RPKM_Spec(
+        ('#Name', 'gene_id', extract_gene_id),
+        ('Length', 'length'),
+        ('Bases', 'bases'),
+        ('Coverage', 'coverage'),
+        ('Reads', 'reads_mapped'),
+        ('RPKM', 'rpkm'),
+        ('Frags', 'frags_mapped'),
+        ('FPKM', 'fpkm'),
+    )
 
     @wraps(ContigLikeLoader.load_sample)
-    def load_sample(self, sample, *args, **kwargs):
+    def XXX_load_sample(self, sample, *args, **kwargs):
         if not sample.contigs_ok:
             raise RuntimeError('require to have contigs before loading genes')
         super().load_sample(sample, *args, **kwargs)
 
     def get_fasta_path(self, sample):
         return (
-            settings.OMICS_DATA_ROOT / 'GENES'
-            / (sample.accession + '_GENES.fna')
+            sample.get_metagenome_path() / 'annotation'
+            / f'{sample.tracking_id}_GENES.fna'
         )
 
     def get_coverage_path(self, sample):
-        return (settings.OMICS_DATA_ROOT / 'GENES' / 'COVERAGE'
-                / f'{sample.accession}_READSvsGENES.rpkm')
+        return sample.get_metagenome_path() / 'annotation' \
+            / f'{sample.tracking_id}_READSvsGENES.rpkm'
 
     def get_load_sample_fasta_extra_kw(self, sample):
-        # returns a dict of the sample's contig clusters
-        qs = sample.contigcluster_set.values_list('cluster_id', 'pk')
+        # returns a dict of the sample's contig
+        qs = sample.contig_set.values_list('contig_id', 'pk')
         return dict(contig_ids=dict(qs.iterator()))
 
     def read_contigs_file(self, sample):
@@ -695,6 +857,7 @@ class SampleManager(Manager):
                         unchanged += 1
                 finally:
                     if need_save:
+                        obj.metag_pipeline_reg = True
                         obj.full_clean()
                         obj.save()
                         log.info(save_info)
@@ -736,7 +899,7 @@ class SampleManager(Manager):
         for i in self.all():
             print(
                 f'{i}:',
-                i.contigcluster_set.count(),
+                i.contig_set.count(),
                 i.binmax_set.count(),
                 i.binmet93_set.count(),
                 i.binmet97_set.count(),
@@ -751,8 +914,10 @@ class TaxonAbundanceLoader(Loader, SampleLoadMixin):
     ok_field_name = 'tax_abund_ok'
 
     def get_file(self, sample):
-        return settings.OMICS_DATA_ROOT / 'GENES' \
-            / f'{sample.accession}_community_{settings.OMICS_DATA_VERSION}.txt'
+        return resolve_glob(
+            sample.get_metagenome_path() / 'annotation',
+            f'{sample.tracking_id}_community_*.txt'
+        )
 
     # conversion functions, methods without self, get passed to _load_lines and
     # called ?unbound? or so

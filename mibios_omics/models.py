@@ -59,10 +59,36 @@ class AbstractSample(Model):
         **opt,
     )
 
-    # data accounting
-    contigs_ok = models.BooleanField(
+    # sample data accounting flags
+    meta_data_loaded = models.BooleanField(
+        # this flag is not managed in mibios_omics but by downstream
+        # implementers of the abstract sample model
         default=False,
-        help_text='Contig cluster data and coverage loaded',
+        help_text='meta data successfully loaded',
+    )
+    metag_pipeline_reg = models.BooleanField(
+        default=False,
+        help_text='is registered in metagenomic pipeline, has tracking ID',
+    )
+    contig_fasta_loaded = models.BooleanField(
+        default=False,
+        help_text='contig fasta data loaded',
+    )
+    gene_fasta_loaded = models.BooleanField(
+        default=False,
+        help_text='gene fasta data loaded',
+    )
+    contig_abundance_loaded = models.BooleanField(
+        default=False,
+        help_text='contig abundance/rpkm data data loaded',
+    )
+    gene_abundance_loaded = models.BooleanField(
+        default=False,
+        help_text='gene abundance/rpkm data loaded',
+    )
+    gene_alignment_hits_loaded = models.BooleanField(
+        default=False,
+        help_text='gene alignment hits to UniRef100 loaded',
     )
     binning_ok = models.BooleanField(
         default=False,
@@ -150,6 +176,10 @@ class AbstractSample(Model):
             self.checkm_ok = False  # was cascade-deleted
             self.save()
 
+    def get_metagenome_path(self):
+        return settings.OMICS_DATA_ROOT / 'data' / 'omics' / 'metagenomes' \
+            / self.tracking_id
+
     def get_fq_paths(self):
         base = settings.OMICS_DATA_ROOT / 'READS'
         fname = f'{self.accession}_{{infix}}.fastq.gz'
@@ -170,7 +200,7 @@ class AbstractSample(Model):
 
         Assumes no existing data
         """
-        ContigCluster.loader.load_sample(self)
+        Contig.loader.load_sample(self)
         Gene.loader.load_sample(self)
         FuncAbundance.loader.load_sample(self)
         CompoundAbundance.loader.load_sample(self)
@@ -234,6 +264,20 @@ class AbstractSampleGroup(Model):
         if cls._orphan_group_obj is None:
             cls._orphan_group_obj = cls(orphan_group=True)
         return cls._orphan_group_obj
+
+
+class Alignment(Model):
+    """ Model for a gene vs. UniRef100 alignment hit """
+    history = None
+    gene = models.ForeignKey('Gene', **fk_req)
+    ref = models.ForeignKey(UniRef100, **fk_req)
+
+    loader = managers.AlignmentLoader()
+
+    class Meta:
+        unique_together = (
+            ('gene', 'ref'),
+        )
 
 
 class Bin(Model):
@@ -354,10 +398,10 @@ class Bin(Model):
                     continue
                 cids.append(line.strip().lstrip('>'))
 
-        qs = ContigCluster.objects.filter(sample=sample, cluster_id__in=cids)
+        qs = Contig.objects.filter(sample=sample, contig_id__in=cids)
         kwargs = {cls._meta.get_field('members').remote_field.name: obj}
         qs.update(**kwargs)
-        log.info(f'{obj} imported: {len(cids)} contig clusters')
+        log.info(f'{obj} imported: {len(cids)} contigs')
         return len(cids)
 
 
@@ -660,43 +704,63 @@ class CompoundAbundance(AbstractAbundance):
 
 class SequenceLike(Model):
     """
-    Abstraction of model based on fasta file sequences
+    Models for sequences as found in fasta (or similar) files
     """
     history = None
     sample = models.ForeignKey(settings.OMICS_SAMPLE_MODEL, **fk_req)
 
-    # Data from fasta file:
-    # 1. offset of begin of sequence in bytes
-    seq_offset = models.PositiveIntegerField(**opt)
-    # 2. num of bytes until next offset (or EOF)
-    seq_bytes = models.PositiveIntegerField(**opt)
+    fasta_offset = models.PositiveIntegerField(
+        **opt,
+        help_text='offset of first byte of fasta (or similar) header, if there'
+                  ' is one, otherwise first byte of sequence',
+    )
+    fasta_len = models.PositiveIntegerField(
+        **opt,
+        help_text='length of sequence record in bytes, header+sequence '
+                  'including internal and final newlines or until EOF.'
+    )
 
     objects = managers.SequenceLikeManager()
 
     class Meta:
         abstract = True
 
-    def get_sequence(self, fasta_format=False, file=None):
+    def get_sequence(self, fasta_format=False, file=None,
+                     original_header=False):
         """
         Retrieve sequence from file storage, optionally fasta-formatted
 
         To get sequences for many objects, use the to_fasta() queryset method,
         which is much more efficient than calling this method while iterating
         over a queryset.
-        """
-        if file is None:
-            p = self.__class__.loader.get_fasta_path(self.sample)
-            with p.open('rb') as f:
-                seq = get_fasta_sequence(f, self.seq_offset, self.seq_bytes)
-        else:
-            seq = get_fasta_sequence(file, self.seq_offset, self.seq_bytes)
 
-        if fasta_format:
-            lines = [f'>{self}']
+        If fasta_format is True, then the output will be a two-line string that
+        may end with a newline.  If original_header is False a new header based
+        on the model instance will be generated.  If fasta_format is False, the
+        return value will be a string without any newlines.
+        """
+        if original_header and not fasta_format:
+            raise ValueError('incompatible parameters: can only ask for '
+                             'original header with fasta format')
+        if file is None:
+            p = self._meta.managers_map['loader'].get_fasta_path(self.sample)
+            fh = p.open('rb')
         else:
-            lines = []
-        lines.append(seq.decode())
-        return '\n'.join(lines)
+            fh = file
+
+        skip_header = not fasta_format or not original_header
+        try:
+            seq = get_fasta_sequence(fh, self.fasta_offset, self.fasta_len,
+                                     skip_header=skip_header)
+        finally:
+            if file is None:
+                fh.close()
+
+        seq = seq.decode()
+        if fasta_format and not original_header:
+            return ''.join([f'>{self}\n', seq])
+        else:
+            return seq
 
 
 class ContigLike(SequenceLike):
@@ -723,7 +787,7 @@ class ContigLike(SequenceLike):
     fpkm = models.DecimalField(decimal_places=4, max_digits=10, **opt)
     # taxon + lca from contigs file
     taxid = models.ManyToManyField(TaxID, related_name='classified_%(class)s')
-    lca = models.ForeignKey(Taxon, **fk_req)
+    lca = models.ForeignKey(Taxon, **fk_opt)
 
     class Meta:
         abstract = True
@@ -732,8 +796,8 @@ class ContigLike(SequenceLike):
     id_field_name = None
 
 
-class ContigCluster(ContigLike):
-    cluster_id = AccessionField(prefix='CLUSTER', unique=False, max_length=50)
+class Contig(ContigLike):
+    contig_id = AccessionField(prefix='CLUSTER:', unique=False, max_length=50)
 
     # bin membership
     bin_max = models.ForeignKey(BinMAX, **fk_opt, related_name='members')
@@ -742,27 +806,27 @@ class ContigCluster(ContigLike):
     bin_m99 = models.ForeignKey(BinMET99, **fk_opt, related_name='members')
     lca = models.ForeignKey(Taxon, **fk_opt)  # opt. for contigs w/o genes
 
-    loader = managers.ContigClusterLoader()
+    loader = managers.ContigLoader()
 
     class Meta:
         default_manager_name = 'objects'
         unique_together = (
-            ('sample', 'cluster_id'),
+            ('sample', 'contig_id'),
         )
 
-    id_field_name = 'cluster_id'
+    id_field_name = 'contig_id'
 
     def __str__(self):
         return self.accession
 
     @property
     def accession(self):
-        return f'{self.sample}:{self.cluster_id}'
+        return f'{self.sample}:{self.contig_id}'
 
     def set_from_fa_head(self, fasta_head_line):
 
         # parsing ">foo\n" -> "foo"  /  FIXME: varying case issue
-        self.cluster_id = fasta_head_line.lstrip('>').rstrip().upper()
+        self.contig_id = fasta_head_line.lstrip('>').rstrip().upper()
 
 
 class FuncAbundance(AbstractAbundance):
@@ -800,7 +864,7 @@ class Gene(ContigLike):
         ('-', '-'),
     )
     gene_id = AccessionField(prefix='CLUSTER', unique=False, max_length=50)
-    contig = models.ForeignKey('ContigCluster', **fk_req)
+    contig = models.ForeignKey('Contig', **fk_req)
     start = models.PositiveIntegerField()
     end = models.PositiveIntegerField()
     strand = models.CharField(choices=STRAND_CHOICE, max_length=1)
@@ -842,7 +906,12 @@ class Gene(ContigLike):
             raise ValueError('expected strand to be "1" or "-1"')
 
         self.gene_id = name.upper()  # FIXME: solve varying case issue
-        self.contig_id = contig_ids[cont_id.upper()]  # FIXME: case issue again
+        try:
+            self.contig_id = contig_ids[cont_id.upper()]  # FIXME: case issue
+        except KeyError as e:
+            raise RuntimeError(
+                f'no such contig: {e} -- ensure contigs are loaded'
+            )
         self.start = start
         self.end = end
         self.strand = strand
@@ -851,7 +920,7 @@ class Gene(ContigLike):
 class NCRNA(Model):
     history = None
     sample = models.ForeignKey(settings.OMICS_SAMPLE_MODEL, **fk_req)
-    contig = models.ForeignKey('ContigCluster', **fk_req)
+    contig = models.ForeignKey('Contig', **fk_req)
     match = models.ForeignKey('RNACentralRep', **fk_req)
     part = models.PositiveIntegerField(**opt)
 
@@ -1083,7 +1152,7 @@ def load_all(**kwargs):
     verbose = kwargs.get('verbose', False)
     get_sample_model().sync(**kwargs)
     # ReadLibrary.sync()
-    ContigCluster.load(verbose=verbose)
+    Contig.load(verbose=verbose)
     Bin.import_all()
     CheckM.import_all()
     Gene.load(verbose=verbose)

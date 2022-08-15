@@ -39,26 +39,33 @@ def get_sample_model():
         )
 
 
-def get_fasta_sequence(file, offset, length):
+def get_fasta_sequence(file, offset, length, skip_header=True):
     """
-    Retrieve sequence from fasta formatted file with known offset
+    Retrieve sequence record from fasta formatted file with known offset
 
     parameters:
         file: file like object, opened for reading bytes
-        offset: start of sequence data
-        length: expected length in bytes
+        offset: first byte of header
+        length: length of data in bytes
 
-    Returns sequence data as bytes string.
+    Returns the fasta record or sequence as bytes string.  The sequence part
+    will be returned in a single line even if it was broken up into multiple
+    line originally.
     """
     file.seek(offset)
-    seq = b''
-    for line in file:
-        if line.startswith(b'>'):
-            break
-        seq += line.strip()
-    if len(seq) > length:
-        raise RuntimeError(
-            f'Unexpectedly, sequence at {file}:{offset} has a length '
-            f'{len(seq)} but {length} was expected.'
-        )
-    return seq
+    if skip_header:
+        header = file.readline()[0] == b'>'
+        if header[0] != b'>':
+            raise RuntimeError('expected fasta header start ">" missing')
+        length -= len(header)
+        if length < 0:
+            raise ValueError('header is longer than length')
+    else:
+        # not bothering with any checks here
+        pass
+
+    data = file.read(length).splitlines()
+    if not skip_header:
+        data.insert(1, b'\n')
+    data = b''.join(data.splitlines())
+    return data

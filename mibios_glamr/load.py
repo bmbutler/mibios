@@ -162,5 +162,5 @@ class SampleLoader(Loader):
         dset, new = Dataset.objects.get_or_create(
             short_name='2014 Metagenomes',
         )
-        template = dict(group=dset)
+        template = dict(group=dset, meta_data_loaded=True)
         super().load(update=update, template=template)
