@@ -1,8 +1,8 @@
 from collections import defaultdict
-from functools import partial
+from functools import partial, wraps
 from itertools import islice
 from logging import getLogger
-from operator import length_hint
+from operator import attrgetter, length_hint
 from time import sleep
 
 from django.conf import settings
@@ -175,9 +175,9 @@ class BaseLoader(DjangoManager):
     simple list, listing the fields in the right order.
     """
 
-    def load(self, start=0, limit=None, dry_run=False, sep=None,
+    def load(self, spec=None, start=0, limit=None, dry_run=False, sep=None,
              parse_only=False, file=None, template={}, skip_on_error=False,
-             validate=False):
+             update=False, validate=False):
         """
         Load data from file
 
@@ -200,7 +200,7 @@ class BaseLoader(DjangoManager):
 
         May assume empty table ?!?
         """
-        setup_kw = {}
+        setup_kw = dict(spec=spec)
         if sep is not None:
             setup_kw['sep'] = sep
         if file is not None:
@@ -227,6 +227,7 @@ class BaseLoader(DjangoManager):
                 dry_run=dry_run,
                 skip_on_error=skip_on_error,
                 validate=validate,
+                update=update,
                 first_lineno=start + 2 if self.spec.has_header else 1,
             )
         except Exception:
@@ -246,6 +247,10 @@ class BaseLoader(DjangoManager):
             self.spec = spec
         self.spec.setup(loader=self, **kwargs)
 
+    @wraps(load)
+    def load_update(self, *args, **kwargs):
+        return self.load(*args, update=True, **kwargs)
+
     @atomic_dry
     def _load_rows(self, rows, sep='\t', dry_run=False, template={},
                    skip_on_error=False, validate=False, update=False,
@@ -259,12 +264,18 @@ class BaseLoader(DjangoManager):
         pp = ProgressPrinter(f'{self.model._meta.model_name} records read')
         rows = pp(rows)
 
+        if update:
+            print(f'Retrieving {self.model._meta.model_name} records for '
+                  f'update mode... ', end='', flush=True)
+            obj_pool = self._get_objects_for_update(template)
+            print(f'[{len(obj_pool)} OK]')
+
         # loading FK (acc,...)->pk mappings
         fkmap = {}
         for i in fields:
             if not i.many_to_one:
                 continue
-            print(f'Loading {i.related_model._meta.verbose_name} data...',
+            print(f'Retrieving {i.related_model._meta.verbose_name} data...',
                   end='', flush=True)
             lookups = i.related_model.get_accession_lookups()
             fkmap[i.name] = {
@@ -284,9 +295,6 @@ class BaseLoader(DjangoManager):
             if num_line_errors >= max_line_errors:
                 raise RuntimeError('ERROR: too many per-line errors')
 
-            obj = self.model(**template)
-            m2m = {}
-
             if len(row) != ncols:
                 err_msg = (f'\nERROR: on line {lineno}: bad num of cols: '
                            f'{len(row)} expected: {ncols=}')
@@ -296,7 +304,10 @@ class BaseLoader(DjangoManager):
                     continue
                 raise InputFileError(err_msg)
 
+            obj = None
+            m2m = {}
             for field, fn, value in self.spec.row_data(row):
+
                 if callable(fn):
                     try:
                         value = fn(value, row)
@@ -312,6 +323,26 @@ class BaseLoader(DjangoManager):
                         continue  # treats value as empty
                     elif value is InputFileSpec.SKIP_ROW:
                         break  # skips line / avoids for-else block
+
+                if obj is None:
+                    if update:
+                        # first field MUST identify the object, the value's
+                        # type must match the obj pool's keys
+                        try:
+                            obj = obj_pool[value]
+                        except KeyError as e:
+                            if skip_on_error:
+                                print(
+                                    f'\nERROR on line {lineno}: update mode, '
+                                    f'but found no record with key {e} -- '
+                                    f'will skip offending row:\n{row}'
+                                )
+                                num_line_errors += 1
+                                break  # skip this row
+                            raise
+
+                    else:
+                        obj = self.model(**template)
 
                 if field.many_to_many:
                     # the "value" here is a list of tuples of through model
@@ -366,6 +397,8 @@ class BaseLoader(DjangoManager):
                     m2m_data[obj.get_accessions()] = m2m
 
         del fkmap, field, value, row, pk, obj, m2m
+        if update:
+            del obj_pool
         sleep(0.2)  # let the progress meter finish before printing warnings
 
         for fname, bad_ids in missing_fks.items():
@@ -387,7 +420,10 @@ class BaseLoader(DjangoManager):
             del fname, bad_ids
         del missing_fks, skip_count
 
-        self.bulk_create(objs)
+        if update:
+            self.bulk_update(objs, fields=[i.name for i in fields])
+        else:
+            self.bulk_create(objs)
         del objs
 
         if m2m_data:
@@ -575,6 +611,30 @@ class BaseLoader(DjangoManager):
 
             data.append(rec)
         return data
+
+    def _get_objects_for_update(self, template):
+        """
+        helper for load() to get a pool of objects that can be updated
+
+        Returns a dictionary mapping accession keys to instances.  The keys are
+        the accession fields less the fields in the template.  Because of the
+        way attrgetter works, if there is a single accession field used, then
+        the key will be a single scalar value and if muliple fields are used
+        then then the key will be a tuple of values.  This needs to be taken
+        into account if conversion functions are used to mangle the field's
+        value to match the keys.
+        """
+        pool_key_fields = [
+            i.name for i in self.model.get_accession_fields()
+            if i.name not in template
+        ]
+        get_pool_key = attrgetter(*pool_key_fields)
+        # so the key is either a scalar value or a tuple of values
+        obj_pool = {
+            get_pool_key(i): i
+            for i in self.filter(**template).iterator()
+        }
+        return obj_pool
 
     def quick_erase(self):
         quickdel = import_string(
