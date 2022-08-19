@@ -500,6 +500,10 @@ class InputFileSpec:
                 row_data.append((field, convfuncs.pop(0), value))
         return row_data
 
+    def row2dict(self, row):
+        """ turn a row (of values) into a dict with field names as keys """
+        return {field.name: val for field, _, val in self.row_data(row)}
+
 
 class CSV_Spec(InputFileSpec):
     def __init__(self, *column_specs, sep='\t'):
