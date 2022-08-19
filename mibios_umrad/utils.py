@@ -485,6 +485,8 @@ class InputFileSpec:
         """
         List a row as tuples (field, func, value)
 
+        Blank/empty values will be set to None here
+
         :param list row: A list of str
         """
         row_data = []
@@ -492,7 +494,10 @@ class InputFileSpec:
         convfuncs = list(self.get_convfuncs())
         for key, value in zip(self.all_keys, row):
             if key is not None:
-                row_data.append((fields.pop(0), convfuncs.pop(0), value))
+                field = fields.pop(0)
+                if value in self.empty_values or value in field.empty_values:
+                    value = None
+                row_data.append((field, convfuncs.pop(0), value))
         return row_data
 
 

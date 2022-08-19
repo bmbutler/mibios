@@ -257,7 +257,6 @@ class BaseLoader(DjangoManager):
                    first_lineno=None):
         ncols = len(self.spec)
         fields = self.spec.get_fields()
-        empty_extra = self.spec.empty_values
         num_line_errors = 0
         max_line_errors = 10  # > 0
 
@@ -320,7 +319,7 @@ class BaseLoader(DjangoManager):
                         raise
 
                     if value is InputFileSpec.IGNORE_COLUMN:
-                        continue  # treats value as empty
+                        continue  # next column
                     elif value is InputFileSpec.SKIP_ROW:
                         break  # skips line / avoids for-else block
 
@@ -358,6 +357,11 @@ class BaseLoader(DjangoManager):
                     if isinstance(value, str):
                         value = [(i, ) for i in self.split_m2m_value(value)]
                     m2m[field.name] = value
+
+                elif value is None:
+                    # blank / empty value -- any non-m2m field type
+                    setattr(obj, field.name, field.get_default())
+
                 elif field.many_to_one:
                     if not isinstance(value, tuple):
                         value = (value, )  # fkmap keys are tuples
@@ -373,13 +377,11 @@ class BaseLoader(DjangoManager):
                             break  # skip this obj / skips for-else block
                     else:
                         setattr(obj, field.name + '_id', pk)
-                elif value not in empty_extra and value not in field.empty_values:  # noqa: E501
+                else:
+                    # regular field with value
                     # TODO: find out why leaving '' in for int fields fails
                     # ValueError @ django/db/models/fields/__init__.py:1825
                     setattr(obj, field.name, value)
-                else:
-                    # empty field
-                    pass
             else:
                 if validate:
                     try:
