@@ -278,7 +278,12 @@ class BaseLoader(DjangoManager):
                 continue
             print(f'Retrieving {i.related_model._meta.verbose_name} data...',
                   end='', flush=True)
-            lookups = i.related_model.get_accession_lookups()
+            if i.name in self.spec.fk_attrs:
+                # lookup field given by dot-notaton
+                lookups = (self.spec.fk_attrs[i.name], )
+            else:
+                # use defaults
+                lookups = i.related_model.get_accession_lookups()
             fkmap[i.name] = {
                 tuple(a): pk for *a, pk
                 in i.related_model.objects.values_list(*lookups, 'pk')

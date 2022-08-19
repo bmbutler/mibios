@@ -347,6 +347,7 @@ class InputFileSpec:
         self.loader = None
         self.path = None
         self.has_header = None
+        self.fk_attrs = {}
 
     def setup(self, loader, column_specs=None, path=None):
         """
@@ -412,35 +413,39 @@ class InputFileSpec:
 
             if key is None:
                 # ignore this column
-                pass
-            else:
-                keys.append(key)
-                if convfunc:
-                    if len(convfunc) > 1:
+                continue
+
+            if '.' in key:
+                key, _, attr = key.partition('.')
+                self.fk_attrs[key] = attr
+
+            keys.append(key)
+            if convfunc:
+                if len(convfunc) > 1:
+                    raise ValueError(
+                        f'too many items in spec for {colname}/{key}'
+                    )
+                convfunc = convfunc[0]
+                if isinstance(convfunc, str):
+                    convfunc_name = convfunc
+                    # getattr gives us abound method:
+                    convfunc = getattr(loader, convfunc_name)
+                    if not callable(convfunc):
                         raise ValueError(
-                            f'too many items in spec for {colname}/{key}'
+                            f'not the name of a {self.loader} method: '
+                            f'{convfunc_name}'
                         )
-                    convfunc = convfunc[0]
-                    if isinstance(convfunc, str):
-                        convfunc_name = convfunc
-                        # getattr gives us abound method:
-                        convfunc = getattr(loader, convfunc_name)
-                        if not callable(convfunc):
-                            raise ValueError(
-                                f'not the name of a {self.loader} method: '
-                                f'{convfunc_name}'
-                            )
-                    elif callable(convfunc):
-                        # Assume it's a function that takes the loader as
-                        # 1st arg.  We get this when the previoudsly
-                        # delclared method's identifier is passed directly
-                        # in the spec's declaration.
-                        convfunc = partial(convfunc, self.loader)
-                    else:
-                        raise ValueError(f'not a callable: {convfunc}')
-                    conv.append(convfunc)
+                elif callable(convfunc):
+                    # Assume it's a function that takes the loader as
+                    # 1st arg.  We get this when the previoudsly
+                    # delclared method's identifier is passed directly
+                    # in the spec's declaration.
+                    convfunc = partial(convfunc, self.loader)
                 else:
-                    conv.append(None)
+                    raise ValueError(f'not a callable: {convfunc}')
+                conv.append(convfunc)
+            else:
+                conv.append(None)
 
         self.all_cols = all_cols
         self.cols = cols
