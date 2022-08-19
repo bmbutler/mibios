@@ -558,6 +558,7 @@ class ExcelSpec(InputFileSpec):
 
     def get_dataframe(self):
         """ Return file as pandas.DataFrame """
+        print(f'File opened: {self.path}')
         df = pandas.read_excel(
             str(self.path),
             sheet_name=self.sheet_name,

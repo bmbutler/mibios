@@ -260,7 +260,9 @@ class BaseLoader(DjangoManager):
         num_line_errors = 0
         max_line_errors = 10  # > 0
 
-        pp = ProgressPrinter(f'{self.model._meta.model_name} records read')
+        pp = ProgressPrinter(
+            f'{self.model._meta.model_name} rows read from file'
+        )
         rows = pp(rows)
 
         if update:
@@ -287,7 +289,8 @@ class BaseLoader(DjangoManager):
         objs = []
         m2m_data = {}
         missing_fks = defaultdict(set)
-        skip_count = 0
+        row_skip_count = 0
+        fk_skip_count = 0
         pk = None
 
         for lineno, row in enumerate(rows, start=first_lineno):
@@ -321,6 +324,7 @@ class BaseLoader(DjangoManager):
                     if value is InputFileSpec.IGNORE_COLUMN:
                         continue  # next column
                     elif value is InputFileSpec.SKIP_ROW:
+                        row_skip_count += 1
                         break  # skips line / avoids for-else block
 
                 if obj is None:
@@ -373,7 +377,7 @@ class BaseLoader(DjangoManager):
                         if field.null:
                             pass
                         else:
-                            skip_count += 1
+                            fk_skip_count += 1
                             break  # skip this obj / skips for-else block
                     else:
                         setattr(obj, field.name + '_id', pk)
@@ -392,6 +396,9 @@ class BaseLoader(DjangoManager):
                                   f'skip offending row\n{row}')
                             num_line_errors += 1
                             continue  # skips line
+                        print(f'\nERROR on line {lineno}: {e}')
+                        print('offending row:', row)
+                        print(f'{vars(obj)=}')
                         raise
 
                 objs.append(obj)
@@ -410,9 +417,12 @@ class BaseLoader(DjangoManager):
                       '/'.join([str(j) for j in i]) for i in islice(bad_ids, 5)
                   ]),
                   '...' if len(bad_ids) > 5 else '')
-        if skip_count:
-            print(f'WARNING: skipped {skip_count} rows due to unknown but '
+        if fk_skip_count:
+            print(f'WARNING: skipped {fk_skip_count} rows due to unknown but '
                   f'non-null FK IDs')
+        if row_skip_count:
+            print(f'Skipped {row_skip_count} rows (blank rows/other reasons '
+                  f'see file spec)')
 
         if not objs:
             print('WARNING: nothing saved, empty file or all got skipped')
@@ -420,7 +430,7 @@ class BaseLoader(DjangoManager):
 
         if missing_fks:
             del fname, bad_ids
-        del missing_fks, skip_count
+        del missing_fks, row_skip_count, fk_skip_count
 
         if update:
             self.bulk_update(objs, fields=[i.name for i in fields])
