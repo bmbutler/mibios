@@ -531,10 +531,10 @@ class DemoFrontPageView(SingleTableView):
             .filter(taxname='MICROCYSTIS') \
             .select_related('sample')[:5]
         ctx['keyword_search_form'] = SearchForm()
-        self.make_ratios_plot()
         return ctx
 
     def make_ratios_plot(self):
+        # DEPRECATED -- remove?
         imgpath = settings.STATIC_VAR_DIR + '/mappedratios.png'
         ratios = pandas.DataFrame([
             (i.reads_mapped_contigs / i.read_count,

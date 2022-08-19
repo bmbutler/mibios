@@ -5,7 +5,7 @@
 # because, if we were to define those functions here in __init__ the required
 # import of the settings gives us the mibios_omics'a app settings module and
 # not the expected LazySettings object for some strange reason.
-from . utils import get_sample_model, get_sample_group_model  # noqa: F401
+from . utils import get_sample_model, get_dataset_model  # noqa: F401
 
 
 class DBRouter:

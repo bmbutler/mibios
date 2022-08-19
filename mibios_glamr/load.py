@@ -1,9 +1,9 @@
-from pandas import isna
+from pandas import isna, Timestamp
 
 from django.conf import settings
 
 from mibios_umrad.manager import InputFileError, Loader
-from mibios_umrad.utils import ExcelSpec, CSV_Spec, atomic_dry
+from mibios_umrad.utils import ExcelSpec, atomic_dry
 
 
 class DatasetLoader(Loader):
@@ -43,7 +43,7 @@ class DatasetLoader(Loader):
         return tuple((getattr(ref, i) for i in id_lookups))
 
     spec = ExcelSpec(
-        ('StudyID', 'accession', ensure_id),
+        ('StudyID', 'study_id', ensure_id),
         ('Reference', 'reference', get_reference_ids),
         ('NCBI_BioProject', 'bioproject'),
         ('JGI_Project_ID', 'jgi_project'),
@@ -53,7 +53,7 @@ class DatasetLoader(Loader):
         ('Material Type', 'material_type'),
         ('Water Bodies', 'water_bodies'),
         ('Primers', 'primers'),
-        ('Gene target', 'gene_target'),
+        ('Sequencing targets', 'sequencing_target'),
         ('Sequencing Platform', 'sequencing_platform'),
         ('Size Fraction(s)', 'size_fraction'),
         ('Notes', 'note'),
@@ -91,76 +91,110 @@ class ReferenceLoader(Loader):
 
 
 class SampleLoader(Loader):
-
-    spec = CSV_Spec()
+    """ loader for Great_Lakes_AMplicon_Datasets.xlsx """
+    empty_values = ['NA', 'Not Listed', 'NF', '#N/A']
 
     def get_file(self):
-        return settings.GLAMR_META_ROOT / '2014_metaG_metadata.tsv'
+        return settings.GLAMR_META_ROOT / 'Great_Lakes_Amplicon_Datasets.xlsx'
 
     def fix_sample_id(self, value, row):
         """ Remove leading "SAMPLE_" from accession value """
         return value.removeprefix('Sample_')
 
-    @atomic_dry
-    def load_erie2014(self, update=False):
-        fnames = [
-            'sample_id',
-            'site',
-            'fraction',
-            'sample_name',
-            'date',
-            'station_depth',
-            'sample_depth',
-            'sample_depth_category',
-            'local_time',
-            'latitude',
-            'longitude',
-            'wind_speed',
-            'wave_height',
-            'sky',
-            'secchi_depth',
-            'sample_temperature',
-            'ctd_temperature',
-            'ctd_specific_conductivity',
-            'ctd_beam_attenuation',
-            'ctd_tramission',
-            'ctd_dissolved_oxygen',
-            'ctd_radiation',
-            'turbidity',
-            'particulate_microcystin',
-            'dissolved_microcystin',
-            'extracted_phycocyanin',
-            'extracted_chlorophyll_a',
-            'phosphorus',
-            'dissolved_phosphorus',
-            'soluble_reactive_phosphorus',
-            'ammonia',
-            'nitrate_nitrite',
-            'urea',
-            'organic_carbon',
-            'organic_nitrogen',
-            'dissolved_organic_carbon',
-            'absorbance',
-            'suspended_solids',
-            'Volatile_suspended_solids']
-
-        # get column headers from verbose names!
-        specs = []
-        for i in fnames:
-            # column spec format is:
-            # (<colum header>, <field name>, [conversion function])
-            if i == 'sample_id':
-                specs.append(('accession', i, 'fix_sample_id'))
+    def parse_bool(self, value, row):
+        if value:
+            if value == 'FALSE':
+                return False
+            elif value == 'TRUE':
+                return True
             else:
-                field = self.model._meta.get_field(i)
-                specs.append((field.verbose_name, i))
-        self.empty_values = ['NA']
-        self.spec.setup(loader=self, column_specs=specs)
+                raise InputFileError(
+                    f'expected TRUE or FALSE but got: {value}'
+                )
+        return value
 
-        # FIXME: need some proper source for dataset
-        Dataset = self.model._meta.get_field('group').related_model
-        dset, new = Dataset.objects.get_or_create(
-            short_name='2014 Metagenomes',
-        )
-        template = dict(group=dset, meta_data_loaded=True)
-        super().load(update=update, template=template)
+    def check_ids(self, value, row):
+        """ check that we have at least some ID value """
+        if value:
+            return value
+
+        # check other ID columns
+        row = self.spec.row2dict(row)
+        if row['biosample'] or row['sra_accession']:
+            return value
+
+        # consider row blank
+        return self.spec.SKIP_ROW
+
+    def ensure_tz(self, value, row):
+        """ add missing time zone """
+        # Django would, in DateTimeField.get_prep_value(), add the configured
+        # TZ for naive timestamps also, BUT would spam us with WARNINGs, so
+        # this here is only to avoid those warnings.
+        # Pandas should give us Timestamp instances here
+        if isinstance(value, Timestamp):
+            if value.tz is None and settings.USE_TZ:
+                value = value.tz_localize(settings.TIME_ZONE)
+        return value
+
+    spec = ExcelSpec(
+        ('StudyID', 'dataset.study_id'),
+        ('SampleID', None),
+        ('SampleName', 'sample_name', check_ids),
+        ('NCBI_BioProject', None),
+        ('Biosample', 'biosample'),
+        ('Accession_Number', 'sra_accession'),
+        ('sample_type', 'sample_type'),
+        ('amplicon_target', 'amplicon_target'),
+        ('F_primer', 'fwd_primer'),
+        ('R_primer', 'rev_primer'),
+        ('geo_loc_name', 'geo_loc_name'),
+        ('GAZ_id', 'gaz_id'),
+        ('lat', 'latitude'),
+        ('lon', 'longitude'),
+        ('collection_date', 'collection_timestamp', ensure_tz),
+        ('NOAA_Site', 'noaa_site'),
+        ('env_broad_scale', 'env_broad_scale'),
+        ('env_local_scale', 'env_local_scale'),
+        ('env_medium', 'env_medium'),
+        ('modified_or_expermental', 'modified_or_experimental', parse_bool),
+        ('depth', 'depth'),
+        ('depth_sediment', 'depth_sediment'),
+        ('size_frac_up', 'size_frac_up'),
+        ('size_frac_low', 'size_frac_low'),
+        ('pH', 'ph'),
+        ('temp', 'temp'),
+        ('calcium', 'calcium'),
+        ('potassium', 'potassium'),
+        ('magnesium', 'magnesium'),
+        ('ammonium', 'ammonium'),
+        ('nitrate', 'nitrate'),
+        ('phosphorus', 'phosphorus'),
+        ('diss_oxygen', 'diss_oxygen'),
+        ('conduc', 'conduc'),
+        ('secci', 'secci'),
+        ('turbidity', 'turbidity'),
+        ('part_microcyst', 'part_microcyst'),
+        ('diss_microcyst', 'diss_microcyst'),
+        ('ext_phyco', 'ext_phyco'),
+        ('chlorophyl', 'chlorophyl'),
+        ('diss_phosp', 'diss_phosp'),
+        ('soluble_react_phosp', 'soluble_react_phosp'),
+        ('ammonia', 'ammonia'),
+        ('Nitrate_Nitrite', 'nitrate_nitrite'),
+        ('urea', 'urea'),
+        ('part_org_carb', 'part_org_carb'),
+        ('part_org_nitro', 'part_org_nitro'),
+        ('diss_org_carb', 'diss_org_carb'),
+        ('Col_DOM', 'col_dom'),
+        ('suspend_part_matter', 'suspend_part_matter'),
+        ('suspend_vol_solid', 'suspend_vol_solid'),
+        ('Notes', 'notes'),
+        sheet_name='samples',
+    )
+
+    @atomic_dry
+    def load_meta(self, **kwargs):
+        """ samples meta data """
+        template = dict(meta_data_loaded=True)
+        super().load(template=template, validate=True, **kwargs)

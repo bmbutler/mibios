@@ -39,23 +39,34 @@ class AbstractAbundance(Model):
 
 
 class AbstractSample(Model):
+    TYPE_AMPLICON = 'amplicon'
+    TYPE_METAGENOME = 'metagenome'
+    TYPE_METATRANS = 'metatranscriptome'
+    SAMPLE_TYPES_CHOICES = (
+        (TYPE_AMPLICON, TYPE_AMPLICON),
+        (TYPE_METAGENOME, TYPE_METAGENOME),
+        (TYPE_METATRANS, TYPE_METATRANS),
+    )
+
     tracking_id = models.CharField(
         # length of md5 checksum, 128 bit as hex string
         max_length=32,
-        unique=True,
-        **opt,
+        **uniq_opt,
         help_text='internal uniform hex id',
     )
     sample_id = models.CharField(
+        # FIXME: what is this?  move to implementers?
         max_length=256,
+        **uniq_opt,
         help_text='sample ID given by study',
     )
-    group = models.ForeignKey(
-        settings.OMICS_SAMPLE_GROUP_MODEL,
+    dataset = models.ForeignKey(
+        settings.OMICS_DATASET_MODEL,
         **fk_opt,
     )
     sample_type = models.CharField(
         max_length=32,
+        choices=SAMPLE_TYPES_CHOICES,
         **opt,
     )
 
@@ -144,11 +155,11 @@ class AbstractSample(Model):
     class Meta:
         abstract = True
         unique_together = (
-            ('group', 'sample_id'),
+            ('dataset', 'sample_id'),
         )
 
     def __str__(self):
-        return self.sample_id
+        return self.sample_id or self.tracking_id or super().__str__()
 
     def load_bins(self):
         if not self.binning_ok:
@@ -208,9 +219,9 @@ class AbstractSample(Model):
         set_rollback(dry_run)
 
 
-class AbstractSampleGroup(Model):
+class AbstractDataset(Model):
     """
-    Abstract base model for collections of samples
+    Abstract base model for a study or similar collections of samples
 
     To be used by apps that implement meta data models.
     """
@@ -229,33 +240,33 @@ class AbstractSampleGroup(Model):
         self.orphan_group = orphan_group
 
     _orphan_group_obj = None
-    orphan_group_description = 'samples without a group'
+    orphan_group_description = 'ungrouped samples'
 
     def samples(self):
         """
         Return samples in a way that also works for the orphan set
         """
         if self.orphan_group:
-            return get_sample_model().objects.filter(group=None)
+            return get_sample_model().objects.filter(dataset=None)
         else:
             return self.sample_set.all()
 
     def get_samples_url(self):
         """
-        Returns mibios table interface URL for table of the group's samples
+        Returns mibios table interface URL for table of the study's samples
         """
         conf = TableConfig(get_sample_model())
         if self.orphan_group:
-            conf.filter['group'] = None
+            conf.filter['dataset'] = None
         else:
-            conf.filter['group__pk'] = self.pk
+            conf.filter['dataset__pk'] = self.pk
         return conf.url()
 
     @classmethod
     @property
     def orphans(cls):
         """
-        Return the fake group for samples without a data set
+        Return the fake group of samples without a study
 
         The returned instance is for display purpose only, should not be saved.
         Implementing classes may want to set any useful attributes such as the
@@ -1135,12 +1146,12 @@ class Sample(AbstractSample):
         swappable = 'OMICS_SAMPLE_MODEL'
 
 
-class SampleGroup(AbstractSampleGroup):
+class Dataset(AbstractDataset):
     """
-    Placeholder model implementing groups of samples
+    Placeholder model implementing a dataset
     """
     class Meta:
-        swappable = 'OMICS_SAMPLE_GROUP_MODEL'
+        swappable = 'OMICS_DATASET_MODEL'
 
 
 def load_all(**kwargs):

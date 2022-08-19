@@ -1,60 +1,35 @@
 """
 GLAMR-specific modeling
 """
-from django.db import models
+from django.db import models, router, transaction
 from django.urls import reverse
 
-from mibios_omics.models import AbstractSampleGroup, AbstractSample
+from mibios_omics.models import AbstractDataset, AbstractSample
 from mibios_umrad.fields import AccessionField
 from mibios_umrad.models import Model
-from mibios_umrad.model_utils import ch_opt, fk_opt, uniq_opt
+from mibios_umrad.model_utils import ch_opt, fk_opt, uniq_opt, opt
 
 from .load import DatasetLoader, ReferenceLoader, SampleLoader
 
 
-class Dataset(AbstractSampleGroup):
+class Dataset(AbstractDataset):
     """
     A collection of related samples, e.g. a study or project
     """
     # FIXME: it's not clear which field identifies a "data set", which field
     # may not be blank, and which shall be unique
-    accession = AccessionField(
-        max_length=32,
-        **uniq_opt,
-        help_text='accession to data set/study/project',
+    study_id = models.PositiveIntegerField(
+        unique=True,
+        help_text='GLAMR accession to data set/study/project',
     )
     reference = models.ForeignKey('Reference', **fk_opt)
-    DB_GLAMR = 'GLAMR',
-    DB_NCBI = 'NCBI'
-    DB_JGI = 'JGI'
-    DB_CAMERA = 'Camera'
-    DB_VAMPS = 'VAMPS'
-    ACCESSION_DB_CHOICES = (
-        ('NCBI', DB_NCBI),
-        ('JGI', DB_JGI),
-        ('Camera', DB_CAMERA),
-        ('VAMPS', DB_VAMPS),
-    )
-    accession_db = models.CharField(
-        # NOTE: review needed, keep this field?
-        max_length=8,
-        **ch_opt,
-        choices=ACCESSION_DB_CHOICES,
-        help_text='Database associated with accession',
-    )
     bioproject = AccessionField(**uniq_opt)
     jgi_project = AccessionField(**uniq_opt)
     gold_id = AccessionField(**uniq_opt)
-    other_databases = models.CharField(max_length=64, **ch_opt)
     scheme = models.CharField(
         max_length=512,
         **ch_opt,
         verbose_name='location and sampling scheme',
-    )
-    sequencing_data_type = models.CharField(
-        max_length=128,
-        **ch_opt,
-        help_text='e.g. amplicon, metagenome',
     )
     material_type = models.CharField(
         max_length=128,
@@ -69,13 +44,13 @@ class Dataset(AbstractSampleGroup):
         max_length=64,
         **ch_opt,
     )
-    gene_target = models.CharField(
+    sequencing_target = models.CharField(
         max_length=64,
         **ch_opt,
     )
     sequencing_platform = models.CharField(
         max_length=64,
-        blank=True,
+        **ch_opt,
     )
     size_fraction = models.CharField(
         max_length=32,
@@ -89,9 +64,6 @@ class Dataset(AbstractSampleGroup):
 
     class Meta:
         default_manager_name = 'objects'
-        unique_together = (
-            ('accession', 'bioproject', 'jgi_project', 'gold_id'),
-        )
 
     def __init__(self, *args, orphan_group=False, **kwargs):
         super().__init__(*args, **kwargs)
@@ -113,6 +85,31 @@ class Dataset(AbstractSampleGroup):
 
         return ' - '.join(filter(None, [scheme, ref])) or self.short_name \
             or super().__str__()
+
+    bioproject_url_templ = 'https://www.ncbi.nlm.nih.gov/bioproject/{}'
+    jgi_project_url_templ = 'https://genome.jgi.doe.gov/portal/lookup' \
+        '?keyName=jgiProjectId&keyValue={}&app=Info&showParent=false'
+    gold_id_url_templ = None
+
+    def external_urls(self):
+        """ collect all external accessions with URLs """
+        urls = []
+        for i in ['bioproject', 'jgi_project', 'gold_id']:
+            field_value = getattr(self, i)
+            if field_value is None:
+                items = []
+            else:
+                items = field_value.replace(',', ' ').split()
+            for j in items:
+                template = getattr(self, i + '_url_templ')
+                if i == 'bioproject' and not j.startswith('PRJ'):
+                    # TODO: bad accession, fix at source
+                    template = None
+                if template:
+                    urls.append((j, template.format(j)))
+                else:
+                    urls.append((j, None))
+        return urls
 
     def get_accession_url(self):
         if self.accession_db == self.DB_NCBI:
@@ -176,188 +173,64 @@ class Reference(Model):
 
 
 class Sample(AbstractSample):
-    site = models.CharField(max_length=64, blank=True, verbose_name='Site')
-    fraction = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='fraction',
-    )
-    sample_name = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Sample_name',
-    )
-    date = models.DateField(verbose_name='Date', blank=True, null=True)
-    station_depth = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Station Depth (m)',
-    )
-    sample_depth = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Sample Depth (m)',
-    )
-    sample_depth_category = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Sample Depth (category)',
-    )
-    local_time = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Local Time (Eastern Time Zone)',
-    )
-    latitude = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Latitude (decimal deg)',
-    )
-    longitude = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Longitude (decimal deg)',
-    )
-    wind_speed = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Wind speed (knots)',
-    )
-    wave_height = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Wave Height (ft)',
-    )
-    sky = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Sky',
-    )
-    secchi_depth = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Secchi Depth (m)',
-    )
-    sample_temperature = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Sample Temperature (°C)',
-    )
-    ctd_temperature = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='CTD Temperature (°C)',
-    )
-    ctd_specific_conductivity = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='CTD Specific Conductivity (µS/cm)',
-    )
-    ctd_beam_attenuation = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='CTD Beam Attenuation (m-1)',
-    )
-    ctd_tramission = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='CTD Tramission (%)',
-    )
-    ctd_dissolved_oxygen = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='CTD Dissolved Oxygen (mg/L)',
-    )
-    ctd_radiation = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='CTD Photosynthetically Active Radiation (µE/m2/s)',
-    )
-    turbidity = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Turbidity (NTU)',
-    )
-    particulate_microcystin = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Particulate Microcystin (µg/L)',
-    )
-    dissolved_microcystin = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Dissolved Microcystin (µg/L)',
-    )
-    extracted_phycocyanin = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Extracted Phycocyanin (µg/L)',
-    )
-    extracted_chlorophyll_a = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Extracted Chlorophyll a (µg/L)',
-    )
-    phosphorus = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Total Phosphorus (µg P/L)',
-    )
-    dissolved_phosphorus = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Total Dissolved Phosphorus (µg P/L)',
-    )
-    soluble_reactive_phosphorus = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Soluble Reactive Phosphorus (µg P/L)',
-    )
-    ammonia = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Ammonia (µg N/L)',
-    )
-    nitrate_nitrite = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Nitrate + Nitrite (mg N/L)',
-    )
-    urea = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Urea (µg N/L)',
-    )
-    organic_carbon = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Particulate Organic Carbon (mg/L)',
-    )
-    organic_nitrogen = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Particulate Organic Nitrogen (mg/L)',
-    )
-    dissolved_organic_carbon = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Dissolved Organic Carbon (mg/L)',
-    )
-    absorbance = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Colored Dissolved Organic Material absorbance (m-1) at '
-                     '400nm',
-    )
-    suspended_solids = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Total Suspended Solids (mg/L)',
-    )
-    Volatile_suspended_solids = models.CharField(
-        max_length=64,
-        blank=True,
-        verbose_name='Volatile Suspended Solids (mg/L)',
-    )
+
+    # TODO: SampleID ??
+    sample_name = models.CharField(max_length=64)
+    # TODO: belongs to rdataset? NCBI_BioProject
+    biosample = models.CharField(max_length=16, **ch_opt)
+    sra_accession = models.CharField(max_length=16, **ch_opt, help_text='SRA accession')  # noqa: E501
+    amplicon_target = models.CharField(max_length=16, **ch_opt)
+    fwd_primer = models.CharField(max_length=32, **ch_opt)
+    rev_primer = models.CharField(max_length=32, **ch_opt)
+    geo_loc_name = models.CharField(max_length=256, **ch_opt)
+    gaz_id = models.CharField(max_length=16, **ch_opt, verbose_name='GAZ id')
+    latitude = models.CharField(max_length=16, **ch_opt)
+    longitude = models.CharField(max_length=16, **ch_opt)
+    # timestamp: expect ISO8601 formats plus yyyy and yyyy-mm
+    collection_timestamp = models.DateTimeField(**opt)
+    noaa_site = models.CharField(max_length=16, **ch_opt, verbose_name='NOAA Site')  # noqa: E501
+    env_broad_scale = models.CharField(max_length=64, **ch_opt)
+    env_local_scale = models.CharField(max_length=64, **ch_opt)
+    env_medium = models.CharField(max_length=64, **ch_opt)
+    modified_or_experimental = models.BooleanField(default=False)
+    depth = models.CharField(max_length=16, **ch_opt)
+    depth_sediment = models.CharField(max_length=16, **ch_opt)
+    size_frac_up = models.CharField(max_length=16, **ch_opt)
+    size_frac_low = models.CharField(max_length=16, **ch_opt)
+    ph = models.CharField(max_length=8, **ch_opt, verbose_name='pH')
+    temp = models.CharField(max_length=8, **ch_opt)
+    calcium = models.CharField(max_length=8, **ch_opt)
+    potassium = models.CharField(max_length=8, **ch_opt)
+    magnesium = models.CharField(max_length=8, **ch_opt)
+    ammonium = models.CharField(max_length=8, **ch_opt)
+    nitrate = models.CharField(max_length=8, **ch_opt)
+    phosphorus = models.CharField(max_length=8, **ch_opt)
+    diss_oxygen = models.CharField(max_length=8, **ch_opt)
+    conduc = models.CharField(max_length=16, **ch_opt)
+    secci = models.CharField(max_length=8, **ch_opt)
+    turbidity = models.CharField(max_length=8, **ch_opt)
+    part_microcyst = models.CharField(max_length=8, **ch_opt)
+    diss_microcyst = models.CharField(max_length=8, **ch_opt)
+    ext_phyco = models.CharField(max_length=8, **ch_opt)
+    chlorophyl = models.CharField(max_length=8, **ch_opt)
+    diss_phosp = models.CharField(max_length=8, **ch_opt)
+    soluble_react_phosp = models.CharField(max_length=8, **ch_opt)
+    ammonia = models.CharField(max_length=8, **ch_opt)
+    nitrate_nitrite = models.CharField(max_length=8, **ch_opt)
+    urea = models.CharField(max_length=8, **ch_opt)
+    part_org_carb = models.CharField(max_length=8, **ch_opt)
+    part_org_nitro = models.CharField(max_length=8, **ch_opt)
+    diss_org_carb = models.CharField(max_length=8, **ch_opt)
+    col_dom = models.CharField(max_length=8, **ch_opt)
+    suspend_part_matter = models.CharField(max_length=8, **ch_opt)
+    suspend_vol_solid = models.CharField(max_length=8, **ch_opt)
+    notes = models.CharField(max_length=512, **ch_opt)
 
     loader = SampleLoader()
+
+    class Meta:
+        default_manager_name = 'objects'
+
+    def __str__(self):
+        return self.sample_name or self.sample_id or self.biosample \
+            or super().__str__()

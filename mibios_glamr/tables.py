@@ -1,6 +1,7 @@
 from django.urls import reverse
+from django.utils.html import escape, format_html, mark_safe
 
-from django_tables2 import Column, Table, TemplateColumn
+from django_tables2 import A, Column, Table, TemplateColumn
 
 from mibios_glamr import models as glamr_models
 from mibios_omics import models as omics_models
@@ -122,7 +123,7 @@ class TaxonAbundanceTable(Table):
 class DatasetTable(Table):
     samples = Column(
         verbose_name='available samples',
-        linkify=lambda record: record.get_samples_url,
+        order_by=A('-sample_count'),
     )
     scheme = Column(
         empty_values=(),  # so render_foo can still take over for blank scheme
@@ -140,32 +141,47 @@ class DatasetTable(Table):
         empty_values=(),
         verbose_name='sample type',
     )
-    accession = Column(
-        verbose_name='data repository',
-        linkify=lambda record: record.get_accession_url(),
+    external_urls = Column(
+        verbose_name='external links',
     )
+
+    class Meta:
+        empty_text = 'no dataset / study information available'
 
     def render_scheme(self, value, record):
         r = record
-        return r.scheme or r.short_name or r.accession or r.bioproject \
-            or r.jgi_project or r.gold_id or '???'
+        return r.scheme or r.short_name or r.bioproject \
+            or r.jgi_project or r.gold_id or str(record)
 
-    def render_accession(self, record):
-        return f'{record.accession_db}: {record.accession}'
+    def render_external_urls(self, value, record):
+        # value is a list of tuples (accession, url)
+        items = []
+        for accession, url in value:
+            if url:
+                items.append(
+                    format_html('<a href="{}">{}</a>', url, accession)
+                )
+            else:
+                items.append(escape(accession))
+        return mark_safe(' '.join(items))
 
     def render_sample_type(self, record):
         types = record.sample_set.values_list('sample_type', flat=True)
         types = types.distinct()
         values = list(types)
         values += [
-            record.gene_target,
+            record.sequencing_target,
             record.size_fraction,
         ]
         values = filter(None, values)
         return ' '.join(list(values))
 
     def render_samples(self, record):
-        return f'{record.sample_count}'
+        if record.sample_count <= 0:
+            return 'no samples'
+
+        url = record.get_samples_url()
+        return mark_safe(f'<a href="{url}">{record.sample_count}</a>')
 
 
 def get_sample_url(sample):
@@ -187,13 +203,30 @@ class SingleColumnRelatedTable(Table):
 
 class SampleTable(Table):
 
-    sample_id = Column(
-        # verbose_name='ac',  # FIXME: verbose_name
+    best_sample_id = Column(
+        verbose_name='Sample Name/ID',
         # linkify=lambda record: get_sample_url(record),
+        empty_values=[],
         linkify=lambda record: reverse('sample', args=[record.pk]),
     )
-    group = Column(verbose_name='dataset')
+    location = Column(
+        empty_values=[],
+        verbose_name='location / site',
+    )
     sample_type = Column()
-    read_count = Column()
-    reads_mapped_contigs = Column()
-    reads_mapped_genes = Column()
+
+    class Meta:
+        model = glamr_models.Sample
+        fields = [
+            'amplicon_target',
+            'collection_timestamp', 'latitude', 'longitude',
+        ]
+        sequence = ['best_sample_id', 'sample_type', '...']
+        empty_text = 'there are no samples associated with this dataset'
+
+    def render_best_sample_id(self, record):
+        return str(record)
+
+    def render_location(self, record):
+        items = [record.geo_loc_name, record.noaa_site]
+        return ' / '.join([i for i in items if i])

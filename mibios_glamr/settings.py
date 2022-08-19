@@ -15,7 +15,7 @@ ROOT_URLCONF = 'mibios_glamr.urls0'
 
 # swappable models
 OMICS_SAMPLE_MODEL = 'mibios_glamr.Sample'
-OMICS_SAMPLE_GROUP_MODEL = 'mibios_glamr.Dataset'
+OMICS_DATASET_MODEL = 'mibios_glamr.Dataset'
 
 DJANGO_TABLES2_TEMPLATE = 'django_tables2/bootstrap4.html'
 

@@ -18,7 +18,7 @@ from mibios_umrad.utils import (
     CSV_Spec, ProgressPrinter, ReturningGenerator, atomic_dry,
 )
 
-from . import get_sample_model, get_sample_group_model
+from . import get_sample_model, get_dataset_model
 from .utils import get_fasta_sequence
 
 
@@ -794,7 +794,7 @@ class SampleManager(Manager):
             for line in f:
                 row = line.rstrip('\n').split('\t')
                 sample_id = row[SAMPLE_ID]
-                group = row[PROJECT]
+                dataset = row[PROJECT]
                 sample_type = row[TYPE]
                 tracking_id = row[TRACKING_ID]
                 analysis_dir = row[ANALYSIS_DIR]
@@ -813,24 +813,24 @@ class SampleManager(Manager):
                 try:
                     obj = self.get(
                         sample_id=sample_id,
-                        group__short_name=group,
+                        dataset__short_name=dataset,
                     )
                 except self.model.DoesNotExist:
                     if success != 'TRUE':
                         log.info(f'ignoring {sample_id}: no import success')
                         continue
 
-                    grp_model = get_sample_group_model()
-                    group, new = grp_model.objects.get_or_create(
-                        short_name=group,
+                    grp_model = get_dataset_model()
+                    dataset, new = grp_model.objects.get_or_create(
+                        short_name=dataset,
                     )
                     if new:
-                        log.info(f'add sample group: {group}')
+                        log.info(f'add dataset: {dataset}')
 
                     obj = self.model(
                         tracking_id=tracking_id,
                         sample_id=sample_id,
-                        group=group,
+                        dataset=dataset,
                         sample_type=sample_type,
                         analysis_dir=analysis_dir,
                     )
