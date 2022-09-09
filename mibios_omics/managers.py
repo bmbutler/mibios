@@ -855,14 +855,14 @@ class SampleManager(Manager):
                                      f'{", ".join(changed)}')
                     else:
                         unchanged += 1
-                finally:
-                    if need_save:
-                        obj.metag_pipeline_reg = True
-                        obj.full_clean()
-                        obj.save()
-                        log.info(save_info)
 
-                    seen.append(obj.pk)
+                if need_save:
+                    obj.metag_pipeline_reg = True
+                    obj.full_clean()
+                    obj.save()
+                    log.info(save_info)
+
+                seen.append(obj.pk)
 
         if unchanged:
             log.info(f'Data for {unchanged} samples are already in the DB and '
