@@ -9,7 +9,7 @@ from django.db.transaction import atomic, set_rollback
 from mibios.data import TableConfig
 from mibios_umrad.fields import AccessionField
 from mibios_umrad.model_utils import (
-    digits, opt, fk_req, fk_opt, uniq_opt, Model,
+    digits, opt, ch_opt, fk_req, fk_opt, uniq_opt, Model,
 )
 from mibios_umrad.models import (CompoundRecord, FuncRefDBEntry, TaxID, Taxon,
                                  UniRef100)
@@ -55,10 +55,14 @@ class AbstractSample(Model):
         help_text='internal uniform hex id',
     )
     sample_id = models.CharField(
-        # FIXME: what is this?  move to implementers?
         max_length=256,
+        # TODO: make required
         **uniq_opt,
-        help_text='sample ID given by study',
+        help_text='internal sample accession',
+    )
+    sample_name = models.CharField(
+        max_length=64,
+        help_text='sample ID or name as given by study',
     )
     dataset = models.ForeignKey(
         settings.OMICS_DATASET_MODEL,
@@ -69,6 +73,11 @@ class AbstractSample(Model):
         choices=SAMPLE_TYPES_CHOICES,
         **opt,
     )
+    has_paired_data = models.BooleanField(**opt)
+    sra_accession = models.CharField(max_length=16, **ch_opt, help_text='SRA accession')  # noqa: E501
+    amplicon_target = models.CharField(max_length=16, **ch_opt)
+    fwd_primer = models.CharField(max_length=32, **ch_opt)
+    rev_primer = models.CharField(max_length=32, **ch_opt)
 
     # sample data accounting flags
     meta_data_loaded = models.BooleanField(
@@ -225,6 +234,10 @@ class AbstractDataset(Model):
 
     To be used by apps that implement meta data models.
     """
+    dataset_id = models.PositiveIntegerField(
+        unique=True,
+        help_text='internal accession to data set/study/project',
+    )
     short_name = models.CharField(
         max_length=64,
         **uniq_opt,

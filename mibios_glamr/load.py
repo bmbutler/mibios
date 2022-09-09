@@ -11,7 +11,7 @@ class DatasetLoader(Loader):
 
     def get_file(self):
         return settings.GLAMR_META_ROOT\
-            / 'Great_Lakes_Amplicon_Datasets.xlsx'
+            / 'Great_Lakes_Omics_Datasets.xlsx'
 
     def ensure_id(self, value, row):
         """ skip rows without some id """
@@ -43,7 +43,7 @@ class DatasetLoader(Loader):
         return tuple((getattr(ref, i) for i in id_lookups))
 
     spec = ExcelSpec(
-        ('StudyID', 'study_id', ensure_id),
+        ('StudyID', 'dataset_id', ensure_id),
         ('Reference', 'reference', get_reference_ids),
         ('NCBI_BioProject', 'bioproject'),
         ('JGI_Project_ID', 'jgi_project'),
@@ -76,7 +76,13 @@ class ReferenceLoader(Loader):
 
     def get_file(self):
         return settings.GLAMR_META_ROOT\
-            / 'Great_Lakes_Amplicon_Datasets.xlsx'
+            / 'Great_Lakes_Omics_Datasets.xlsx'
+
+    def fix_doi(self, value, record):
+        if value is not None and 'doi-org.proxy.lib.umich.edu' in value:
+            # fix, don't require umich weblogin to follow these links
+            value = value.replace('doi-org.proxy.lib.umich.edu', 'doi.org')
+        return value
 
     spec = RefSpec(
         ('Reference', 'short_reference'),
@@ -85,7 +91,7 @@ class ReferenceLoader(Loader):
         ('Abstract', 'abstract'),
         ('Key Words', 'key_words'),
         ('Journal', 'publication'),
-        ('DOI', 'doi'),
+        ('DOI', 'doi', fix_doi),
         sheet_name='studies',
     )
 
@@ -95,21 +101,24 @@ class SampleLoader(Loader):
     empty_values = ['NA', 'Not Listed', 'NF', '#N/A']
 
     def get_file(self):
-        return settings.GLAMR_META_ROOT / 'Great_Lakes_Amplicon_Datasets.xlsx'
+        return settings.GLAMR_META_ROOT / 'Great_Lakes_Omics_Datasets.xlsx'
 
     def fix_sample_id(self, value, row):
         """ Remove leading "SAMPLE_" from accession value """
         return value.removeprefix('Sample_')
 
     def parse_bool(self, value, row):
-        if value:
-            if value == 'FALSE':
+        # Only parse str values.  The pandas reader may give us booleans
+        # already for some reason (for the modified_or_experimental but not the
+        # has_paired data) ?!?
+        if isinstance(value, str) and value:
+            if value.casefold() == 'false':
                 return False
-            elif value == 'TRUE':
+            elif value.casefold() == 'true':
                 return True
             else:
                 raise InputFileError(
-                    f'expected TRUE or FALSE but got: {value}'
+                    f'expected TRUE or FALSE (any case) but got: {value}'
                 )
         return value
 
@@ -135,66 +144,76 @@ class SampleLoader(Loader):
         if isinstance(value, Timestamp):
             if value.tz is None and settings.USE_TZ:
                 value = value.tz_localize(settings.TIME_ZONE)
+        elif isna(value):
+            # blank fields get type NaTType
+            value = None
         return value
 
     spec = ExcelSpec(
-        ('StudyID', 'dataset.study_id'),
-        ('SampleID', None),
-        ('SampleName', 'sample_name', check_ids),
-        ('NCBI_BioProject', None),
-        ('Biosample', 'biosample'),
-        ('Accession_Number', 'sra_accession'),
-        ('sample_type', 'sample_type'),
-        ('amplicon_target', 'amplicon_target'),
-        ('F_primer', 'fwd_primer'),
-        ('R_primer', 'rev_primer'),
-        ('geo_loc_name', 'geo_loc_name'),
-        ('GAZ_id', 'gaz_id'),
-        ('lat', 'latitude'),
-        ('lon', 'longitude'),
-        ('collection_date', 'collection_timestamp', ensure_tz),
-        ('NOAA_Site', 'noaa_site'),
-        ('env_broad_scale', 'env_broad_scale'),
-        ('env_local_scale', 'env_local_scale'),
-        ('env_medium', 'env_medium'),
-        ('modified_or_expermental', 'modified_or_experimental', parse_bool),
-        ('depth', 'depth'),
-        ('depth_sediment', 'depth_sediment'),
-        ('size_frac_up', 'size_frac_up'),
-        ('size_frac_low', 'size_frac_low'),
-        ('pH', 'ph'),
-        ('temp', 'temp'),
-        ('calcium', 'calcium'),
-        ('potassium', 'potassium'),
-        ('magnesium', 'magnesium'),
-        ('ammonium', 'ammonium'),
-        ('nitrate', 'nitrate'),
-        ('phosphorus', 'phosphorus'),
-        ('diss_oxygen', 'diss_oxygen'),
-        ('conduc', 'conduc'),
-        ('secci', 'secci'),
-        ('turbidity', 'turbidity'),
-        ('part_microcyst', 'part_microcyst'),
-        ('diss_microcyst', 'diss_microcyst'),
-        ('ext_phyco', 'ext_phyco'),
-        ('chlorophyl', 'chlorophyl'),
-        ('diss_phosp', 'diss_phosp'),
-        ('soluble_react_phosp', 'soluble_react_phosp'),
-        ('ammonia', 'ammonia'),
-        ('Nitrate_Nitrite', 'nitrate_nitrite'),
-        ('urea', 'urea'),
-        ('part_org_carb', 'part_org_carb'),
-        ('part_org_nitro', 'part_org_nitro'),
-        ('diss_org_carb', 'diss_org_carb'),
-        ('Col_DOM', 'col_dom'),
-        ('suspend_part_matter', 'suspend_part_matter'),
-        ('suspend_vol_solid', 'suspend_vol_solid'),
-        ('Notes', 'notes'),
+        ('StudyID', 'dataset.dataset_id'),  # A
+        ('SampleID', 'sample_id'),  # B
+        ('SampleName', 'sample_name', check_ids),  # C
+        ('ProjectID', 'project_id'),  # D
+        ('Biosample', 'biosample'),  # E
+        ('Accession_Number', 'sra_accession'),  # F
+        ('sample_type', 'sample_type'),  # G
+        ('has_paired_data', 'has_paired_data', parse_bool),  # H
+        ('amplicon_target', 'amplicon_target'),  # I
+        ('F_primer', 'fwd_primer'),  # J
+        ('R_primer', 'rev_primer'),  # K
+        ('geo_loc_name', 'geo_loc_name'),  # L
+        ('GAZ_id', 'gaz_id'),  # M
+        ('lat', 'latitude'),  # N
+        ('lon', 'longitude'),  # O
+        ('collection_date', 'collection_timestamp', ensure_tz),  # P
+        ('NOAA_Site', 'noaa_site'),  # Q
+        ('env_broad_scale', 'env_broad_scale'),  # R
+        ('env_local_scale', 'env_local_scale'),  # S
+        ('env_medium', 'env_medium'),  # T
+        ('modified_or_experimental', 'modified_or_experimental', parse_bool),
+        ('depth', 'depth'),  # V
+        ('depth_sediment', 'depth_sediment'),  # W
+        ('size_frac_up', 'size_frac_up'),  # X
+        ('size_frac_low', 'size_frac_low'),  # Y
+        ('pH', 'ph'),  # Z
+        ('temp', 'temp'),  # AA
+        ('calcium', 'calcium'),  # AB
+        ('potassium', 'potassium'),  # AC
+        ('magnesium', 'magnesium'),  # AD
+        ('ammonium', 'ammonium'),  # AE
+        ('nitrate', 'nitrate'),  # AF
+        ('phosphorus', 'phosphorus'),  # AG
+        ('diss_oxygen', 'diss_oxygen'),  # AH
+        ('conduc', 'conduc'),  # AI
+        ('secci', 'secci'),  # AJ
+        ('turbidity', 'turbidity'),  # AK
+        ('part_microcyst', 'part_microcyst'),  # AL
+        ('diss_microcyst', 'diss_microcyst'),  # AM
+        ('ext_phyco', 'ext_phyco'),  # AN
+        ('ext_microcyst', 'ext_microcyst'),  # AO
+        ('ext_Anatox', 'ext_anatox'),  # AP
+        ('chlorophyl', 'chlorophyl'),  # AQ
+        ('diss_phosp', 'diss_phosp'),  # AR
+        ('soluble_react_phosp', 'soluble_react_phosp'),  # AS
+        ('ammonia', 'ammonia'),  # AT
+        ('Nitrate_Nitrite', 'nitrate_nitrite'),  # AU
+        ('urea', 'urea'),  # AV
+        ('part_org_carb', 'part_org_carb'),  # AW
+        ('part_org_nitro', 'part_org_nitro'),  # AX
+        ('diss_org_carb', 'diss_org_carb'),  # AY
+        ('Col_DOM', 'col_dom'),  # AZ
+        ('suspend_part_matter', 'suspend_part_matter'),  # BA
+        ('suspend_vol_solid', 'suspend_vol_solid'),  # BB
+        ('Microcystis_count', 'microcystis_count'),  # BC
+        ('Planktothris_Count', 'planktothris_count'),  # BD
+        ('Anabaena-D_count', 'anabaena_d_count'),  # BE
+        ('Cylindrospermopsis_count', 'cylindrospermopsis_count'),  # BF
+        ('Notes', 'notes'),  # BG
         sheet_name='samples',
     )
 
     @atomic_dry
-    def load_meta(self, **kwargs):
+    def load_meta(self, validate=True, **kwargs):
         """ samples meta data """
         template = dict(meta_data_loaded=True)
-        super().load(template=template, validate=True, **kwargs)
+        super().load(template=template, validate=validate, **kwargs)

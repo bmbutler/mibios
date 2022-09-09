@@ -5,10 +5,10 @@ from django.db import models, router, transaction
 from django.urls import reverse
 
 from mibios_omics.models import AbstractDataset, AbstractSample
-from mibios_umrad.fields import AccessionField
 from mibios_umrad.models import Model
 from mibios_umrad.model_utils import ch_opt, fk_opt, uniq_opt, opt
 
+from .fields import OptionalURLField
 from .load import DatasetLoader, ReferenceLoader, SampleLoader
 
 
@@ -16,16 +16,18 @@ class Dataset(AbstractDataset):
     """
     A collection of related samples, e.g. a study or project
     """
-    # FIXME: it's not clear which field identifies a "data set", which field
-    # may not be blank, and which shall be unique
-    study_id = models.PositiveIntegerField(
+    dataset_id = models.PositiveIntegerField(
+        # overrides abstract parent field
         unique=True,
+        verbose_name='Study ID',
         help_text='GLAMR accession to data set/study/project',
     )
     reference = models.ForeignKey('Reference', **fk_opt)
-    bioproject = AccessionField(**uniq_opt)
-    jgi_project = AccessionField(**uniq_opt)
-    gold_id = AccessionField(**uniq_opt)
+    # project IDs: usually a single accession, but can be ,-sep lists or even
+    # other text
+    bioproject = models.CharField(max_length=100, **ch_opt)
+    jgi_project = models.CharField(max_length=100, **ch_opt)
+    gold_id = models.CharField(max_length=100, **ch_opt)
     scheme = models.CharField(
         max_length=512,
         **ch_opt,
@@ -127,36 +129,34 @@ class Dataset(AbstractDataset):
         return reverse('dataset_sample_list', args=[pk])
 
 
-# Create your models here.
 class Reference(Model):
     """
     A journal article or similar, primary reference for a data set
     """
     short_reference = models.CharField(
+        # this field is required
         max_length=128,
-        blank=False,
         help_text='short reference',
     )
     authors = models.CharField(
-        max_length=2048,
-        blank=True,
+        max_length=2048, **ch_opt,
         help_text='author listing',
     )
     title = models.CharField(
-        max_length=512,
-        blank=True,
+        max_length=512, **ch_opt,
     )
-    abstract = models.TextField(blank=True)
-    key_words = models.CharField(max_length=128, blank=True)
-    publication = models.CharField(max_length=128)
-    doi = models.URLField()
+    abstract = models.TextField(**ch_opt)
+    key_words = models.CharField(max_length=128, **ch_opt)
+    publication = models.CharField(max_length=128, **ch_opt)
+    doi = OptionalURLField(**uniq_opt)
 
     loader = ReferenceLoader()
 
     class Meta:
         unique_together = (
-            # FIXME: this, for now, needs fix in source data
-            ('short_reference', 'publication'),
+            # for blank DOI's the short_reference will serve to uniquely id the
+            # object
+            ('short_reference', 'doi'),
         )
 
     def __str__(self):
@@ -174,14 +174,11 @@ class Reference(Model):
 
 class Sample(AbstractSample):
 
-    # TODO: SampleID ??
-    sample_name = models.CharField(max_length=64)
-    # TODO: belongs to rdataset? NCBI_BioProject
+    project_id = models.CharField(
+        max_length=16, **ch_opt,
+        help_text='Project accession, e.g. NCBI bioproject',
+    )
     biosample = models.CharField(max_length=16, **ch_opt)
-    sra_accession = models.CharField(max_length=16, **ch_opt, help_text='SRA accession')  # noqa: E501
-    amplicon_target = models.CharField(max_length=16, **ch_opt)
-    fwd_primer = models.CharField(max_length=32, **ch_opt)
-    rev_primer = models.CharField(max_length=32, **ch_opt)
     geo_loc_name = models.CharField(max_length=256, **ch_opt)
     gaz_id = models.CharField(max_length=16, **ch_opt, verbose_name='GAZ id')
     latitude = models.CharField(max_length=16, **ch_opt)
@@ -212,6 +209,8 @@ class Sample(AbstractSample):
     part_microcyst = models.CharField(max_length=8, **ch_opt)
     diss_microcyst = models.CharField(max_length=8, **ch_opt)
     ext_phyco = models.CharField(max_length=8, **ch_opt)
+    ext_microcyst = models.CharField(max_length=8, **ch_opt)
+    ext_anatox = models.CharField(max_length=8, **ch_opt)
     chlorophyl = models.CharField(max_length=8, **ch_opt)
     diss_phosp = models.CharField(max_length=8, **ch_opt)
     soluble_react_phosp = models.CharField(max_length=8, **ch_opt)
@@ -224,6 +223,10 @@ class Sample(AbstractSample):
     col_dom = models.CharField(max_length=8, **ch_opt)
     suspend_part_matter = models.CharField(max_length=8, **ch_opt)
     suspend_vol_solid = models.CharField(max_length=8, **ch_opt)
+    microcystis_count = models.PositiveIntegerField(**opt)
+    planktothris_count = models.PositiveIntegerField(**opt)
+    anabaena_d_count = models.PositiveIntegerField(**opt)
+    cylindrospermopsis_count = models.PositiveIntegerField(**opt)
     notes = models.CharField(max_length=512, **ch_opt)
 
     loader = SampleLoader()
@@ -234,3 +237,17 @@ class Sample(AbstractSample):
     def __str__(self):
         return self.sample_name or self.sample_id or self.biosample \
             or super().__str__()
+
+
+def load_meta_data(dry_run=False):
+    """
+    load meta data assuming empty DB -- reference implementation
+    """
+    dbalias = router.db_for_write(Sample)
+    with transaction.atomic(using=dbalias):
+        Reference.loader.load(validate=True, bulk=False)
+        Dataset.loader.load(validate=True, bulk=False)
+        Sample.loader.load_meta(validate=True, update=False, bulk=False)
+        # Sample.objects.sync()
+        if dry_run:
+            transaction.set_rollback(True, dbalias)
