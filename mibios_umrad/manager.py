@@ -177,7 +177,7 @@ class BaseLoader(DjangoManager):
 
     def load(self, spec=None, start=0, limit=None, dry_run=False, sep=None,
              parse_only=False, file=None, template={}, skip_on_error=False,
-             update=False, validate=False):
+             update=False, bulk=True, validate=False):
         """
         Load data from file
 
@@ -228,6 +228,7 @@ class BaseLoader(DjangoManager):
                 skip_on_error=skip_on_error,
                 validate=validate,
                 update=update,
+                bulk=bulk,
                 first_lineno=start + 2 if self.spec.has_header else 1,
             )
         except Exception:
@@ -254,7 +255,7 @@ class BaseLoader(DjangoManager):
     @atomic_dry
     def _load_rows(self, rows, sep='\t', dry_run=False, template={},
                    skip_on_error=False, validate=False, update=False,
-                   first_lineno=None):
+                   bulk=True, first_lineno=None):
         ncols = len(self.spec)
         fields = self.spec.get_fields()
         num_line_errors = 0
@@ -438,9 +439,26 @@ class BaseLoader(DjangoManager):
         del missing_fks, row_skip_count, fk_skip_count
 
         if update:
-            self.bulk_update(objs, fields=[i.name for i in fields])
+            update_fields = [i.name for i in fields]
+            if bulk:
+                self.bulk_update(objs, fields=update_fields)
+            else:
+                for i in objs:
+                    try:
+                        i.save(update_fields=update_fields)
+                    except Exception as e:
+                        print(f'exception {e} while saving {i}:\n{vars(i)=}')
+                        raise
         else:
-            self.bulk_create(objs)
+            if bulk:
+                self.bulk_create(objs)
+            else:
+                for i in objs:
+                    try:
+                        i.save()
+                    except Exception as e:
+                        print(f'exception {e} while saving {i}:\n{vars(i)=}')
+                        raise
         del objs
 
         if m2m_data:
