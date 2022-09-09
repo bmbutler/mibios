@@ -4,6 +4,7 @@ import logging
 from django import apps
 from django.conf import settings
 from django.contrib.admin.apps import AdminConfig as UpstreamAdminConfig
+import django.db
 from django.utils.module_loading import import_string
 
 from .registry import Registry
@@ -78,6 +79,13 @@ class MibiosConfig(apps.AppConfig):
 
         # signaling
         import_module('mibios.signals')
+
+        # display some info
+        if settings.DEBUG:
+            for i in django.db.connections.all():
+                params = i.get_connection_params()
+                params = ' '.join([f'{k}={v}' for k, v in params.items()])
+                log.info(f'DB {i.alias}: {i.display_name} ({params})')
 
         info = f'Registry {registry.name} (app:models+datasets):'
         for i in registry.apps.keys():
