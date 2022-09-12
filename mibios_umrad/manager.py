@@ -1025,7 +1025,7 @@ class UniRef100Loader(Loader):
         self.func_dbs = FuncRefDBEntry.DB_CHOICES
 
     def get_file(self):
-        return settings.UMRAD_ROOT / 'OUT_UNIREF.txt'
+        return settings.UMRAD_ROOT / 'UNIREF100_INFO.txt'
 
     @atomic_dry
     def load(self, *args, **kwargs):
