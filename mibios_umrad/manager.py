@@ -692,7 +692,7 @@ class CompoundRecordLoader(Loader):
 
     def chargeconv(self, value, row):
         """ convert '2+' -> 2 / '2-' -> -2 """
-        if value == '':
+        if value == '' or value is None:
             return None
         elif value.endswith('-'):
             return -int(value[:-1])
@@ -717,18 +717,18 @@ class CompoundRecordLoader(Loader):
 
     spec = CSV_Spec(
         ('cpd', 'accession'),
-        ('src', 'source'),
-        ('form', 'formula'),
+        ('formula', 'formula'),
         ('mass', 'mass'),
-        ('char', 'charge', chargeconv),
-        ('tcdb', None),
-        ('name', 'names'),
-        ('kegg', 'others', collect_others),
-        ('chebi', None),  # remaining columns processed by kegg
-        ('hmdb', None),
-        ('pubch', None),
-        ('inchi', None),
-        ('bioc', None),
+        ('charge', 'charge', chargeconv),
+        ('db_src', 'source'),
+        ('tcdbs', None),
+        ('names', 'names'),
+        ('keggcpd', 'others', collect_others),
+        ('chebcpd', None),  # remaining columns processed by kegg
+        ('hmdbcpd', None),
+        ('pubccpd', None),
+        ('inchcpd', None),
+        ('bioccpd', None),
     )
 
 
