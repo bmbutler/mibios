@@ -360,11 +360,13 @@ class BaseLoader(DjangoManager):
                     # models this is just the remote object's accession (which
                     # will later be replaced by the pk/id.)  If value comes in
                     # as a str, this list-of-tuples is generated below.  If it
-                    # is not a str, the we assume that a conversion function
-                    # has taken care of everything.  For through models with
-                    # additional data the parameters must be in the correct
-                    # order.
-                    if isinstance(value, str):
+                    # is neither None nor a str, the we assume that a
+                    # conversion function has taken care of everything.  For
+                    # through models with additional data the parameters must
+                    # be in the correct order.
+                    if value is None:
+                        value = []  # blank / empty
+                    elif isinstance(value, str):
                         value = [(i, ) for i in self.split_m2m_value(value)]
                     m2m[field.name] = value
 
@@ -392,7 +394,7 @@ class BaseLoader(DjangoManager):
                     # TODO: find out why leaving '' in for int fields fails
                     # ValueError @ django/db/models/fields/__init__.py:1825
                     setattr(obj, field.name, value)
-            else:
+            else:  # else of for
                 if validate:
                     try:
                         obj.full_clean()
