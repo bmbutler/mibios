@@ -1,7 +1,6 @@
 from collections import OrderedDict
 import csv
 from itertools import tee, zip_longest
-from io import StringIO
 from math import isnan
 from zipfile import ZipFile, ZIP_DEFLATED
 
@@ -11,7 +10,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, StreamingHttpResponse
 from django.urls import reverse
 from django.utils.html import format_html
 from django.views.decorators.cache import cache_page
@@ -22,6 +21,7 @@ from django_tables2 import (SingleTableMixin, SingleTableView, Column,
                             MultiTableMixin)
 
 from pandas import isna
+import zipstream
 
 from . import (__version__, QUERY_FORMAT, QUERY_AVG_BY,
                get_registry)
@@ -529,6 +529,7 @@ class CSVRenderer():
     description = 'comma-separated text file'
     content_type = 'text/csv'
     delimiter = ','
+    streaming = False
 
     def __init__(self, response, **kwargs):
         self.response = response
@@ -551,23 +552,27 @@ class CSVTabRenderer(CSVRenderer):
 class CSVRendererZipped(CSVRenderer):
     description = 'comma-separated text file, zipped'
     content_type = 'application/zip'
+    streaming = True
 
     def __init__(self, response, filename):
         self.response = response
         self.filename = filename[:-len('.zip')]
 
+    def _render(self, values):
+        """
+        render the csv
+        """
+        for row in values:
+            yield b'\t'.join([str(i).encode() for i in row])
+            yield b'\n'
+
     def render(self, values):
         """
-        Render all rows to the response
+        Set response's streaming content to rendered data
         """
-        buf = StringIO()
-        writer = csv.writer(buf, delimiter=self.delimiter, lineterminator='\n')
-        for row in values:
-            writer.writerow(row)
-
-        buf.seek(0)
-        with ZipFile(self.response, 'w', ZIP_DEFLATED) as f:
-            f.writestr(self.filename, buf.read())
+        z = zipstream.ZipFile(compression=ZIP_DEFLATED)
+        z.write_iter(self.filename, self._render(values))
+        self.response.streaming_content = z
 
 
 class CSVTabRendererZipped(CSVRendererZipped):
@@ -648,13 +653,19 @@ class ExportMixin(ExportBaseMixin):
         return get_registry().name + '_data'
 
     def render_to_response(self, context):
-        name, suffix, renderer_class = self.get_format()
+        name, suffix, Renderer = self.get_format()
 
-        response = HttpResponse(content_type=renderer_class.content_type)
+        if Renderer.streaming:
+            response = StreamingHttpResponse(
+                content_type=Renderer.content_type
+            )
+        else:
+            response = HttpResponse(content_type=Renderer.content_type)
+
         filename = self.get_filename() + suffix
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
 
-        renderer_class(response, filename=filename).render(self.get_values())
+        Renderer(response, filename=filename).render(self.get_values())
 
         return response
 

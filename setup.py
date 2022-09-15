@@ -66,6 +66,7 @@ setuptools.setup(
         'django-tables2~=2.1.0',
         'pandas~=0.25.0',
         'biopython~=1.77',
+        'zipstream',
     ],
     packages=setuptools.find_packages(),
     package_data={
