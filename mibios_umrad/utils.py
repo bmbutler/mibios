@@ -13,6 +13,14 @@ import pandas
 
 from django.db import router, transaction
 
+# Workaround for weird pandas/xlrd=1.2/defusedxml combination runtime issue,
+# we'll get an AttributeError: 'ElementTree' object has no attribute
+# 'getiterator' inside xlrd when trying to pandas.read_excel().  See also
+# https://stackoverflow.com/questions/64264563
+import xlrd
+xlrd.xlsx.ensure_elementtree_imported(False, None)
+xlrd.xlsx.Element_has_iter = True
+
 
 thread_data = local()
 thread_data.timer = None
