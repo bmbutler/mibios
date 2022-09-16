@@ -1020,6 +1020,9 @@ class TaxonLoader(Loader):
 
 class UniRef100Loader(Loader):
     """ loader for OUT_UNIREF.txt """
+
+    empty_values = ['N/A']
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._Taxon = import_string('mibios_umrad.models.Taxon')
