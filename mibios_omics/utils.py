@@ -69,3 +69,86 @@ def get_fasta_sequence(file, offset, length, skip_header=True):
         data.insert(1, b'\n')
     data = b''.join(data.splitlines())
     return data
+
+
+class parse_fastq:
+    """
+    Generate fastq records from something file-like.
+
+    usage:
+        for record in parse_fastq(open('my.fastq')):
+            head = record['head']
+            seq = record['seq']
+            qual = record['qual']
+
+    Records must be 4 lines long.  Returns a dict, trims off newlines and
+    initial @ from header.
+    """
+    def __init__(self, file, skip_initial_trash=False):
+        """
+        Setup the fastq parser
+
+        :param bool skip_initial_trash:
+            If True, then any initial lines that don't parse as fastq will be
+            skipped without raising an error.  This also assumes trat file is
+            seekable.
+
+        Parsing will not be reliable if seek() is called on the underying file
+        t = descriptor after next() has been called already.
+        """
+        self.file = file
+        if skip_initial_trash:
+            pos = self.file.tell()
+            while True:
+                try:
+                    self._make_record()
+                except StopIteration:
+                    # EOF
+                    break
+                except ValueError:
+                    # advance one line and try again
+                    self.file.seek(pos)
+                    if self.file.readline():
+                        pos = self.file.tell()
+                    else:
+                        # EOF
+                        break
+                else:
+                    # there is a good record at pos
+                    self.file.seek(pos)
+                    break
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return self._make_record()
+
+    def _get_line(self):
+        return next(self.file).rstrip('\n')
+
+    def _make_record(self):
+        """
+        Build the record from buffer and next four lines
+
+        Raises ValueError if checks for correct fastq format fail.
+        """
+        head = self._get_line()  # StopIteration here will bubble up
+        if not head.startswith('@'):
+            raise ValueError(f'expected @ at start of line: {head}')
+
+        try:
+            head = head.removeprefix('@')
+            seq = self._get_line()
+            if not seq:
+                raise ValueError(f'sequence missing: {seq}')
+            plus = self._get_line()
+            if not plus.startswith('+'):
+                raise ValueError(f'expected "+" at start of line: {plus}')
+            qual = self._get_line()
+            if len(qual) != len(seq):
+                raise ValueError('sequence and quality differ in length')
+            return dict(head=head, seq=seq, qual=qual)
+        except StopIteration:
+            # got a header but further lines missing
+            raise ValueError('file ends with incomplete record')

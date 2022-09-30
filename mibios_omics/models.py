@@ -1,4 +1,6 @@
 from logging import getLogger
+from pathlib import Path
+import re
 from subprocess import PIPE, Popen, TimeoutExpired
 
 from django.conf import settings
@@ -15,7 +17,7 @@ from mibios_umrad.models import (CompoundRecord, FuncRefDBEntry, TaxID, Taxon,
                                  UniRef100)
 from mibios_umrad.utils import ProgressPrinter
 
-from . import managers, get_sample_model
+from . import managers, get_sample_model, sra
 from .fields import DataPathField
 from .utils import get_fasta_sequence
 
@@ -227,6 +229,72 @@ class AbstractSample(Model):
         TaxonAbundance.loader.load_sample(self)
         set_rollback(dry_run)
 
+    def get_fastq_prefix(self):
+        """
+        Prefix for fastq filenames for this sample
+        """
+        if self.sample_id is None:
+            part1 = f'pk{self.pk}'
+        else:
+            part1 = self.sample_id
+
+        # upstream-given name w/o funny stuff
+        part2 = re.sub(r'\W+', '', self.sample_name)
+        return f'{part1}-{part2}'
+
+    def get_fastq_base(self):
+        """ Get directory plus base name of fastq files """
+        base = self.dataset.get_fastq_path(self.sample_type)
+        return base / self.get_fastq_prefix()
+
+    def download_fastq(self, exist_ok=False):
+        """
+        download fastq files from SRA
+
+        Returns a triple od SRA run accession, platform, list of files.  The
+        number of files in the list indicates if the data is single-end or
+        paired-end.  There will be either two files or one file respectively.
+        """
+        if self.sra_accession.startswith(('SRR', 'SRX')):
+            other = self.sra_accession
+        else:
+            # might be ambiguous, hope for the best
+            other = None
+
+        run, platform = sra.get_run(self.biosample, other=other)
+        files = sra.download_fastq(
+            run['accession'],
+            dest=self.get_fastq_base(),
+            exist_ok=exist_ok,
+            verbose=True,
+        )
+
+        # Check that file names follow SRA fasterq-dump output file naming
+        # conventions as expected
+        if self.has_paired_data is None:
+            pass
+        elif self.has_paired_data:
+            if len(files) == 2:
+                fnames = sorted([i.name for i in files])
+                if fnames[0] != self.get_fastq_prefix() + '_1.fastq':
+                    raise RuntimeError(f'unexpected filename: {fnames[0]}')
+                if fnames[1] != self.get_fastq_prefix() + '_2.fastq':
+                    raise RuntimeError(f'unexpected filename: {fnames[0]}')
+            elif len(files) == 3:
+                # TODO: we should expect paired data with some single reads
+                raise NotImplementedError
+            else:
+                raise RuntimeError('unexpected number of files: {files}')
+        else:
+            # single-end data
+            if len(files) != 1:
+                raise RuntimeError(f'expected single file, got: {files}')
+            if files[0].name != self.get_fastq_prefix() + '.fastq':
+                raise RuntimeError(f'unexpected filename: {files}')
+
+        # return values are suitable for Dataset.download_fastq()
+        return run['accession'], platform, files
+
 
 class AbstractDataset(Model):
     """
@@ -288,6 +356,69 @@ class AbstractDataset(Model):
         if cls._orphan_group_obj is None:
             cls._orphan_group_obj = cls(orphan_group=True)
         return cls._orphan_group_obj
+
+    def download_fastq(self, exist_ok=False):
+        """ get fastq data from SRA """
+        # TODO: implement correct behaviour if exist_ok and file actually exist
+        manifest = []
+        for i in self.sample_set.all():
+            run, platform, files = i.download_fastq(exist_ok=exist_ok)
+            if len(files) == 1:
+                # single reads
+                read1 = files[0].name
+                read2 = ''
+            elif len(files) == 2:
+                # paired-end reads, assume file names differ by infix:
+                # _1 <=> _2 following SRA fasterq-dump conventions,
+                # this sorts correctly
+                read1, read2 = sorted(files)
+            else:
+                raise ValueError('can only handle one or two files per sample')
+
+            manifest.append((
+                i.sample_name,
+                run,
+                platform,
+                'paired' if read2 else 'single',
+                i.amplicon_target,
+                read1,
+                read2,
+            ))
+
+        mfile = self.get_fastq_path() / 'fastq_manifest.csv'
+        with open(mfile, 'w') as out:
+            for row in manifest:
+                out.write('\t'.join(row))
+                out.write('\n')
+        print(f'manifest written to: {mfile}')
+
+    def get_sample_type(self):
+        """
+        Determine sample type
+        """
+        stypes = set(self.sample_set.values_list('sample_type', flat=True))
+        num = len(stypes)
+        if num == 0:
+            raise RuntimeError('data set has no samples')
+        elif num > 1:
+            # TODO: do we need to support this?
+            raise RuntimeError('multiple types: {stypes}')
+        return stypes.pop()
+
+    def get_fastq_path(self, sample_type=None):
+        """
+        Get path to fastq data storage
+        """
+        if sample_type is None:
+            sample_type = self.get_sample_type()
+
+        if sample_type == AbstractSample.TYPE_AMPLICON:
+            base = Path(settings.AMPLICON_PIPELINE_BASE)
+        else:
+            raise NotImplementedError
+
+        # FIXME: use study_id, but that's currently GLAMR-specific ?
+        return base / str(self.dataset_id)
 
 
 class Alignment(Model):
