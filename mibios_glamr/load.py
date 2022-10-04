@@ -3,7 +3,7 @@ from pandas import isna, Timestamp
 from django.conf import settings
 
 from mibios_umrad.manager import InputFileError, Loader
-from mibios_umrad.utils import ExcelSpec, atomic_dry
+from mibios_umrad.utils import CSV_Spec, ExcelSpec, atomic_dry
 
 
 class DatasetLoader(Loader):
@@ -11,11 +11,13 @@ class DatasetLoader(Loader):
 
     def get_file(self):
         return settings.GLAMR_META_ROOT\
-            / 'Great_Lakes_Omics_Datasets.xlsx'
+            / 'Great_Lakes_Omics_Datasets.xlsx.ods'
 
     def ensure_id(self, value, row):
         """ skip rows without some id """
-        for i in ['StudyID', 'NCBI_BioProject', 'JGI_Project_ID', 'GOLD_ID']:
+        idcols = ['dataset', 'NCBI_BioProject', 'JGI_Project_ID', 'GOLD_ID',
+                  'MG-RAST_study']
+        for i in idcols:
             if row[i]:
                 break
         else:
@@ -43,12 +45,14 @@ class DatasetLoader(Loader):
         return tuple((getattr(ref, i) for i in id_lookups))
 
     spec = ExcelSpec(
-        ('StudyID', 'dataset_id', ensure_id),
-        ('Reference', 'reference', get_reference_ids),
+        ('dataset', 'dataset_id', ensure_id),
+        # ('Primary_pub', 'reference', get_reference_ids),
+        ('Primary_pub', 'reference.reference_id'),
+        ('primary_pub_title', None),
         ('NCBI_BioProject', 'bioproject'),
         ('JGI_Project_ID', 'jgi_project'),
         ('GOLD_ID', 'gold_id'),
-        ('Other_Databases', None),
+        ('MG-RAST_study', None),  # TODO: add
         ('Location and Sampling Scheme', 'scheme'),
         ('Material Type', 'material_type'),
         ('Water Bodies', 'water_bodies'),
@@ -57,7 +61,8 @@ class DatasetLoader(Loader):
         ('Sequencing Platform', 'sequencing_platform'),
         ('Size Fraction(s)', 'size_fraction'),
         ('Notes', 'note'),
-        sheet_name='studies',
+        # on Google it's "studies/datasets" but without "/" in ODF
+        sheet_name='studiesdatasets',
     )
 
 
@@ -76,7 +81,7 @@ class ReferenceLoader(Loader):
 
     def get_file(self):
         return settings.GLAMR_META_ROOT\
-            / 'Great_Lakes_Omics_Datasets.xlsx'
+            / 'Great_Lakes_Omics_Datasets.xlsx.ods'
 
     def fix_doi(self, value, record):
         if value is not None and 'doi-org.proxy.lib.umich.edu' in value:
@@ -85,14 +90,16 @@ class ReferenceLoader(Loader):
         return value
 
     spec = RefSpec(
+        ('PaperID', 'reference_id'),
         ('Reference', 'short_reference'),
         ('Authors', 'authors'),
-        ('Paper', 'title'),
+        ('Title', 'title'),
         ('Abstract', 'abstract'),
         ('Key Words', 'key_words'),
         ('Journal', 'publication'),
         ('DOI', 'doi', fix_doi),
-        sheet_name='studies',
+        ('Associated_datasets', None),  # TODO: handle this
+        sheet_name='papers',
     )
 
 
@@ -101,7 +108,7 @@ class SampleLoader(Loader):
     empty_values = ['NA', 'Not Listed', 'NF', '#N/A']
 
     def get_file(self):
-        return settings.GLAMR_META_ROOT / 'Great_Lakes_Omics_Datasets.xlsx'
+        return settings.GLAMR_META_ROOT / 'Great_Lakes_Omics_Datasets.xlsx - samples.tsv'  # noqa:E501
 
     def fix_sample_id(self, value, row):
         """ Remove leading "SAMPLE_" from accession value """
@@ -140,7 +147,7 @@ class SampleLoader(Loader):
         # Django would, in DateTimeField.get_prep_value(), add the configured
         # TZ for naive timestamps also, BUT would spam us with WARNINGs, so
         # this here is only to avoid those warnings.
-        # Pandas should give us Timestamp instances here
+        # Pandas.read_excel should give us Timestamp instances here
         if isinstance(value, Timestamp):
             if value.tz is None and settings.USE_TZ:
                 value = value.tz_localize(settings.TIME_ZONE)
@@ -149,13 +156,15 @@ class SampleLoader(Loader):
             value = None
         return value
 
-    spec = ExcelSpec(
-        ('StudyID', 'dataset.dataset_id'),  # A
+    spec = CSV_Spec(
         ('SampleID', 'sample_id'),  # B
         ('SampleName', 'sample_name', check_ids),  # C
+        ('StudyID', 'dataset.dataset_id'),  # A
         ('ProjectID', 'project_id'),  # D
         ('Biosample', 'biosample'),  # E
         ('Accession_Number', 'sra_accession'),  # F
+        ('JGI_study', None),  # TODO
+        ('JGI_biosample', None),  # TODO
         ('sample_type', 'sample_type'),  # G
         ('has_paired_data', 'has_paired_data', parse_bool),  # H
         ('amplicon_target', 'amplicon_target'),  # I
@@ -208,8 +217,8 @@ class SampleLoader(Loader):
         ('Planktothris_Count', 'planktothris_count'),  # BD
         ('Anabaena-D_count', 'anabaena_d_count'),  # BE
         ('Cylindrospermopsis_count', 'cylindrospermopsis_count'),  # BF
+        ('ice_cover', None),  # TODO
         ('Notes', 'notes'),  # BG
-        sheet_name='samples',
     )
 
     @atomic_dry

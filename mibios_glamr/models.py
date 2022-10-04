@@ -5,6 +5,7 @@ from django.db import models, router, transaction
 from django.urls import reverse
 
 from mibios_omics.models import AbstractDataset, AbstractSample
+from mibios_umrad.fields import AccessionField
 from mibios_umrad.models import Model
 from mibios_umrad.model_utils import ch_opt, fk_opt, uniq_opt, opt
 
@@ -16,10 +17,10 @@ class Dataset(AbstractDataset):
     """
     A collection of related samples, e.g. a study or project
     """
-    dataset_id = models.PositiveIntegerField(
+    dataset_id = AccessionField(
         # overrides abstract parent field
         unique=True,
-        verbose_name='Study ID',
+        verbose_name='Dataset ID',
         help_text='GLAMR accession to data set/study/project',
     )
     reference = models.ForeignKey('Reference', **fk_opt)
@@ -133,6 +134,7 @@ class Reference(Model):
     """
     A journal article or similar, primary reference for a data set
     """
+    reference_id = AccessionField(prefix='paper_')
     short_reference = models.CharField(
         # this field is required
         max_length=128,
@@ -153,11 +155,7 @@ class Reference(Model):
     loader = ReferenceLoader()
 
     class Meta:
-        unique_together = (
-            # for blank DOI's the short_reference will serve to uniquely id the
-            # object
-            ('short_reference', 'doi'),
-        )
+        pass
 
     def __str__(self):
         maxlen = 60
