@@ -13,7 +13,7 @@ from django.db.transaction import atomic, set_rollback
 
 from mibios.models import QuerySet
 from mibios_umrad.models import TaxID, Taxon, UniRef100
-from mibios_umrad.manager import Loader, Manager
+from mibios_umrad.manager import BulkLoader, Manager
 from mibios_umrad.utils import (
     CSV_Spec, ProgressPrinter, ReturningGenerator, atomic_dry,
 )
@@ -73,7 +73,7 @@ class SampleLoadMixin:
         sample.save()
 
 
-class AlignmentLoader(Loader):
+class AlignmentLoader(BulkLoader):
     """ loader XX_GENES.m8 files """
 
     def get_m8_path(self, sample):
@@ -133,7 +133,7 @@ class AlignmentLoader(Loader):
         sample.save()
 
 
-class CompoundAbundanceLoader(Loader, SampleLoadMixin):
+class CompoundAbundanceLoader(BulkLoader, SampleLoadMixin):
     """ loader manager for CompoundAbundance """
     ok_field_name = 'comp_abund_ok'
 
@@ -186,7 +186,7 @@ class SequenceLikeQuerySet(QuerySet):
 SequenceLikeManager = Manager.from_queryset(SequenceLikeQuerySet)
 
 
-class SequenceLikeLoader(SampleLoadMixin, Loader):
+class SequenceLikeLoader(SampleLoadMixin, BulkLoader):
     """
     Loader manager for the SequenceLike abstract model
 
@@ -645,7 +645,7 @@ class ContigLoader(ContigLikeLoader):
             sample.save()
 
 
-class FuncAbundanceLoader(Loader, SampleLoadMixin):
+class FuncAbundanceLoader(BulkLoader, SampleLoadMixin):
     ok_field_name = 'func_abund_ok'
 
     def get_file(self, sample):
@@ -909,7 +909,7 @@ class SampleManager(Manager):
             )
 
 
-class TaxonAbundanceLoader(Loader, SampleLoadMixin):
+class TaxonAbundanceLoader(BulkLoader, SampleLoadMixin):
     """ loader manager for the TaxonAbundance model """
     ok_field_name = 'tax_abund_ok'
 

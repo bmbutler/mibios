@@ -1,5 +1,5 @@
 from collections import defaultdict
-from functools import partial, wraps
+from functools import partial
 from itertools import islice
 from logging import getLogger
 from operator import attrgetter, length_hint
@@ -16,7 +16,7 @@ from mibios.models import (
 )
 
 from .utils import (CSV_Spec, InputFileSpec, ProgressPrinter, atomic_dry,
-                    get_last_timer,)
+                    get_last_timer)
 
 
 log = getLogger(__name__)
@@ -177,7 +177,7 @@ class BaseLoader(DjangoManager):
 
     def load(self, spec=None, start=0, limit=None, dry_run=False, sep=None,
              parse_only=False, file=None, template={}, skip_on_error=False,
-             update=False, bulk=True, validate=False):
+             update=False, bulk=False, validate=True):
         """
         Load data from file
 
@@ -247,10 +247,6 @@ class BaseLoader(DjangoManager):
         else:
             self.spec = spec
         self.spec.setup(loader=self, **kwargs)
-
-    @wraps(load)
-    def load_update(self, *args, **kwargs):
-        return self.load(*args, update=True, **kwargs)
 
     @atomic_dry
     def _load_rows(self, rows, sep='\t', dry_run=False, template={},
@@ -684,7 +680,12 @@ class Loader(BulkCreateWrapperMixin, BaseLoader.from_queryset(QuerySet)):
     pass
 
 
-class CompoundRecordLoader(Loader):
+class BulkLoader(Loader):
+    def load(bulk=True, validate=False, **kwargs):
+        super().load(bulk=bulk, validate=validate, **kwargs)
+
+
+class CompoundRecordLoader(BulkLoader):
     """ loader for compound data from MERGED_CPD_DB.txt file """
 
     def get_file(self):
@@ -732,7 +733,7 @@ class CompoundRecordLoader(Loader):
     )
 
 
-class FuncRefDBEntryLoader(Loader):
+class FuncRefDBEntryLoader(BulkLoader):
     """
     Loads data from Function_Names.txt
 
@@ -785,7 +786,7 @@ class FuncRefDBEntryLoader(Loader):
         self._update_m2m('names', data)
 
 
-class ReactionRecordLoader(Loader):
+class ReactionRecordLoader(BulkLoader):
     """ loader for reaction data from MERGED_RXN_DB.txt file """
 
     def contribute_to_class(self, model, name):
@@ -1018,7 +1019,7 @@ class TaxonLoader(Loader):
         print(f'set {n} UNKNOWN_ descendants of root to species')
 
 
-class UniRef100Loader(Loader):
+class UniRef100Loader(BulkLoader):
     """ loader for OUT_UNIREF.txt """
 
     empty_values = ['N/A']
@@ -1033,9 +1034,9 @@ class UniRef100Loader(Loader):
         return settings.UMRAD_ROOT / 'UNIREF100_INFO.txt'
 
     @atomic_dry
-    def load(self, *args, **kwargs):
+    def load(self, **kwargs):
         self.funcref2db = {}
-        super().load(*args, **kwargs)
+        super().load(**kwargs)
         # set DB values for func xrefs -- can't do this in the regular load
         # as there we only have the accession to work with with m2m-related
         # objects
