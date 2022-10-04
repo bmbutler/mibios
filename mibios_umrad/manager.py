@@ -451,11 +451,15 @@ class BaseLoader(DjangoManager):
             if bulk:
                 self.bulk_create(objs)
             else:
-                for i in objs:
+                for n, i in enumerate(objs, start=1):
                     try:
                         i.save()
                     except Exception as e:
-                        print(f'exception {e} while saving {i}:\n{vars(i)=}')
+                        # reported number is approximate since we may have
+                        # skipped lines
+                        print(f'ERROR: {type(e)}: {e} at or a little before '
+                              f'line {n} while saving object:\n'
+                              f'{i}:\n{vars(i)=}')
                         raise
         del objs
 
