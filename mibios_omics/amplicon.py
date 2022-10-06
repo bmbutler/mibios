@@ -15,9 +15,14 @@ ALIGNMENT_MODE_THRESHOLD = 0.8
 FLIP_THRESHOLD = 0.8
 FWD = 'fwd'
 REV = 'rev'
+START = 'start'
+END = 'end'
+
+TARGET_16S = '16S'
+TARGET_18S = '18S'
 
 REF_ALIGN = {
-    '16S': '/geomicro/data2/heinro/work/glamr-16S-test/silva.nr_v138.align.10k'
+    TARGET_16S: '/geomicro/data2/heinro/work/glamr-16S-test/silva.nr_v138.align.10k'  # noqa: E501
 }
 
 MOTHUR_SINGLE = """
@@ -45,38 +50,28 @@ summary.seqs()
 """
 
 PRIMERS = (
-    # ('name', 'gene', 'region', 'fwd/rev', "sequence-5'-to-3'", start, end),
-    ('357F', '16S', 'V3-V5', FWD, 'CCTACGGGAGGCAGCAG', 6388, 6426),
-    ('926R', '16S', 'V3-V5', REV, 'CCGTCAATTCMTTTRAGT', 36011, 37426),
-    ('SSU_F04', '18S', '', FWD, None, None, None),
-    ('SSU_R22', '18S', '', REV, None, None, None),
-    ('S-D-Bact-0341-b-S-17', '16S', 'V3-V4', FWD, None, None, None),
-    ('S-D-Bact-0785-a-A-21', '16S', 'V3-V4', REV, None, None, None),
-    ('515F-C', '16S', 'V4', FWD, 'GTGCCAGCMGCCGCGGTAA', 11895, 13861),
-    ('806R', '16S', 'V4', REV, 'GGACTACHVGGGTWTCTAAT', 23446, 25318),
-    # '': ('', '', '', None),
+    # ('name', 'gene', 'region', 'FWD|REV', "sequence-5'-to-3'", start, end),
+    ('357F', TARGET_16S, 'V3-', FWD, 'CCTACGGGAGGCAGCAG', 6388, 6426),
+    ('926R', TARGET_16S, '-V5', REV, 'CCGTCAATTCMTTTRAGT', 36011, 37426),
+    ('SSU_F04', TARGET_18S, '', FWD, None, None, None),
+    ('SSU_R22', TARGET_18S, '', REV, None, None, None),
+    ('S-D-Bact-0341-b-S-17', TARGET_16S, 'V3-', FWD, 'CCTACGGGNGGCWGCAG', None, None),  # noqa: E501
+    ('S-D-Bact-0785-a-A-21', TARGET_16S, '-V4', REV, 'GACTACHVGGGTATCTAATCC', None, None),  # noqa: E501
+    ('515F-C', TARGET_16S, 'V4-', FWD, 'GTGCCAGCMGCCGCGGTAA', 11895, 13861),
+    ('806R', TARGET_16S, '-V4', REV, 'GGACTACHVGGGTWTCTAAT', 23446, 25318),
+    ('515F-Y', TARGET_16S, 'V4-', FWD, 'GTGYCAGCMGCCGCGGTAA', None, None),
+    # ('', '', '', FWD/REV, None, None, None),
 )
 
 
+def get_target_genes():
+    """ Return list of supported amplicon target genes """
+    return list(REF_ALIGN.keys())
+
+
 def quick_annotation(analysis_results, gene):
-    """ annotate alignment from quick analysis """
-    START = 'start'
-    END = 'end'
-    # get sorted list of primer/regions intervals
-    primers = prep_primer_info(gene)
-    regions = get_region_info()[gene]
-    pos = []
-    for name, (_, _, _, _, start, end) in primers.items():
-        if start is None or end is None:
-            continue
-        pos.append((start, START, name))
-        pos.append((end, END, name))
-    for name, (start, end) in regions.items():
-        if start is None or end is None:
-            continue
-        pos.append((start, START, name))
-        pos.append((end, END, name))
-    pos = sorted(pos)
+    """ locate reads based on quick analysis """
+    pos = get_annotation_items(gene)
 
     if analysis_results['alignment_mode_ratio'] >= ALIGNMENT_MODE_THRESHOLD:
         start, end = analysis_results['start_end_mode']
@@ -93,13 +88,14 @@ def quick_annotation(analysis_results, gene):
     return annotation
 
 
-def quick_analysis(fastq_dir, gene, keep=False):
+def quick_analysis(fastq_dir, glob='*.fastq', gene=None, keep=False):
     """
     Run a preliminary analysis of a subset of data
 
     :param Path fastq_file_base:
         Path plus base filename, the common portion of the two fastq files in
         case of paired-end reads delivered in two files
+    :param str glob: Filename glob.
     :param str gene: Name of amplicon target gene
     :param bool keep:
         Keep copy of all intermediate data under current working directory.
@@ -109,7 +105,7 @@ def quick_analysis(fastq_dir, gene, keep=False):
     results = {}
 
     # heuristically and most simply check single or paired-end
-    firstfiles = sorted(fastq_dir.glob('*.fastq'))[:2]
+    firstfiles = sorted(fastq_dir.glob(glob))[:2]
     if len(firstfiles) == 0:
         raise RuntimeError(f'no *.fastq files found in: {fastq_dir}')
     elif len(firstfiles) == 1:
@@ -489,6 +485,30 @@ def locate_primers():
                     results.append((gene, name, start, end))
 
     return results
+
+
+def get_annotation_items(target_gene):
+    """
+    Compile annotation data for a target gene
+    """
+    data = []
+    primer_info = prep_primer_info().items()
+    for primer, (gene, region, dire, _, start, end) in primer_info:
+        if gene != target_gene:
+            continue
+
+        region = region.strip('-')
+        if start is not None:
+            data.append((start, START, primer))
+            data.append((end, END, primer))
+            if dire == FWD:
+                data.append((end + 1, START, region))
+            elif dire == REV:
+                data.append((start - 1, END, region))
+            else:
+                raise ValueError('invalid primer direction')
+
+    return sorted(data)
 
 
 def get_region_info():

@@ -18,6 +18,7 @@ from mibios_umrad.models import (CompoundRecord, FuncRefDBEntry, TaxID, Taxon,
 from mibios_umrad.utils import ProgressPrinter
 
 from . import managers, get_sample_model, sra
+from .amplicon import get_target_genes, quick_analysis, quick_annotation
 from .fields import DataPathField
 from .utils import get_fasta_sequence
 
@@ -247,7 +248,7 @@ class AbstractSample(Model):
         base = self.dataset.get_fastq_path(self.sample_type)
         return base / self.get_fastq_prefix()
 
-    def download_fastq(self, exist_ok=False):
+    def download_fastq(self, exist_ok=False, verbose=False):
         """
         download fastq files from SRA
 
@@ -255,45 +256,110 @@ class AbstractSample(Model):
         number of files in the list indicates if the data is single-end or
         paired-end.  There will be either two files or one file respectively.
         """
+        fastq_base = self.get_fastq_base()
+        run, platform, is_paired_end = self.get_sra_run_info()
+
+        # if output files exist, then fastq-dump will give a cryptic error
+        # message, so dealing with already existing files here:
+        files = list(fastq_base.parent.glob(f'{fastq_base.name}*'))
+        if files:
+            if exist_ok:
+                if verbose:
+                    print('Some destination file(s) exist already:')
+                    for i in files:
+                        print(f'exists: {i}')
+                if is_paired_end and len(files) >= 2:
+                    # TODO: check existing file via MD5?
+                    pass
+                elif not is_paired_end and len(files) >= 1:
+                    # TODO: check existing file via MD5?
+                    pass
+                else:
+                    # but some file missing, trigger full download
+                    files = []
+            else:
+                files = "\n".join([str(i) for i in files])
+                raise RuntimeError(f'file(s) exist:\n{files}')
+
+        if not files:
+            files = sra.download_fastq(
+                run['accession'],
+                dest=fastq_base,
+                exist_ok=exist_ok,
+                verbose=verbose,
+            )
+
+        # Check that file names follow SRA fasterq-dump output file naming
+        # conventions as expected
+        if len(files) == 1:
+            if self.has_paired_data:
+                print(f'WARNING: {self}: {self.has_paired_data=} / expected '
+                      f'two files, got: {files}')
+            if files[0].name != self.get_fastq_prefix() + '.fastq':
+                raise RuntimeError(f'unexpected single-end filename: {files}')
+        elif len(files) == 2:
+            if not self.has_paired_data and self.has_paired_data is not None:
+                print(f'WARNING: {self}: {self.has_paired_data=} / expected '
+                      f'single file, got: {files}')
+            fnames = sorted([i.name for i in files])
+            if fnames[0] != self.get_fastq_prefix() + '_1.fastq':
+                raise RuntimeError(f'unexpected paired filename: {fnames[0]}')
+            if fnames[1] != self.get_fastq_prefix() + '_2.fastq':
+                raise RuntimeError(f'unexpected paired filename: {fnames[0]}')
+        elif len(files) == 3:
+            # TODO: we should expect paired data with some single reads
+            raise NotImplementedError
+        else:
+            raise RuntimeError(
+                f'unexpected number of files downloaded: {files}'
+            )
+
+        # return values are suitable for Dataset.download_fastq()
+        return run['accession'], platform, is_paired_end, files
+
+    def get_sra_run_info(self):
         if self.sra_accession.startswith(('SRR', 'SRX')):
             other = self.sra_accession
         else:
             # might be ambiguous, hope for the best
             other = None
+        return sra.get_run(self.biosample, other=other)
 
-        run, platform = sra.get_run(self.biosample, other=other)
-        files = sra.download_fastq(
-            run['accession'],
-            dest=self.get_fastq_base(),
-            exist_ok=exist_ok,
-            verbose=True,
-        )
+    def amplicon_test(self, dry_run=False):
+        """
+        Run quick amplicon/primer location test
+        """
+        if self.sample_type != self.TYPE_AMPLICON:
+            raise RuntimeError(
+                f'method is only for {self.TYPE_AMPLICON} samples'
+            )
 
-        # Check that file names follow SRA fasterq-dump output file naming
-        # conventions as expected
-        if self.has_paired_data is None:
-            pass
-        elif self.has_paired_data:
-            if len(files) == 2:
-                fnames = sorted([i.name for i in files])
-                if fnames[0] != self.get_fastq_prefix() + '_1.fastq':
-                    raise RuntimeError(f'unexpected filename: {fnames[0]}')
-                if fnames[1] != self.get_fastq_prefix() + '_2.fastq':
-                    raise RuntimeError(f'unexpected filename: {fnames[0]}')
-            elif len(files) == 3:
-                # TODO: we should expect paired data with some single reads
-                raise NotImplementedError
-            else:
-                raise RuntimeError('unexpected number of files: {files}')
+        for i in get_target_genes():
+            if i in self.amplicon_target:
+                gene = i
+                break
         else:
-            # single-end data
-            if len(files) != 1:
-                raise RuntimeError(f'expected single file, got: {files}')
-            if files[0].name != self.get_fastq_prefix() + '.fastq':
-                raise RuntimeError(f'unexpected filename: {files}')
+            raise RuntimeError('gene target not supported')
 
-        # return values are suitable for Dataset.download_fastq()
-        return run['accession'], platform, files
+        data = quick_analysis(
+            self.get_fastq_base().parent,
+            glob=self.get_fastq_prefix() + '*.fastq',
+            gene=gene,
+        )
+        annot = quick_annotation(data, gene)
+        return annot
+
+    def assign_analysis_unit(self, create=True):
+        """
+        Assign sample to analysis unit, create on if needed
+
+        Returns the AmpliconAnalysisUnit object
+        """
+        obj = AmpliconAnalysisUnit.objects.get_or_create(
+            dataset=self.dataset,
+            # TODO
+        )
+        # TODO: need better localization data to do this
 
 
 class AbstractDataset(Model):
@@ -362,10 +428,11 @@ class AbstractDataset(Model):
         # TODO: implement correct behaviour if exist_ok and file actually exist
         manifest = []
         for i in self.sample_set.all():
-            run, platform, files = i.download_fastq(exist_ok=exist_ok)
+            run, platform, is_paired_end, files = i.download_fastq(exist_ok=exist_ok)  # noqa: E501
+            files = [i.name for i in files]
             if len(files) == 1:
                 # single reads
-                read1 = files[0].name
+                read1 = files[0]
                 read2 = ''
             elif len(files) == 2:
                 # paired-end reads, assume file names differ by infix:
@@ -376,6 +443,7 @@ class AbstractDataset(Model):
                 raise ValueError('can only handle one or two files per sample')
 
             manifest.append((
+                i.sample_id,
                 i.sample_name,
                 run,
                 platform,
@@ -420,6 +488,16 @@ class AbstractDataset(Model):
         # FIXME: use study_id, but that's currently GLAMR-specific ?
         return base / str(self.dataset_id)
 
+    def prepare_amplicon_analysis(self):
+        """
+        Ensure that amplicon analysis can be run on dataset
+
+        1. ensure fastq data is downloaded for all samples
+        2. ensure every sample is in one analysis unit
+        3. ensure we have info from preliminary analysis
+        """
+        ...
+
 
 class Alignment(Model):
     """ Model for a gene vs. UniRef100 alignment hit """
@@ -432,6 +510,23 @@ class Alignment(Model):
     class Meta:
         unique_together = (
             ('gene', 'ref'),
+        )
+
+
+class AmpliconAnalysisUnit(Model):
+    """ a collection of amplicon samples to be analysed together """
+    dataset = models.ForeignKey(settings.OMICS_DATASET_MODEL, **fk_req)
+    seq_platform = models.CharField(max_length=32)
+    is_paired_end = models.BooleanField()
+    target_gene = models.CharField(max_length=16)
+    fwd_primer = models.CharField(max_length=16)
+    rev_primer = models.CharField(max_length=16)
+    trim_params = models.CharField(max_length=128)
+
+    class Meta:
+        unique_together = (
+            ('dataset', 'seq_platform', 'is_paired_end', 'fwd_primer',
+             'rev_primer',),
         )
 
 

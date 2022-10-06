@@ -40,6 +40,9 @@ def search(accession):
 
 def get_run(biosample, other=None):
     """ get run+platform info  from biosample and other SRA accession """
+    LAYOUT_PAIRED = 'PAIRED'
+    LAYOUT_SINGLE = 'SINGLE'
+
     if not biosample.startswith('SAM'):
         raise ValueError(
             'expecting biosample accessions to have SAM prefix'
@@ -72,19 +75,24 @@ def get_run(biosample, other=None):
             # e.g.: 'PLATFORM': {'LS454': {'INSTRUMENT_MODEL': {}}}
             #       and extract 'LS454'
             platform = list(i['EXPERIMENT']['PLATFORM'].keys())[0]
+            # layout: see above, similar to platform
+            layout = list(i['EXPERIMENT']['DESIGN']['LIBRARY_DESCRIPTOR']['LIBRARY_LAYOUT'].keys())[0]  # noqa:E501
+            if layout not in [LAYOUT_PAIRED, LAYOUT_SINGLE]:
+                print(f'WARNING: unknown layout: {layout}')
+            is_paired_end = layout == LAYOUT_PAIRED
             all_runs = []
             for j in runs:
                 run = j['RUN']
                 run_id = run['accession']
                 exp_id = run['EXPERIMENT_REF']['accession']
                 if have_srr and run_id == other:
-                    return run, platform
+                    return run, platform, is_paired_end
                 elif have_srx and exp_id == other:
-                    return run, platform
+                    return run, platform, is_paired_end
                 all_runs.append(run)
             sample = i['SAMPLE']
             finds.append((
-                (sample['alias'], sample['accession'], platform),
+                (sample['alias'], sample['accession'], platform, layout),
                 all_runs,
             ))
 
@@ -93,8 +101,9 @@ def get_run(biosample, other=None):
 
     if len(finds) == 1:
         if len(finds[0][1]) == 1:
-            # run set has single run, return it+platform
-            return finds[0][1][0], finds[0][0][2]
+            # run set has single run, return it+platform+layout
+            is_paired_end = finds[0][0][3] == LAYOUT_PAIRED
+            return finds[0][1][0], finds[0][0][2], is_paired_end
         else:
             raise RuntimeError(f'zero or multiple runs in runset: {finds}')
     elif len(finds) > 1:
@@ -122,36 +131,20 @@ def expand_element(elem, always_keep_lists=False):
     return data
 
 
-def download_fastq(run_accession, dest=None, exist_ok=False, verbose=False):
+def download_fastq(run_accession, dest=None, verbose=False):
     """
     get fastq file(s) with fastq-dump tool
 
     dest: pathlib.Path of destination file(s) without .fasta suffix
-    Returns a list of downloaded files.  If some or all files exist then an
-    empty list is returned or an exception raises depending on the exist_ok
-    parameter.
+    Returns a list of downloaded files.
+
+    Existing files will be overwritten.
     """
     if not run_accession.startswith('SRR'):
         raise ValueError('expecting an SRA run accession (SRRxxxxxxx)')
 
     if dest is None:
         dest = Path() / run_accession
-
-    # if output files exist, then fastq-dump will give a cryptic error
-    # message, so dealing with already existing files here:
-    existing = list(dest.parent.glob(f'{dest.name}*'))
-    if existing:
-        if exist_ok:
-            if verbose:
-                print('Some destination file(s) exist already:')
-                for i in existing:
-                    print(f'exists: {i}')
-            # NOTE: somewhere in the run XML data from Entrez there is info how
-            # many files are to be expected and maybe an MD5 checksum?
-            return []
-        else:
-            existing = "\n".join([str(i) for i in existing])
-            raise RuntimeError(f'file(s) exist:\n{existing}')
 
     with tempfile.TemporaryDirectory() as tmpdirname:
         tmp = Path(tmpdirname)
@@ -198,9 +191,3 @@ def download_fastq(run_accession, dest=None, exist_ok=False, verbose=False):
         )
 
     return files
-
-
-def detect_fastq_type(base_path):
-    files = list(base_path.parent.glob(base_path.name + '*'))
-    if len(files) == 1:
-        return 'sanger454'
