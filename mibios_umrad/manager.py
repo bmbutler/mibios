@@ -685,7 +685,7 @@ class Loader(BulkCreateWrapperMixin, BaseLoader.from_queryset(QuerySet)):
 
 
 class BulkLoader(Loader):
-    def load(bulk=True, validate=False, **kwargs):
+    def load(self, bulk=True, validate=False, **kwargs):
         super().load(bulk=bulk, validate=validate, **kwargs)
 
 
