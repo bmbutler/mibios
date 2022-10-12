@@ -151,8 +151,8 @@ class QuerySet(BulkCreateWrapperMixin, MibiosQuerySet):
             objs=objs,
             batch_size=batch_size,
             ignore_conflicts=ignore_conflicts,
-            progress_text=None,
-            progress=True,
+            progress_text=progress_text,
+            progress=progress,
         )
 
 
