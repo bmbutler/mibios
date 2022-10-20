@@ -79,7 +79,12 @@ class BulkCreateWrapperMixin:
             model_name = wrappee_bc.__self__.model._meta.verbose_name
 
             if progress_text is None:
-                progress_text = f'{model_name} records created'
+                if model_name.endswith(' relationship'):
+                    # m2m through model
+                    rec_type = 'link'
+                else:
+                    rec_type = 'record'
+                progress_text = f'{model_name} {rec_type}s created'
 
             objs = iter(objs)
             pp = ProgressPrinter(
