@@ -66,7 +66,7 @@ class AccessionField(CharField):
         return value
 
     def get_prep_value(self, value):
-        if self.prefix is not None:
+        if self.prefix is not None and value is not None:
             if value.startswith(self.prefix):
                 value = value[len(self.prefix):]
         return value
