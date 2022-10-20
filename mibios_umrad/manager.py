@@ -106,6 +106,64 @@ class BulkCreateWrapperMixin:
 
         return bulk_create
 
+    @staticmethod
+    def bulk_update_wrapper(wrappee_bu):
+        """
+        A wrapper to add batching and progress metering to bulk_update()
+
+        :param bound method wrappee_bu: bulk_update method bound to a manager
+
+        This static wrapper method allows us to still (1) override the usual
+        Manager.bulk_update() but also (2) offer a wrapper to be used for cases
+        in which we are unable or don't want to override the model's manager,
+        e.g. the implicit through model of a many-to-many relation.
+        """
+        def bulk_update(objs, fields, batch_size=None, progress_text=None,
+                        progress=True):
+            """
+            Value-added bulk_update
+            """
+            if not progress:
+                # behave like original method
+                wrappee_bu(objs, fields, batch_size=batch_size)
+                return
+
+            if batch_size is None:
+                # sqlite has a variable-per-query limit of 999; it's not clear
+                # how one runs against that; it seems that multiple smaller
+                # INSERTs are being used automatically.  So, until further
+                # notice, only have a default batch size for progress metering
+                # here.
+                batch_size = 999
+
+            # get model name from manager (wrappee_bu.__self__ is the manager)
+            model_name = wrappee_bu.__self__.model._meta.verbose_name
+
+            if progress_text is None:
+                progress_text = f'{model_name} records updated'
+
+            objs = iter(objs)
+            pp = ProgressPrinter(
+                progress_text,
+                length=length_hint(objs) or None,
+            )
+
+            while True:
+                batch = list(islice(objs, batch_size))
+                if not batch:
+                    break
+                try:
+                    wrappee_bu(batch, fields)
+                except Exception as e:
+                    print(f'ERROR updating {model_name or "?"}: batch 1st: '
+                          f'{vars(batch[0])=}')
+                    raise RuntimeError('error updating batch', batch) from e
+                pp.inc(len(batch))
+
+            pp.finish()
+
+        return bulk_update
+
 
 class QuerySet(BulkCreateWrapperMixin, MibiosQuerySet):
     def search(self, query_term, field_name=None, lookup=None):
@@ -151,6 +209,20 @@ class QuerySet(BulkCreateWrapperMixin, MibiosQuerySet):
             objs=objs,
             batch_size=batch_size,
             ignore_conflicts=ignore_conflicts,
+            progress_text=progress_text,
+            progress=progress,
+        )
+
+    def bulk_update(self, objs, fields, batch_size=None, progress_text=None,
+                    progress=True):
+        """
+        Value-added bulk_update with batching and progress metering
+        """
+        wrapped_bu = self.bulk_update_wrapper(super().bulk_update)
+        wrapped_bu(
+            objs,
+            fields,
+            batch_size=batch_size,
             progress_text=progress_text,
             progress=progress,
         )
@@ -264,7 +336,7 @@ class BaseLoader(DjangoManager):
 
         if update:
             print(f'Retrieving {self.model._meta.model_name} records for '
-                  f'update mode... ', end='', flush=True)
+                  f'update mode... ')
             obj_pool = self._get_objects_for_update(template)
             print(f'[{len(obj_pool)} OK]')
 
@@ -437,11 +509,15 @@ class BaseLoader(DjangoManager):
         del missing_fks, row_skip_count, fk_skip_count
 
         if update:
-            update_fields = [i.name for i in fields]
+            # m2m fields must be updated later
+            update_fields = [i.name for i in fields if not i.many_to_many]
             if bulk:
                 self.bulk_update(objs, fields=update_fields)
             else:
-                for i in objs:
+                pp = ProgressPrinter(
+                    f'{self.model._meta.model_name} objects saved'
+                )
+                for i in pp(objs):
                     try:
                         i.save(update_fields=update_fields)
                     except Exception as e:
@@ -477,11 +553,11 @@ class BaseLoader(DjangoManager):
 
             # collecting all m2m entries
             for field in (i for i in fields if i.many_to_many):
-                self._update_m2m(field.name, m2m_data)
+                self._update_m2m(field.name, m2m_data, update=update)
 
         sleep(1)  # let progress meter finish
 
-    def _update_m2m(self, field_name, m2m_data):
+    def _update_m2m(self, field_name, m2m_data, update=False):
         """
         Update M2M data for one field -- helper for _load_lines()
 
@@ -489,9 +565,9 @@ class BaseLoader(DjangoManager):
         :param dict m2m_data:
             A dict with all fields' m2m data as produced in the load_lines
             method.
-        :param callable create_fun:
-            Callback function that creates a missing instance on the other side
-            of the relation.
+        :param bool update:
+            If True, then replace existing m2m relation, if False, then it is
+            assumed that no previous relations exist.
         """
         print(f'm2m {field_name}: ', end='', flush=True)
         field = self.model._meta.get_field(field_name)
@@ -507,7 +583,7 @@ class BaseLoader(DjangoManager):
             # cast to right type as needed (integers only?)
             accs = (int(i) for i in accs)
         accs = set(accs)
-        print(f'{len(accs)} unique accessions in data - ', end='', flush=True)
+        print(f'{len(accs)} unique accessions in data', end='', flush=True)
         if not accs:
             print()
             return
@@ -516,7 +592,7 @@ class BaseLoader(DjangoManager):
         qs = model.objects.all()
         qs = qs.values_list(model.get_accession_lookup_single(), 'pk')
         a2pk = dict(qs.iterator())
-        print(f'known: {len(a2pk)} ', end='', flush=True)
+        print(f' / known: {len(a2pk)}', end='', flush=True)
 
         new_accs = [i for i in accs if i not in a2pk]
         if new_accs:
@@ -524,7 +600,7 @@ class BaseLoader(DjangoManager):
             # NOTE: this will only work for those models for which the supplied
             # information (accession, source model and field) is sufficient,
             # might require overriding create_from_m2m_input().
-            print(f'new: {len(new_accs)}', end='')
+            print(f' / new: {len(new_accs)}', end='')
             if a2pk:
                 # if old ones exist, then display some of the new ones, this
                 # is for debugging, in case these ought to be known
@@ -583,6 +659,14 @@ class BaseLoader(DjangoManager):
             )
             for i, j, *params in rels
         ]
+
+        if update:
+            print('Deleting m2m links for update... ', end='', flush=True)
+            old = Through.objects.filter(uniref100__pk__in=m2m_data.keys())
+            delcount, _ = old.delete()
+            print(f'[{delcount} OK]')
+            del old
+
         self.bulk_create_wrapper(Through.objects.bulk_create)(through_objs)
 
     def get_choice_value_prep_function(self, field):
