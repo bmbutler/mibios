@@ -858,8 +858,7 @@ class TaxonAbundance(Model):
     #  1 type
     #  2 source
     #  3 target
-    # FIXME: taxname -> taxon
-    taxname = models.ForeignKey(Taxon, **fk_req, related_name='abundance')
+    taxon = models.ForeignKey(Taxon, **fk_req, related_name='abundance')
     #  4 lin_cnt
     lin_cnt = models.PositiveIntegerField()
     #  5 lin_avg_prgc  (inconsistent precision)
@@ -915,11 +914,11 @@ class TaxonAbundance(Model):
 
     class Meta(Model.Meta):
         unique_together = (
-            ('sample', 'taxname'),
+            ('sample', 'taxon'),
         )
 
     def __str__(self):
-        return (f'{self.sample.accession}/{self.taxname.name} '
+        return (f'{self.sample.accession}/{self.taxon.name} '
                 f'{self.lin_avg_rpkm}')
 
 

@@ -528,7 +528,7 @@ class DemoFrontPageView(SingleTableView):
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['mc_abund'] = TaxonAbundance.objects \
-            .filter(taxname='MICROCYSTIS') \
+            .filter(taxon__name='MICROCYSTIS') \
             .select_related('sample')[:5]
         ctx['keyword_search_form'] = SearchForm()
         return ctx
@@ -567,7 +567,7 @@ class OverView(SingleTableView):
     accessor = {
         'compoundentry': 'compoundabundance__compound',
         'funcrefdbentry': 'funcabundance__function',
-        'taxname': 'taxonabundance__taxname',
+        'taxon': 'taxonabundance__taxon',
         'compoundname': 'compoundabundance__compound__names',
         'functionname': 'funcabundance__function__names',
     }
@@ -630,7 +630,7 @@ class OverViewSamplesView(SingleTableView):
     accessor = {
         'compoundentry': 'compoundabundance__compound',
         'funcrefdbentry': 'funcabundance__function',
-        'taxname': 'taxonabundance__taxname',
+        'taxon': 'taxonabundance__taxon',
         'compoundname': 'compoundabundance__compound__names',
         'functionname': 'funcabundance__function__names',
     }
