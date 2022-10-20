@@ -350,14 +350,20 @@ class BaseLoader(DjangoManager):
         for i in fields:
             if not i.many_to_one:
                 continue
-            print(f'Retrieving {i.related_model._meta.verbose_name} data...',
-                  end='', flush=True)
+
             if i.name in self.spec.fk_attrs:
                 # lookup field given by dot-notaton
                 lookups = (self.spec.fk_attrs[i.name], )
             else:
                 # use defaults
                 lookups = i.related_model.get_accession_lookups()
+
+            if lookups == ('pk', ) or lookups == ('id', ):
+                # the values will be PKs
+                continue
+
+            print(f'Retrieving {i.related_model._meta.verbose_name} data...',
+                  end='', flush=True)
             fkmap[i.name] = {
                 tuple(a): pk for *a, pk
                 in i.related_model.objects.values_list(*lookups, 'pk')
@@ -448,11 +454,20 @@ class BaseLoader(DjangoManager):
                     setattr(obj, field.name, field.get_default())
 
                 elif field.many_to_one:
-                    if not isinstance(value, tuple):
-                        value = (value, )  # fkmap keys are tuples
-                    try:
-                        pk = fkmap[field.name][value]
-                    except KeyError:
+                    if field.name in fkmap:
+                        if not isinstance(value, tuple):
+                            value = (value, )  # fkmap keys are tuples
+                        try:
+                            pk = fkmap[field.name][value]
+                        except KeyError:
+                            pk = None
+                    else:
+                        # value is PK
+                        if isinstance(value, int):
+                            pk = value
+                        else:
+                            pk = None
+                    if pk is None:
                         # FK target object does not exist
                         missing_fks[field.name].add(value)
                         if field.null:
