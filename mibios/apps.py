@@ -84,7 +84,11 @@ class MibiosConfig(apps.AppConfig):
         if settings.DEBUG:
             for i in django.db.connections.all():
                 params = i.get_connection_params()
-                params = ' '.join([f'{k}={v}' for k, v in params.items()])
+                params = [
+                    f'{k}={v}' for k, v in params.items()
+                    if k != 'password'
+                ]
+                params = ' '.join(params)
                 log.info(f'DB {i.alias}: {i.display_name} ({params})')
 
         info = f'Registry {registry.name} (app:models+datasets):'
