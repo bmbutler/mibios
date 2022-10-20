@@ -1026,7 +1026,7 @@ class TaxonLoader(Loader):
         return settings.UMRAD_ROOT / 'TAXONOMY_DB.txt'
 
     @atomic_dry
-    def load(self, path=None, dry_run=False):
+    def load(self, path=None, bulk=True, dry_run=False):
         if path is None:
             path = self.get_file()
 
@@ -1061,22 +1061,32 @@ class TaxonLoader(Loader):
                 taxids[taxid] = (rank, name)
 
         # saving Taxon objects
-        self.bulk_create((i for i, _ in objs.values()))
+        taxa = (i for i, _ in objs.values())
+        if bulk:
+            self.bulk_create(taxa)
+        else:
+            for i in taxa:
+                try:
+                    i.save()
+                except Exception as e:
+                    print(f'{e}: Failed saving {i}: {vars(i)}')
+                    raise
 
-        # retrieving PKs
+        print('Retrieving taxon PKs... ', end='', flush=True)
         qs = self.model.objects.values_list('pk', 'rank', 'name')
         obj_pks = {(rank, name): pk for pk, rank, name in qs.iterator()}
+        print(f'{len(obj_pks)} [OK]')
 
         # setting ancestry relations
         Through = self.model._meta.get_field('ancestors').remote_field.through
-        through_objs = [
+        through_objs = (
             Through(
                 from_taxon_id=obj_pks[(obj.rank, obj.name)],
                 to_taxon_id=obj_pks[(rank, name)]
             )
             for obj, ancestry in objs.values()
             for rank, name in ancestry
-        ]
+        )
         self.bulk_create_wrapper(Through.objects.bulk_create)(through_objs)
 
         # saving taxids
