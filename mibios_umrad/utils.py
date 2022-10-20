@@ -128,6 +128,7 @@ class ProgressPrinter():
 
     def __call__(self, it):
         self.it = it
+        self.reset_length_info()
         for elem in it:
             yield elem
             self.inc()
@@ -148,8 +149,12 @@ class ProgressPrinter():
         self.max_width = 0
         self.ring_time = None
         self.time_zero = datetime.now()
+        self.reset_length_info()
 
-        # get length is possible:
+    def reset_length_info(self):
+        """
+        get length if possible
+        """
         self._length = None
         self.file_size = None
         if self.length is None:
