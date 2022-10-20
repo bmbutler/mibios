@@ -218,7 +218,7 @@ class FuncRefDBEntry(Model):
 
 
 class TaxID(Model):
-    taxid = models.PositiveIntegerField(
+    taxid = models.PositiveBigIntegerField(
         unique=True, verbose_name='NCBI taxid',
     )
     taxon = models.ForeignKey('Taxon', **fk_req)
@@ -255,9 +255,9 @@ class Taxon(Model):
         (7, 'species'),
         (8, 'strain'),
     )
-    name = models.CharField(max_length=64)
+    name = models.CharField(max_length=256)
     rank = models.PositiveSmallIntegerField(choices=RANKS)
-    lineage = models.CharField(max_length=256)
+    lineage = models.CharField(max_length=512)
     ancestors = models.ManyToManyField(
         'self',
         symmetrical=False,
