@@ -27,7 +27,7 @@ from mibios_umrad.models import (
 from mibios_omics.models import Gene
 from . import models, tables
 from .forms import (
-    SearchForm, QBuilderForm, QLeafEditForm,
+    AdvancedSearchForm, QBuilderForm, QLeafEditForm,
 )
 from .search_utils import searchable_models, get_suggestions
 
@@ -530,7 +530,6 @@ class DemoFrontPageView(SingleTableView):
         ctx['mc_abund'] = TaxonAbundance.objects \
             .filter(taxon__name='MICROCYSTIS') \
             .select_related('sample')[:5]
-        ctx['keyword_search_form'] = SearchForm()
         return ctx
 
     def make_ratios_plot(self):
@@ -700,7 +699,7 @@ class SearchView(TemplateView):
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['keyword_search_form'] = SearchForm()
+        ctx['advanced_search'] = True
         ctx['models'] = [
             (i._meta.model_name, i._meta.verbose_name)
             for i in get_registry().models.values()
@@ -715,23 +714,41 @@ class SearchModelView(EditFilterMixin, TemplateView):
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
-        ctx['keyword_search_form'] = SearchForm()
         return ctx
 
 
 class SearchHitView(TemplateView):
     template_name = 'mibios_glamr/search_hits.html'
 
+    # tri-state indicator if search results hit field data or just reference
+    reference_hit_only = None
+
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['search_hits'] = self.hits
         ctx['query'] = self.query
         ctx['no_hit_models'] = self.no_hit_models
+        ctx['reference_hit_only'] = self.reference_hit_only
         ctx['suggestions'] = self.suggestions
         return ctx
 
     def get(self, request, *args, **kwargs):
-        self.search()
+        form = AdvancedSearchForm(data=self.request.GET)
+        if form.is_valid():
+            self.query = form.cleaned_data['query']
+            check_abundance = form.cleaned_data.get('field_data_only')
+            self.search(check_abundance=check_abundance)
+            if check_abundance:
+                if self.hits:
+                    self.reference_hit_only = False
+                else:
+                    self.reference_hit_only = True
+                    # try again without restriction
+                    self.search(check_abundance=False)
+        else:
+            # invalid form, pretend empty search result
+            pass
+
         if self.hits:
             self.suggestions = None
         else:
@@ -743,24 +760,16 @@ class SearchHitView(TemplateView):
                 return HttpResponseRedirect(reverse('frontpage'))
         return self.render_to_response(self.get_context_data())
 
-    def get_suggestions(self):
-        return None
-
-    def search(self):
+    def search(self, check_abundance=False):
         self.hits = []
         self.no_hit_models = []
-
-        form = SearchForm(data=self.request.GET)
-        if not form.is_valid():
-            return None
-        self.query = form.cleaned_data['query']
 
         for model in searchable_models:
             have_abundance = False
             search_field_name = model.get_search_field().name
             qs = model.objects.search(self.query)
 
-            if not form.cleaned_data.get('search_all'):
+            if check_abundance:
                 # just search for objects with abundance
                 # (if model supports it, no filters for other models)
                 if model is CompoundName:

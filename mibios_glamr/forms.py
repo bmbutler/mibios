@@ -33,11 +33,11 @@ class SearchForm(forms.Form):
 
 
 class AdvancedSearchForm(SearchForm):
-    search_all = forms.BooleanField(
-        initial=False,
+    field_data_only = forms.BooleanField(
+        initial=True,
         required=False,
         # label=??,
-        # help_text='Also show results for things not found in samples',
+        # help_text='Restrict results to things found in field samples',
     )
 
 

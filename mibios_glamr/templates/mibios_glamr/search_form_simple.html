@@ -3,5 +3,11 @@
     <button class="btn btn-primary" type="submit" values="Submit">Search</button>
     <input type="text" name="query" placeholder="e.g. microcystis, R00425, CHEBI:15740, formate" required id="id_query" class="form-control">
     </div>
+    {% if advanced_search %}
+        <div class="input-group mb-3">
+        <input type="checkbox" name="field_data_only" id="id_field_data_only" checked>
+        <label for="id_field_data_only">&nbsp;restrict search to field data</label>
+        </div>
+    {% endif %}
 </form>
 
