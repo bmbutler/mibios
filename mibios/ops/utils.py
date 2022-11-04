@@ -1,4 +1,5 @@
 import cProfile
+from functools import wraps
 import logging
 import pstats
 
@@ -80,3 +81,25 @@ class Profiling:
                 ps.print_stats()
 
         return response
+
+
+def profile(func):
+    """
+    Profile given function or method
+    """
+    @wraps(func)
+    def profiled_func(*args, **kwargs):
+        prof = cProfile.Profile()
+        prof.enable()
+
+        retval = func(*args, **kwargs)
+
+        prof.disable()
+        for sortby in ['cumulative', 'tottime']:
+            with open(f'profile.{sortby}.txt', 'w') as f:
+                ps = pstats.Stats(prof, stream=f).sort_stats(sortby)
+                ps.print_stats()
+
+        return retval
+
+    return profiled_func
