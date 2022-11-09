@@ -97,7 +97,7 @@ class OverViewSamplesTable(Table):
         verbose_name='sample',
     )
     sample_name = Column(verbose_name='other names')
-    group = Column(
+    dataset = Column(
         linkify=lambda value: get_record_url(value),
         verbose_name='dataset',
     )
@@ -105,7 +105,7 @@ class OverViewSamplesTable(Table):
     class Meta:
         model = glamr_models.Sample
         fields = [
-            'accession', 'sample_name', 'group', 'group.water_bodies',
+            'accession', 'sample_name', 'dataset', 'dataset.water_bodies',
             'date', 'Institution/PI', 'latitude', 'longitude',
         ]
 

@@ -654,7 +654,7 @@ class OverViewSamplesView(SingleTableView):
             qs = models.Sample.objects.filter(**f)
             # distinct: there may be multiple abundances per object and sample
             # e.g. for different roles of a compound
-            qs = qs.select_related('group').distinct()
+            qs = qs.select_related('dataset').distinct()
         return qs
 
     def get_context_data(self, **ctx):
