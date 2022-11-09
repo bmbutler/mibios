@@ -51,17 +51,17 @@ class AbstractSample(Model):
         (TYPE_METATRANS, TYPE_METATRANS),
     )
 
-    tracking_id = models.CharField(
-        # length of md5 checksum, 128 bit as hex string
-        max_length=32,
-        **uniq_opt,
-        help_text='internal uniform hex id',
-    )
     sample_id = models.CharField(
         max_length=256,
         # TODO: make required
         **uniq_opt,
         help_text='internal sample accession',
+    )
+    tracking_id = models.CharField(
+        # length of md5 checksum, 128 bit as hex string
+        max_length=32,
+        **uniq_opt,
+        help_text='internal uniform hex id',
     )
     sample_name = models.CharField(
         max_length=64,
@@ -200,6 +200,8 @@ class AbstractSample(Model):
             self.save()
 
     def get_metagenome_path(self):
+        if self.tracking_id is None:
+            raise RuntimeError(f'sample {self} has no tracking id')
         return settings.OMICS_DATA_ROOT / 'data' / 'omics' / 'metagenomes' \
             / self.tracking_id
 
@@ -504,15 +506,15 @@ class Alignment(Model):
     history = None
     gene = models.ForeignKey('Gene', **fk_req)
     ref = models.ForeignKey(UniRef100, **fk_req)
+    score = models.PositiveIntegerField()
 
     loader = managers.AlignmentLoader()
 
     class Meta:
-        unique_together = (
-            ('gene', 'ref'),
-        )
+        unique_together = (('gene', 'ref'),)
 
 
+'''
 class AmpliconAnalysisUnit(Model):
     """ a collection of amplicon samples to be analysed together """
     dataset = models.ForeignKey(settings.OMICS_DATASET_MODEL, **fk_req)
@@ -853,62 +855,9 @@ class CheckM(Model):
 
 
 class TaxonAbundance(Model):
-
     sample = models.ForeignKey(settings.OMICS_SAMPLE_MODEL, **fk_req)
-    #  1 type
-    #  2 source
-    #  3 target
     taxon = models.ForeignKey(Taxon, **fk_req, related_name='abundance')
-    #  4 lin_cnt
-    lin_cnt = models.PositiveIntegerField()
-    #  5 lin_avg_prgc  (inconsistent precision)
-    lin_avg_prgc = models.DecimalField(**digits(10, 3))
-    #  6 lin_avg_depth (inconsistent)
-    lin_avg_depth = models.DecimalField(**digits(10, 3))
-    #  7 lin_avg_rpkm  (inconsistent)
-    lin_avg_rpkm = models.DecimalField(**digits(8, 3))
-    #  8 lin_gnm_pgc  ( really inconsistent numbers, incl. int + float? )
-    lin_gnm_pgc = models.DecimalField(**digits(8, 2))
-    #  9 lin_sum_sco  (inconsistent)
-    lin_sum_sco = models.DecimalField(**digits(18, 4))
-    # 10 lin_con_len
-    lin_con_len = models.PositiveIntegerField()
-    # 11 lin_gen_len
-    lin_gen_len = models.PositiveIntegerField()
-    # 12 lin_con_cnt
-    lin_con_cnt = models.PositiveIntegerField()
-    # 13 lin_tgc
-    lin_tgc = models.PositiveIntegerField()
-    # 14 lin_comp_genes
-    lin_comp_genes = models.PositiveIntegerField()
-    # 15 lin_nlin_gc
-    lin_nlin_gc = models.PositiveIntegerField()
-    # 16 lin_novel
-    lin_novel = models.PositiveIntegerField()
-    # 17 lin_con_uniq
-    lin_con_uniq = models.PositiveIntegerField()
-    # 18 lin_tpg
-    lin_tpg = models.PositiveIntegerField()
-    # 19 lin_obg
-    lin_obg = models.PositiveIntegerField()
-    # 20 con_lca
-    con_lca = models.PositiveIntegerField()
-    # 21 gen_lca
-    gen_lca = models.PositiveIntegerField()
-    # 22 part_gen
-    part_gen = models.PositiveIntegerField()
-    # 23 uniq_gen
-    uniq_gen = models.PositiveIntegerField()
-    # 24 con_len
-    con_len = models.PositiveIntegerField()
-    # 25 gen_len
-    gen_len = models.PositiveIntegerField()
-    # 26 con_rpkm
-    con_rpkm = models.DecimalField(**digits(12, 4))
-    # 27 gen_rpkm
-    gen_rpkm = models.DecimalField(**digits(12, 4))
-    # 28 gen_dept  ...
-    gen_dept = models.DecimalField(**digits(12, 4))
+    sum_gene_rpkm = models.DecimalField(**digits(12, 4))
 
     loader = managers.TaxonAbundanceLoader()
 
@@ -918,8 +867,8 @@ class TaxonAbundance(Model):
         )
 
     def __str__(self):
-        return (f'{self.sample.accession}/{self.taxon.name} '
-                f'{self.lin_avg_rpkm}')
+        return (f'{self.taxon.name}/{self.sample.sample_name} '
+                f'{self.sum_gene_rpkm}')
 
 
 class CompoundAbundance(AbstractAbundance):
@@ -1046,14 +995,13 @@ class ContigLike(SequenceLike):
 
 
 class Contig(ContigLike):
-    contig_id = AccessionField(prefix='CLUSTER:', unique=False, max_length=50)
+    contig_id = AccessionField(unique=False, max_length=10)
 
     # bin membership
     bin_max = models.ForeignKey(BinMAX, **fk_opt, related_name='members')
     bin_m93 = models.ForeignKey(BinMET93, **fk_opt, related_name='members')
     bin_m97 = models.ForeignKey(BinMET97, **fk_opt, related_name='members')
     bin_m99 = models.ForeignKey(BinMET99, **fk_opt, related_name='members')
-    lca = models.ForeignKey(Taxon, **fk_opt)  # opt. for contigs w/o genes
 
     loader = managers.ContigLoader()
 
@@ -1074,8 +1022,8 @@ class Contig(ContigLike):
 
     def set_from_fa_head(self, fasta_head_line):
 
-        # parsing ">foo\n" -> "foo"  /  FIXME: varying case issue
-        self.contig_id = fasta_head_line.lstrip('>').rstrip().upper()
+        # parsing ">deadbeef_123\n" -> "123"
+        self.contig_id = fasta_head_line.lstrip('>').rstrip().partition('_')[2]
 
 
 class FuncAbundance(AbstractAbundance):
@@ -1112,12 +1060,14 @@ class Gene(ContigLike):
         ('+', '+'),
         ('-', '-'),
     )
-    gene_id = AccessionField(prefix='CLUSTER', unique=False, max_length=50)
+    gene_id = AccessionField(unique=False, max_length=20)
     contig = models.ForeignKey('Contig', **fk_req)
     start = models.PositiveIntegerField()
     end = models.PositiveIntegerField()
     strand = models.CharField(choices=STRAND_CHOICE, max_length=1)
-    besthit = models.ForeignKey(UniRef100, **fk_opt)
+    besthit = models.ForeignKey(UniRef100, **fk_opt, related_name='gene_best')
+    hits = models.ManyToManyField(UniRef100, through=Alignment,
+                                  related_name='gene_hit')
 
     loader = managers.GeneLoader()
 
@@ -1136,16 +1086,9 @@ class Gene(ContigLike):
     def accession(self):
         return f'{self.sample}:{self.gene_id}'
 
-    def set_from_fa_head(self, line, contig_ids, **kwargs):
+    def set_from_fa_head(self, line, contig_id_map, **kwargs):
         # parsing prodigal info
-        name, start, end, strand, misc = line.lstrip('>').rstrip().split(' # ')
-
-        # figure out what the contig is:
-        cont_id, _, gene_num = name.rpartition('_')
-        try:
-            int(gene_num)
-        except ValueError:
-            raise
+        gene_id, start, end, strand, misc = line.lstrip('>').rstrip().split(' # ')  # noqa: E501
 
         if strand == '1':
             strand = '+'
@@ -1154,9 +1097,13 @@ class Gene(ContigLike):
         else:
             raise ValueError('expected strand to be "1" or "-1"')
 
-        self.gene_id = name.upper()  # FIXME: solve varying case issue
+        # name expected to be: deadbeef_123_1
+        gene_id = gene_id.partition('_')[2]  # get e.g. 123_1
+        self.gene_id = gene_id
+        contig_id = gene_id.partition('_')[0]  # get e.g. 123
         try:
-            self.contig_id = contig_ids[cont_id.upper()]  # FIXME: case issue
+            # contig_id_map must be a mapping from contig_ids to Contig PKs
+            self.contig_id = contig_id_map[contig_id]
         except KeyError as e:
             raise RuntimeError(
                 f'no such contig: {e} -- ensure contigs are loaded'

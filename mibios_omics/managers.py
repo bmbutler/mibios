@@ -1,24 +1,36 @@
 """
 Module for data load managers
+
+=== Workflow to load metagenomic data ===
+
+Assumes that UMRAD and sample meta-data is loaded
+    Sample.objects.sync()
+    s = Sample.objects.get(sample_id='samp_14')
+    Contig.loader.load_fasta_sample(s)
+    Gene.loader.load_fasta_sample(s)
+    Contig.loader.load_abundance_sample(s, bulk=False)
+    Gene.loader.load_abundance_sample(s, bulk=False)
+    Alignment.loader.load_sample(s)
+    Gene.loader.assign_gene_lca(s)
+    Contig.loader.assign_gene_lca(s)
+    TaxonAbundance.loader.load_sample(s)
+
 """
-from collections import defaultdict
-from functools import wraps
-from itertools import groupby, islice, zip_longest
+from itertools import groupby, islice
 from logging import getLogger
 from operator import itemgetter
 import os
 
 from django.conf import settings
-from django.db.transaction import atomic, set_rollback
+from django.db.models import prefetch_related_objects
+from django.utils.module_loading import import_string
 
 from mibios.models import QuerySet
 from mibios_umrad.models import TaxID, Taxon, UniRef100
 from mibios_umrad.manager import BulkLoader, Manager
-from mibios_umrad.utils import (
-    CSV_Spec, ProgressPrinter, ReturningGenerator, atomic_dry,
-)
+from mibios_umrad.utils import CSV_Spec, atomic_dry
 
-from . import get_sample_model, get_dataset_model
+from . import get_sample_model
 from .utils import get_fasta_sequence
 
 
@@ -59,9 +71,20 @@ class BBMap_RPKM_Spec(CSV_Spec):
 class SampleLoadMixin:
     """ Mixin for Loader class that loads per-sample files """
 
+    load_flag_attr = None
+    """ may be specified by implementing class """
+
     @atomic_dry
-    def load_sample(self, sample, flag, **kwargs):
-        if not kwargs.get('update', False) and getattr(sample, flag):
+    def load_sample(self, sample, **kwargs):
+        if 'flag' in kwargs:
+            flag = kwargs.pop('flag')
+            if flag is None:
+                # explicit override / no flag check/set
+                pass
+        else:
+            flag = self.load_flag_attr
+
+        if flag and not kwargs.get('update', False) and getattr(sample, flag):
             raise RuntimeError(f'data already loaded: {flag} -> {sample}')
 
         if 'file' not in kwargs:
@@ -69,26 +92,102 @@ class SampleLoadMixin:
 
         self.load(template={'sample': sample}, **kwargs)
 
-        setattr(sample, flag, True)
-        sample.save()
+        if flag:
+            setattr(sample, flag, True)
+            sample.save()
 
 
-class AlignmentLoader(BulkLoader):
-    """ loader XX_GENES.m8 files """
-
-    def get_m8_path(self, sample):
-        return sample.get_metagenome_path() / 'annotation' \
-            / f'{sample.tracking_id}_GENES.m8'
-
-    def query2gene(self, value, row):
+class M8Spec(CSV_Spec):
+    def iterrows(self):
         """
-        get gene id from qseqid column for genes
+        Transform m8 file into top good hits
+
+        Yields rows of triplets [gene, uniref100, score]
+
+        m8 file format:
+
+             0 qseqid  /  $gene
+             1 qlen
+             2 sseqid  / $hit
+             3 slen
+             4 qstart
+             5 qend
+             6 sstart
+             7 send
+             8 evalue
+             9 pident / $pid
+            10 mismatch
+            11 qcovhsp  /  $cov
+            12 scovhsp
+        """
+        minid = self.loader.MINID
+        mincov = self.loader.MINCOV
+        score_margin = self.loader.TOP
+        per_gene = groupby(super().iterrows(), key=itemgetter(0))
+        for gene_id, grp in per_gene:
+            # 1. get good hits
+            hits = []
+            for row in grp:
+                pid = float(row[9])
+                if pid < minid:
+                    continue
+                cov = float(row[11])
+                if cov < mincov:
+                    continue
+                # hits: (gene, uniref100, score)
+                hits.append((row[0], row[2], int(pid * cov)))
+
+            # 2. keep top hits
+            if hits:
+                hits = sorted(hits, key=lambda x: -x[2])  # sort by score
+                minscore = int(hits[0][2] * score_margin)
+                for i in hits:
+                    # The int() above are improper rounding, so some scores a
+                    # bit below the cutoff will slip through
+                    if i[2] >= minscore:
+                        yield i
+
+
+class AlignmentLoader(BulkLoader, SampleLoadMixin):
+    """
+    loads data from XX_GENES.m8 files into Alignment table
+
+    Parameters:
+      1. min query coverage (60%)
+      2. min pct alignment identity (60%)
+      3. min number of genes to keep (3) (not including? phages/viruses)
+      4. top score margin (0.9)
+      5. min number of model genomes for func. models (5)
+
+    Notes on Annotatecontigs.pl:
+        top == 0.9
+        minimum pident == 60%
+        minimum cov/qcovhsp == 60
+        score = pid*cov
+        keep top score per hit (global?)
+        keep top score of hits for each gene
+        keep top x percentile hits for each gene
+
+
+    """
+    MINID = 60.0
+    MINCOV = 60.0
+    TOP = 0.9
+
+    load_flag_attr = 'gene_alignment_hits_loaded'
+
+    def get_file(self, sample):
+        return sample.get_metagenome_path() / f'{sample.tracking_id}_GENES.m8'
+
+    def query2gene_pk(self, value, row):
+        """
+        get gene PK from qseqid column for genes
 
         The query column has all that's in the fasta header, incl. the prodigal
         data.  Also add the sample pk (gene is a FK field).
         """
-        gene_id = value.split(maxsplit=1)[0].upper()
-        return (self.sample.pk, gene_id)
+        gene_id = value.split('\t', maxsplit=1)[0].partition('_')[2]
+        return self.gene_id_map[gene_id]
 
     def upper(self, value, row):
         """
@@ -98,39 +197,17 @@ class AlignmentLoader(BulkLoader):
         """
         return value.upper()
 
-    spec = CSV_Spec(
-        ('gene', query2gene),  # qseqid
-        (None, ),  # qlen
-        ('ref', upper),  # sseqid
-        (None, ),  # slen
-        (None, ),  # qstart
-        (None, ),  # qend
-        (None, ),  # sstart
-        (None, ),  # send
-        (None, ),  # evalue
-        (None, ),  # pident
-        (None, ),  # mismatch
-        (None, ),  # qcovhsp
-        (None, ),  # scovhsp
+    spec = M8Spec(
+        ('gene.pk', query2gene_pk),
+        ('ref', upper),
+        ('score',),
     )
 
-    @atomic_dry
-    def load_m8_sample(self, sample, file=None, **kwargs):
-        if sample.gene_alignment_hits_loaded:
-            raise RuntimeError(f'alignment data already loaded: {sample}')
-
+    def load_sample(self, sample, file=None, **kwargs):
+        self.gene_id_map = dict(sample.gene_set.values_list('gene_id', 'pk'))
         if file is None:
-            file = self.get_m8_path(sample)
-
-        self.sample = sample
-        self.load(
-            spec=self.spec,
-            file=file,
-            **kwargs,
-        )
-        # TODO: filter by top parameter
-        sample.gene_alignment_hits_loaded = True
-        sample.save()
+            file = self.get_file(sample)
+        super().load(file=file, **kwargs)
 
 
 class CompoundAbundanceLoader(BulkLoader, SampleLoadMixin):
@@ -201,7 +278,7 @@ class SequenceLikeLoader(SampleLoadMixin, BulkLoader):
         # should return Path
         raise NotImplementedError
 
-    def get_load_sample_fasta_extra_kw(self, sample):
+    def get_set_from_fa_head_extra_kw(self, sample):
         """
         Return extra kwargs for from_sample_fasta()
 
@@ -210,7 +287,8 @@ class SequenceLikeLoader(SampleLoadMixin, BulkLoader):
         return {}
 
     @atomic_dry
-    def load_fasta_sample(self, sample, start=0, limit=None, validate=False):
+    def load_fasta_sample(self, sample, start=0, limit=None, bulk=True,
+                          validate=False):
         """
         import sequence data for one sample
 
@@ -218,24 +296,30 @@ class SequenceLikeLoader(SampleLoadMixin, BulkLoader):
         """
         if getattr(sample, self.fasta_load_flag):
             raise RuntimeError(
-                'data already loaded - update not supported: '
-                '{self.fasta_load_flag} -> {sample}'
+                f'data already loaded - update not supported: '
+                f'{self.fasta_load_flag} -> {sample}'
             )
 
-        extra = self.get_load_sample_fasta_extra_kw(sample)
-        objs = self.from_sample_fasta(sample, start=start, limit=limit,
-                                      **extra)
+        objs = self.from_sample_fasta(sample, start=start, limit=limit)
         if validate:
             objs = ((i for i in objs if i.full_clean() or True))
-        self.bulk_create(objs)
+
+        if bulk:
+            self.bulk_create(objs)
+        else:
+            for i in objs:
+                i.save()
 
         setattr(sample, self.fasta_load_flag, True)
         sample.save()
 
-    def from_sample_fasta(self, sample, start=0, limit=None, **extra):
+    def from_sample_fasta(self, sample, start=0, limit=None):
         """
         Generate instances for given sample
+
+        Helper for load_fasta_sample().
         """
+        extra = self.get_set_from_fa_head_extra_kw(sample)
         with self.get_fasta_path(sample).open('r') as fa:
             os.posix_fadvise(fa.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
             print(f'reading {fa.name} ...')
@@ -302,6 +386,26 @@ class ContigLikeLoader(SequenceLikeLoader):
         if file is None:
             file = self.get_rpkm_path(sample)
 
+        # read header data
+        with open(file) as ifile:
+            while True:
+                line = ifile.readline()
+                if not line.startswith('#'):
+                    break
+                key, _, data = line.strip().partition('\t')
+                if key == '#Reads':
+                    data = int(data)
+                    if sample.read_count is not None:
+                        if sample.read_count != data:
+                            print(
+                                'Warning: overwriting existing read count with'
+                                f'different value: {sample.read_count}->{data}'
+                            )
+                    sample.read_count = data
+                elif key == '#Mapped':
+                    setattr(sample, self.reads_mapped_sample_attr, int(data))
+        sample.save()
+
         self.load_sample(
             sample,
             flag=self.abundance_load_flag,
@@ -310,302 +414,47 @@ class ContigLikeLoader(SequenceLikeLoader):
             update=True,
             **kwargs)
 
-    @atomic
-    def XXX_load_sample(self, sample, limit=None, dry_run=False):
-        """
-        import sequence/coverage data for one sample
+    @staticmethod
+    def get_lca(taxa):
+        """ helper to calculate the LCA Taxon from taxids """
+        lins = []
+        for i in taxa:
+            # assume ancestors are prefetched, so sort by python
+            lineage = sorted(i.ancestors.all(), key=lambda x: x.rank)
+            lineage.append(i)
+            lins.append(lineage)
 
-        limit - limit to that many contigs, for testing only
-
-        The method assumes that the fasta and coverage input both have the
-        contigs/genes in the same order.
-        """
-        if getattr(sample, self.is_loaded_attr):
-            raise RuntimeError(
-                f'Sample {sample}: data for {self.model} already loaded'
-            )
-
-        extra = self.get_load_sample_fasta_extra_kw(sample)
-        objs = self.from_sample_fasta(sample, limit=limit, **extra)
-        cov = self.read_coverage(sample, limit=limit)
-        cov = ReturningGenerator(cov)
-        fk_data, m2m_data = self.read_contigs_file(sample)
-        fk_data = self.get_pks_for_rel(fk_data)
-        m2m_data = self.get_pks_for_rel(m2m_data)
-        objs = self._join_cov_data(objs, cov, fk_data)
-        self.bulk_create(objs)
-        self.set_m2m_relations(sample, m2m_data['taxid'])
-        self.process_coverage_header_data(sample, cov.value)
-        setattr(sample, self.is_loaded_attr, True)
-        sample.save()
-
-        if dry_run:
-            set_rollback(True)
-
-    def read_coverage(self, sample, limit=None):
-        """
-        load coverage data
-
-        This is a generator, yielding each row.  The return value is a dict
-        with the header data.
-        """
-        rpkm_cols = ['Name', 'Length', 'Bases', 'Coverage', 'Reads', 'RPKM',
-                     'Frags', 'FPKM']
-
-        head_data = {}
-
-        with self.get_coverage_path(sample).open('r') as f:
-            os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
-            print(f'reading {f.name}...')
-            # 1. read header
-            for line in f:
-                if not line.startswith('#'):
-                    raise ValueError(
-                        '{sample}/{f}: expected header but got: {line}'
-                    )
-                row = line.strip().lstrip('#').split('\t')
-                if row[0] == 'Name':
-                    if not row == rpkm_cols:
-                        raise ValueError(
-                            '{sample}/{f}: unexpected column names'
-                        )
-                    # table starts
-                    break
-
-                # expecting key/value pairs
-                key, value = row
-                head_data[key] = value
-
-            # 2. read rows
-            count = 0
-            for line in f:
-                if limit and count >= limit:
-                    break
-                yield line.rstrip().split('\t')
-                count += 1
-
-            return head_data
-
-    def _join_cov_data(self, objs, cov, other):
-        """
-        populate instances with coverage data and other
-
-        other: must be FK data (maps: contig/gene id -> PK)
-        """
-        null_allowed = {
-            field: self.model._meta.get_field(field).null
-            for field in other
-        }
-        skip_count = 0
-
-        # zip_longest: ensures (over just zip) that cov.value gets populated
-        for obj, row in zip_longest(objs, cov):
-            obj_id = getattr(obj, self.model.id_field_name)
-            if obj_id != row[0].split(maxsplit=1)[0].upper():  # check name/id
-                raise RuntimeError(
-                    f'seq and cov data is out of order: {obj_id=} {row[0]=}'
-                )
-
-            obj.length = row[1]
-            obj.bases = row[2]
-            obj.coverage = row[3]
-            obj.reads_mapped = row[4]
-            obj.rpkm = row[5]
-            obj.frags_mapped = row[6]
-            obj.fpkm = row[7]
-
-            # set FKs from contigs file data:
-            for fk_field_name, id2value in other.items():
-                try:
-                    setattr(obj, fk_field_name + '_id', id2value[obj_id])
-                except KeyError as e:
-                    if null_allowed[fk_field_name]:
-                        pass
-                    else:
-                        # FIXME (error handling)
-                        # required FK missing? Comes probably from non-existing
-                        # LCA/Taxname/besthit or similar.  Now, in development,
-                        # this is to be expected, while source data is based on
-                        # a mix of different reference versions, we want to
-                        # skip these,later we might want to raise here
-                        skip_count += 1
-                        break  # skips yield below
-                        # alternatively raise:
-                        raise RuntimeError(
-                            f'{obj=} {fk_field_name=} {obj_id=}'
-                        ) from e
-
+        lca = None
+        for items in zip(*lins):
+            if len(set([i.pk for i in items])) == 1:
+                lca = items[0]
             else:
-                yield obj
+                break
 
-        if skip_count > 0:
-            print(f'WARNING: (_join_cov_data): skipped {skip_count} objects')
-
-    def parse_contigs_file(self, sample):
-        """
-        Get (some) data from contigs txt file for given sample
-
-        Parses and yields data from the contigs files for further processing.
-        This also means the contigs file will be read twice, once when
-        importing contig data and then again when importing gene data.
-
-        It is assumed that the contigs file is ordered by contig and that
-        within the group of a contig's rows, each contig-specific column has
-        the same value accross the group's rows.
-        """
-        cols = ['contig', 'conlen', 'congcnt', 'conpgc', 'conrpkm', 'condepth',
-                'gene', 'genepos', 'genepart', 'geneuniq', 'genelen',
-                'genepgc', 'generpkm', 'genedepth', 'genetids', 'genelca',
-                'contids', 'conlca', 'name', 'maxsco', 'besthit', 'funcs',
-                'reac', 'prod', 'tran']
-
-        path = self.get_contigs_file_path(sample)
-        with path.open() as f:
-            os.posix_fadvise(f.fileno(), 0, 0, os.POSIX_FADV_SEQUENTIAL)
-            print(f'reading {f.name}...')
-            head = f.readline().rstrip('\n').split('\t')
-            if head != cols:
-                raise RuntimeError('unexpected header in {f.name}: {head}')
-
-            rows = (line.rstrip('\n').split('\t') for line in f)
-            rows = ProgressPrinter(f'{path.name} lines processed')(rows)
-            # for groupby assume rows come sorted by contig cluster already
-            get_contig_data = itemgetter(0, 1, 2, 3, 4, 5, 16, 17)
-            yield from groupby(rows, get_contig_data)
-
-    def get_pks_for_rel(self, data):
-        """
-        substitute PKs for values for relation data
-
-        Helper method for data loading
-
-        :param data:
-            a dict field_name -> field_data which is a dict id->value, this
-            is be the output of read_contigs_file()
-
-        This method also fixes some "mixed data" issues with the input data:
-            * NCA-* and NOVEL values for LCAs are identified with the QUIDDAM
-              lineage (PK == 1)
-            * taxid 0 is changed to taxid 1
-        """
-        if 'taxid' in data:
-            taxid2pk = dict(
-                TaxID.objects.values_list('taxid', 'pk').iterator()
-            )
-            data['taxid'] = {
-                i: [taxid2pk[j if j else 1] for j in taxids]  # taxid 0 -> 1
-                for i, taxids in data['taxid'].items()
-            }
-
-        if 'lca' in data:
-            str2tax = Taxon.get_parse_and_lookup_fun()
-            unknown = defaultdict(list)
-            str2pk = {}
-
-            for i, val in data['lca'].items():
-                if val.startswith('NCA-') or val == 'NOVEL':
-                    # treat as root
-                    val = ''
-                taxon, missing_key = str2tax(val)
-                if taxon is None:
-                    unknown[missing_key].append(i)
-                else:
-                    str2pk[i] = taxon.pk
-
-            if unknown:
-                print(f'WARNING: got {len(unknown)} unknown lineages')
-                print(f'across {sum((len(i) for i in unknown.values()))} rows')
-                for k, v in unknown.items():
-                    print('unknown key:', k)
-                    print('   ', str(v)[:222])
-
-            if False:
-                # DEPRECATED? FIXME
-                try:
-                    maxpk = Taxon.objects.latest('pk').pk
-                except Taxon.DoesNotExist:
-                    maxpk = 0
-                Taxon.objects.bulk_create(
-                    (Taxon.from_name_pks(i) for i in unknown)
-                )
-                for i in Taxon.objects.filter(pk__gt=maxpk):
-                    for j in unknown[i.get_name_pks()]:
-                        str2pk[j] = i.pk  # set PK that ws missing earlier
-                del maxpk, unknown
-            data['lca'] = str2pk
-            del str2pk
-
-        # FIXME: the besthit stuff here really belongs into the GeneManager
-        # class
-        if 'besthit' in data:
-            uniref2pk = dict(
-                UniRef100.objects.values_list('accession', 'pk').iterator()
-            )
-            besthit_data = {}
-            missing_uniref100 = set()
-            for i, j in data['besthit'].items():
-                try:
-                    besthit_data[i] = uniref2pk[j]
-                except KeyError:
-                    # unknown uniref100 id
-                    missing_uniref100.add(j)
-
-            data['besthit'] = besthit_data
-            if missing_uniref100:
-                print(
-                    f'WARNING: besthit column had {len(missing_uniref100)} '
-                    'distinct unknown uniref100 IDs:',
-                    ' '.join([i for i in islice(missing_uniref100, 5)])
-                )
-            del besthit_data, missing_uniref100
-
-        return data
-
-    def set_m2m_relations(self, sample, taxid_m2m_data):
-        """
-        Set contig-like <-> taxid/taxon relations
-
-        :param dict m2m_data:
-            A dict mapping contig/gene ID to lists of TaxID PKs
-        """
-        obj_id2pk = dict(
-            self.filter(sample=sample)
-            .values_list(self.model.id_field_name, 'pk')
-            .iterator()
-        )
-
-        # taxid
-        rels = (
-            (obj_id2pk[i], j)
-            for i, tlist in taxid_m2m_data.items()
-            for j in tlist
-            if i in obj_id2pk  # to support load_sample()'s limit option
-        )
-        through = self.model.get_field('taxid').remote_field.through
-        us = self.model._meta.model_name + '_id'
-        objs = (through(**{us: i, 'taxid_id': j}) for i, j in rels)
-        self.bulk_create_wrapper(through.objects.bulk_create)(objs)
+        return lca
 
 
 class ContigLoader(ContigLikeLoader):
     """ Manager for the Contig model """
     fasta_load_flag = 'contig_fasta_loaded'
     abundance_load_flag = 'contigs_abundance_loaded'
+    reads_mapped_sample_attr = 'reads_mapped_contigs'
 
     def get_fasta_path(self, sample):
-        return sample.get_metagenome_path() / 'annotation' \
+        return sample.get_metagenome_path() / 'assembly' \
             / (sample.tracking_id + '_MCDD.fa')
 
     def get_rpkm_path(self, sample):
-        return sample.get_metagenome_path() / 'annotation' \
+        return sample.get_metagenome_path() / 'assembly' \
             / f'{sample.tracking_id}_READSvsCONTIGS.rpkm'
 
-    def upper(self, value, record):
-        """ upper case contig ids """
+    def trim_id(self, value, record):
+        """ trim tracking id off, e.g. deadbeef_123 => 123 """
+        _, _, value = value.partition('_')
         return value.upper()
 
     rpkm_spec = BBMap_RPKM_Spec(
-        ('#Name', 'contig_id', upper),
+        ('#Name', 'contig_id', trim_id),
         ('Length', 'length'),
         ('Bases', 'bases'),
         ('Coverage', 'coverage'),
@@ -615,34 +464,65 @@ class ContigLoader(ContigLikeLoader):
         ('FPKM', 'fpkm'),
     )
 
-    def read_contigs_file(self, sample):
+    @atomic_dry
+    def assign_contig_lca(self, sample):
         """
-        Get (some) data from contigs txt file for given sample
+        assign / pre-compute taxids and LCAs to contigs via genes
 
-        This extracts and returns tax ids and LCAs.
+        This populates the Contig.lca/taxid fields
         """
-        taxid_data = {}
-        lca_data = {}
-        rows_by_contig = self.parse_contigs_file(sample)
+        Gene = import_string('mibios_omics.models.Gene')
+        # TODO: make this a Contig manager method?  Or Sample method?
+        genes = Gene.objects.filter(sample=sample)
+        # genes = genes.exclude(hits=None)
+        genes = genes.values_list('contig_id', 'pk', 'lca_id')
+        genes = genes.order_by('contig_id')  # _id is contig's PK here
+        print('Fetching taxonomy... ', end='', flush=True)
+        taxa = Taxon.objects.filter(gene__sample=sample).distinct().in_bulk()
+        print(f'{len(taxa)} [OK]')
+        print('Fetching contigs... ', end='', flush=True)
+        contigs = self.model.objects.filter(sample=sample).in_bulk()
+        print(f'{len(contigs)} [OK]')
+        print('Fetching Gene -> TaxIDs links... ', end='', flush=True)
+        g2tids_qs = Gene._meta.get_field('taxid').remote_field.through.objects
+        g2tids_qs = g2tids_qs.filter(gene__sample=sample)
+        g2tids_qs = g2tids_qs.values_list('gene_id', 'taxid_id')
+        g2tids_qs = groupby(g2tids_qs.order_by('gene_id'), key=lambda x: x[0])
+        g2tids = {}
+        for gene_pk, grp in g2tids_qs:
+            g2tids[gene_pk] = [i for _, i in grp]
+        print(f'{len(g2tids)} [OK]')
 
-        for (cont_id, *_, contids, conlca), _ in rows_by_contig:
-            taxid_data[cont_id] = [int(i) for i in contids.split(';')]
-            lca_data[cont_id] = conlca
+        def contig_taxid_links():
+            """ generate m2m links with side-effects """
+            for contig_pk, grp in groupby(genes, lambda x: x[0]):
+                taxid_pks = set()
+                lcas = set()
+                for _, gene_pk, lca_pk in grp:
+                    try:
+                        taxid_pks.update(g2tids[gene_pk])
+                        lcas.add(taxa[lca_pk])
+                    except KeyError:
+                        # gene w/o hits
+                        pass
 
-        return {'lca': lca_data}, {'taxid': taxid_data}
+                # assign contig LCA from gene LCAs (side-effect):
+                contigs[contig_pk].lca = self.get_lca(lcas)
 
-    def process_coverage_header_data(self, sample, data):
-        """ Add header data to sample """
-        attr_map = {
-            # 'File': None,  # TODO: only fwd reads here
-            'Reads': 'read_count',
-            'Mapped': 'reads_mapped_contigs',
-            # 'RefSequences': ??, ignore these, is # of contigs
-        }
-        for k, attr in attr_map.items():
-            setattr(sample, attr, data[k])
-            sample.full_clean()
-            sample.save()
+                for i in taxid_pks:
+                    yield (contig_pk, i)
+
+        Through = self.model._meta.get_field('taxid').remote_field.through
+        delcount, _ = Through.objects.filter(contig__sample=sample).delete()
+        if delcount:
+            print(f'Deleted {delcount} existing contig-taxid links')
+        objs = (
+            Through(contig_id=i, taxid_id=j)
+            for i, j in contig_taxid_links()
+        )
+        self.bulk_create_wrapper(Through.objects.bulk_create)(objs)
+
+        self.bulk_update(contigs.values(), fields=['lca'])
 
 
 class FuncAbundanceLoader(BulkLoader, SampleLoadMixin):
@@ -668,14 +548,22 @@ class GeneLoader(ContigLikeLoader):
     """ Manager for the Gene model """
     fasta_load_flag = 'gene_fasta_loaded'
     abundance_load_flag = 'contigs_abundance_loaded'
+    reads_mapped_sample_attr = 'reads_mapped_genes'
+
+    def get_fasta_path(self, sample):
+        return (
+            sample.get_metagenome_path() / 'genes'
+            / f'{sample.tracking_id}_GENES.fna'
+        )
 
     def get_rpkm_path(self, sample):
-        return sample.get_metagenome_path() / 'annotation' \
+        return sample.get_metagenome_path() / 'genes' \
             / f'{sample.tracking_id}_READSvsGENES.rpkm'
 
     def extract_gene_id(self, value, record):
         """ get just the gene id from what was a post-prodigal fasta header """
-        return value.split(maxsplit=1)[0].upper()
+        # deadbeef_123_1 # bla bla bla => 123_1
+        return value.split(maxsplit=1)[0].partition('_')[2]
 
     rpkm_spec = BBMap_RPKM_Spec(
         ('#Name', 'gene_id', extract_gene_id),
@@ -688,63 +576,86 @@ class GeneLoader(ContigLikeLoader):
         ('FPKM', 'fpkm'),
     )
 
-    @wraps(ContigLikeLoader.load_sample)
-    def XXX_load_sample(self, sample, *args, **kwargs):
-        if not sample.contigs_ok:
-            raise RuntimeError('require to have contigs before loading genes')
-        super().load_sample(sample, *args, **kwargs)
-
-    def get_fasta_path(self, sample):
-        return (
-            sample.get_metagenome_path() / 'annotation'
-            / f'{sample.tracking_id}_GENES.fna'
-        )
-
-    def get_coverage_path(self, sample):
-        return sample.get_metagenome_path() / 'annotation' \
-            / f'{sample.tracking_id}_READSvsGENES.rpkm'
-
-    def get_load_sample_fasta_extra_kw(self, sample):
-        # returns a dict of the sample's contig
+    def get_set_from_fa_head_extra_kw(self, sample):
+        # returns a dict of the sample's contigs
         qs = sample.contig_set.values_list('contig_id', 'pk')
-        return dict(contig_ids=dict(qs.iterator()))
+        return dict(contig_id_map=dict(qs.iterator()))
 
-    def read_contigs_file(self, sample):
+    @atomic_dry
+    def assign_gene_lca(self, sample):
         """
-        Get (some) data from contigs txt file for given sample
+        assign / pre-compute taxids and LCAs to genes via uniref100 hits
 
-        This extracts and returns tax ids, LCAs, and besthit
+        This also populates Gene.lca / Gene.besthit fields
         """
-        taxid_data = {}
-        lca_data = {}
-        besthit_data = {}
-        rows_by_contig = self.parse_contigs_file(sample)
+        Alignment = import_string('mibios_omics.models.Alignment')
 
-        for _, grp in rows_by_contig:
-            for row in grp:
-                gene_id = row[6]
-                taxid_data[gene_id] = [int(i) for i in row[14].split(';')]
-                lca_data[gene_id] = row[15]  # should be non-empty
-                if row[20]:
-                    # besthit may be empty
-                    besthit_data[gene_id] = row[20]
+        # Get UniRef100.taxids m2m links
+        TUT = UniRef100._meta.get_field('taxids').remote_field.through
+        qs = TUT.objects.filter(uniref100__gene_hit__sample=sample).distinct()
+        qs = qs.order_by('uniref100').values_list('uniref100_id', 'taxid_id')
+        print('Fetching uniref100/taxids...', end='', flush=True)
+        u2t = {}  # pk map ur100->taxids
+        for ur100_pk, grp in groupby(qs.iterator(), key=lambda x: x[0]):
+            u2t[ur100_pk] = [i for _, i in grp]
+        print(f'{len(u2t)} [OK]')
 
-        return ({'lca': lca_data, 'besthit': besthit_data},
-                {'taxid': taxid_data})
+        print('Fetching tax info...', end='', flush=True)
+        qs = (
+            TaxID.objects
+            .filter(classified_uniref100__gene_hit__sample=sample)
+            .select_related('taxon')
+        )
+        taxmap = {i.pk: i.taxon for i in qs.iterator()}
+        print(f'{len(taxmap)} [OK]')
 
-    def process_coverage_header_data(self, sample, data):
-        """ Add header data to sample """
-        attr_map = {
-            # 'File': None,  # TODO: only fwd reads here
-            # 'Reads': '',  ignore -- assumed same as for contigs
-            'Mapped': 'reads_mapped_genes',
-            # 'RefSequences': ??, ignore these, is # of genes
-        }
-        for k, attr in attr_map.items():
-            if k in data:
-                setattr(sample, attr, data[k])
-                sample.full_clean()
-                sample.save()
+        print('Fetching ancestry...', end='', flush=True)
+        taxa = list(taxmap.values())
+        prefetch_related_objects(taxa, 'ancestors')
+        print(f'{len(taxa)} [OK]')
+
+        hits = Alignment.objects.filter(gene__sample=sample)
+        hits = hits.select_related('gene').order_by('gene')
+        genes = []
+
+        def gene_taxid_links():
+            """
+            generate pk pairs (gene, taxid) to make Gene<->TaxID m2m links
+
+            As a side-effect this also sets besthit and lca for each gene that
+            has a hit.
+            """
+            for gene, grp in groupby(hits.iterator(), key=lambda x: x.gene):
+                # get all TaxIDs for all hits, some UR100 may not have taxids
+                tids = set()
+                best = None
+                for align in grp:
+                    if best is None or align.score > best.score:
+                        best = align
+                    for taxid_pk in u2t.get(align.ref_id, []):
+                        if taxid_pk in tids:
+                            continue
+                        else:
+                            tids.add(taxid_pk)
+                            yield (gene.pk, taxid_pk)
+                gene.besthit_id = best.ref_id
+                gene.lca = self.get_lca([taxmap[i] for i in tids])
+                # some genes here have hits but no taxids, for those lca is set
+                # to None here
+                genes.append(gene)
+
+        Through = self.model._meta.get_field('taxid').remote_field.through
+        delcount, _ = Through.objects.filter(gene__sample=sample).delete()
+        if delcount:
+            print(f'Deleted {delcount} existing gene-taxid links')
+        objs = (Through(gene_id=i, taxid_id=j) for i, j in gene_taxid_links())
+        self.bulk_create_wrapper(Through.objects.bulk_create)(objs)
+
+        # update lca field for all genes incl. the unknowns
+        self.bulk_update(genes, fields=['lca', 'besthit_id'])
+        print('Erasing lca for genes without any hits... ', end='', flush=True)
+        num_unknown = self.filter(hits=None).update(lca=None)
+        print(f'{num_unknown} [OK]')
 
 
 class SampleManager(Manager):
@@ -754,11 +665,13 @@ class SampleManager(Manager):
         return settings.OMICS_DATA_ROOT / 'data' / 'import_log.tsv'
 
     @atomic_dry
-    def sync(self, source_file=None):
+    def sync(self, source_file=None, create=False, skip_on_error=False):
         """
         Update sample table with analysis status
 
-
+        :param bool create:
+            Create a new sample if needed.  The new sample will not belong to a
+            dataset.  Not for production use.
         """
         if source_file is None:
             source_file = self.get_file()
@@ -809,39 +722,36 @@ class SampleManager(Manager):
                 else:
                     track_id_seen.add(tracking_id)
 
+                if success != 'TRUE':
+                    log.info(f'ignoring {sample_id}: no import success')
+                    continue
+
                 need_save = False
                 try:
                     obj = self.get(
                         sample_id=sample_id,
-                        dataset__short_name=dataset,
+                        # dataset__short_name=dataset,
                     )
                 except self.model.DoesNotExist:
-                    if success != 'TRUE':
-                        log.info(f'ignoring {sample_id}: no import success')
-                        continue
+                    if not create:
+                        if skip_on_error:
+                            log.warning(f'no such sample: {sample_id} / '
+                                        f'{dataset} (skipping)')
+                            continue
+                        else:
+                            raise
 
-                    grp_model = get_dataset_model()
-                    dataset, new = grp_model.objects.get_or_create(
-                        short_name=dataset,
-                    )
-                    if new:
-                        log.info(f'add dataset: {dataset}')
-
+                    # create a new orphan sample
                     obj = self.model(
                         tracking_id=tracking_id,
                         sample_id=sample_id,
-                        dataset=dataset,
+                        dataset=None,
                         sample_type=sample_type,
                         analysis_dir=analysis_dir,
                     )
                     need_save = True
                     save_info = f'new sample: {obj}'
                 else:
-                    if success != 'TRUE':
-                        log.warning(f'{sample_id}: no import success -- but it'
-                                    f'is already in the DB -- skipping')
-                        continue
-
                     updateable = ['tracking_id', 'sample_type', 'analysis_dir']
                     changed = []
                     for attr in updateable:
@@ -909,63 +819,63 @@ class SampleManager(Manager):
             )
 
 
-class TaxonAbundanceLoader(BulkLoader, SampleLoadMixin):
+class TaxonAbundanceLoader(Manager):
     """ loader manager for the TaxonAbundance model """
     ok_field_name = 'tax_abund_ok'
 
-    def get_file(self, sample):
-        return resolve_glob(
-            sample.get_metagenome_path() / 'annotation',
-            f'{sample.tracking_id}_community_*.txt'
+    @atomic_dry
+    def load_sample(self, sample, validate=False):
+        """
+        populate the taxon abundance table for a single sample
+
+        This requires that the sample's genes' LCAs have been set.
+        """
+        print('Fetching taxonomy... ', end='', flush=True)
+        Ancestry = Taxon._meta.get_field('ancestors').remote_field.through
+        qs = (
+            Ancestry.objects
+            .filter(from_taxon__gene__sample=sample)
+            .distinct()
+            .values_list('from_taxon_id', 'to_taxon_id')
+            .order_by('from_taxon_id')
+        )
+        # map of PKs from a gene's taxon to list of ancestor tax nodes
+        # (for those that have ancestors, so not root's immediate children
+        # (domains of life and unplaced stuff))
+        ancestors = {
+            from_pk: [i for _, i in grp]
+            for from_pk, grp in groupby(qs, key=lambda x: x[0])
+        }
+        print(f'{len(ancestors)} [OK]')
+
+        print('Accumulating RPKMs... ', end='', flush=True)
+        data = {}
+        qs = sample.gene_set.values_list('lca_id', 'rpkm')
+        for lca_id, gene_rpkm in qs.iterator():
+            if lca_id is None:
+                continue
+
+            for j in [lca_id] + ancestors.get(lca_id, []):
+                try:
+                    data[j] += gene_rpkm
+                except KeyError:
+                    data[j] = gene_rpkm
+        print(f'{len(data)} [OK]')
+
+        objs = (
+            self.model(sample=sample, taxon_id=k, sum_gene_rpkm=v)
+            for k, v in data.items()
         )
 
-    # conversion functions, methods without self, get passed to _load_lines and
-    # called ?unbound? or so
+        if validate:
+            objs = list(objs)
+            for i in objs:
+                try:
+                    i.full_clean()
+                except Exception:
+                    print(f'validation failed: {vars(i)}')
+                    raise
 
-    def get_taxname_acc(value, row):
-        """ return taxname accession tuple with rank from type column """
-        # turn a value "x_n" into (n + 1)
-        # (rank is for the "source", so "target" is plus 1)
-        letter, _, rank = row[0].partition('_')
-        if letter == 'I':
-            # FIXME: should be fixed in the source data
-            # skip the three rows with ?duplicated? targets
-            print(f'WARNING: skipping duplicate with I type: {row[:3]} ...')
-            return CSV_Spec.SKIP_ROW
-        # items must be in field declaration order, cf. get_accession_lookups()
-        try:
-            rank = int(rank)
-        except ValueError as e:
-            raise ValueError(f'{e} in row: {row}') from e
-        return (rank + 1, value)
-
-    spec = CSV_Spec(
-        ('type', None),  # 1 --> gets picked up via target column
-        ('source', None),  # 2
-        ('target', 'taxname', get_taxname_acc),  # 3
-        ('lin_cnt', 'lin_cnt'),  # 4
-        ('lin_avg_prgc', 'lin_avg_prgc'),  # 5
-        ('lin_avg_depth', 'lin_avg_depth'),  # 6
-        ('lin_avg_rpkm', 'lin_avg_rpkm'),  # 7
-        ('lin_gnm_pgc', 'lin_gnm_pgc'),  # 8
-        ('lin_sum_sco', 'lin_sum_sco'),  # 9
-        ('lin_con_len', 'lin_con_len'),  # 10
-        ('lin_gen_len', 'lin_gen_len'),  # 11
-        ('lin_con_cnt', 'lin_con_cnt'),  # 12
-        ('lin_tgc', 'lin_tgc'),  # 13
-        ('lin_comp_genes', 'lin_comp_genes'),  # 14
-        ('lin_nlin_gc', 'lin_nlin_gc'),  # 15
-        ('lin_novel', 'lin_novel'),  # 16
-        ('lin_con_uniq', 'lin_con_uniq'),  # 17
-        ('lin_tpg', 'lin_tpg'),  # 18
-        ('lin_obg', 'lin_obg'),  # 19
-        ('con_lca', 'con_lca'),  # 20
-        ('gen_lca', 'gen_lca'),  # 21
-        ('part_gen', 'part_gen'),  # 22
-        ('uniq_gen', 'uniq_gen'),  # 23
-        ('con_len', 'con_len'),  # 24
-        ('gen_len', 'gen_len'),  # 25
-        ('con_rpkm', 'con_rpkm'),  # 26
-        ('gen_rpkm', 'gen_rpkm'),  # 27
-        ('gen_dept', 'gen_dept'),  # 28
-    )
+        self.bulk_create(objs)
+        setattr(sample, self.ok_field_name, True)
+        sample.save()
