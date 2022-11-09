@@ -19,29 +19,21 @@ LOGGING['loggers']['mibios_omics'] = LOGGING['loggers']['mibios']  # noqa:F405
 
 def get_db_settings(db_dir='.', db_infix=''):
     """
-    Call this to set DATABASES
+    Call this to set DATABASE
 
-    db_dir:  Directory where to store the DBs, without trailing slash
-    db_infix: optional infix to distinguish alternative DBs
+    db_dir:  Directory where to store the DB, without trailing slash
+    db_infix: optional infix to distinguish alternative DB
     """
-    ops_db_file = f'ops{db_infix}.sqlite3'
-    omics_db_file = f'omics{db_infix}.sqlite3'
-    omics_db_mode = 'ro' if environ.get('MIBIOS_DB_RO') else 'rwc'
+    db_file = f'omics{db_infix}.sqlite3'
+    db_mode = 'ro' if environ.get('MIBIOS_DB_RO') else 'rwc'
 
     return {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': f'file:{db_dir}/{ops_db_file}?mode=rwc',
+            'NAME': f'file:{db_dir}/{db_file}?mode={db_mode}',
             'OPTIONS': {'uri': True},
         },
-        'omics': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': f'file:{db_dir}/{omics_db_file}?mode={omics_db_mode}',
-            'OPTIONS': {'uri': True},
-        }
     }
 
 
 DATABASES = get_db_settings()
-
-DATABASE_ROUTERS = ['mibios_omics.DBRouter']
