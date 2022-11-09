@@ -536,7 +536,9 @@ class UniRef100(Model):
         return self.accession
 
     def get_external_url(self):
-        return f'https://www.uniprot.org/uniref/{self.accession}'
+        # ensure correct casing for UniRef100 prefix
+        _, _, accession = self.accession.partition('_')
+        return f'https://www.uniprot.org/uniref/UniRef100_{accession}'
 
 
 # development stuff
