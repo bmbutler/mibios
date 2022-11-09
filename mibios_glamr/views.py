@@ -1,4 +1,4 @@
-from itertools import chain
+from itertools import chain, groupby
 from logging import getLogger
 
 from django_tables2 import Column, SingleTableView, TemplateColumn
@@ -6,7 +6,7 @@ import pandas
 
 from django.conf import settings
 from django.contrib import messages
-from django.core.exceptions import FieldDoesNotExist, FieldError
+from django.core.exceptions import FieldDoesNotExist
 from django.db.models import Count, Field, URLField
 from django.http import Http404, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
@@ -21,15 +21,13 @@ from mibios_omics import get_sample_model
 from mibios_omics.models import (
     CompoundAbundance, FuncAbundance, TaxonAbundance
 )
-from mibios_umrad.models import (
-    CompoundRecord, CompoundName, FunctionName, FuncRefDBEntry,
-)
+from mibios_umrad.models import FuncRefDBEntry
 from mibios_omics.models import Gene
 from . import models, tables
 from .forms import (
     AdvancedSearchForm, QBuilderForm, QLeafEditForm,
 )
-from .search_utils import searchable_models, get_suggestions
+from .search_utils import get_suggestions
 
 
 log = getLogger(__name__)
@@ -730,13 +728,14 @@ class SearchHitView(TemplateView):
         ctx['no_hit_models'] = self.no_hit_models
         ctx['reference_hit_only'] = self.reference_hit_only
         ctx['suggestions'] = self.suggestions
+        ctx['field_data_only'] = self.form.cleaned_data.get('field_data_only')
         return ctx
 
     def get(self, request, *args, **kwargs):
-        form = AdvancedSearchForm(data=self.request.GET)
-        if form.is_valid():
-            self.query = form.cleaned_data['query']
-            check_abundance = form.cleaned_data.get('field_data_only')
+        self.form = AdvancedSearchForm(data=self.request.GET)
+        if self.form.is_valid():
+            self.query = self.form.cleaned_data['query']
+            check_abundance = self.form.cleaned_data.get('field_data_only')
             self.search(check_abundance=check_abundance)
             if check_abundance:
                 if self.hits:
@@ -764,58 +763,30 @@ class SearchHitView(TemplateView):
         self.hits = []
         self.no_hit_models = []
 
-        for model in searchable_models:
-            have_abundance = False
-            search_field_name = model.get_search_field().name
-            qs = model.objects.search(self.query)
+        qs = models.SearchTerm.objects.filter(term__iexact=self.query)
+        if check_abundance:
+            qs = qs.filter(has_hit=True)
+        qs = qs.order_by('content_type')
 
-            if check_abundance:
-                # just search for objects with abundance
-                # (if model supports it, no filters for other models)
-                if model is CompoundName:
-                    abund_lookup = 'compoundentry__abundance'
-                elif model is FunctionName:
-                    abund_lookup = 'funcrefdbentry__abundance'
-                else:
-                    abund_lookup = 'abundance'
-                try:
-                    qs = qs.exclude(**{abund_lookup: None})
-                except FieldError:
-                    # don't have abundance field, keeping qs as-is
-                    # (or abund_path is outdated)
-                    continue
-                else:
+        for content_type, grp in groupby(qs, key=lambda x: x.content_type):
+            grp = list(grp)
+            for i in grp:
+                if i.has_hit:
                     have_abundance = True
-
-            model_hits = []
-            if model is CompoundName:
-                model_name = CompoundRecord._meta.model_name
-                for obj in qs.iterator():
-                    hit_value = getattr(obj, search_field_name)
-                    for i in obj.compoundrecord_set.exclude(abundance=None):
-                        model_hits.append((i, str(i), hit_value))
-            elif model is FunctionName:
-                model_name = FuncRefDBEntry._meta.model_name
-                for obj in qs.iterator():
-                    hit_value = getattr(obj, search_field_name)
-                    for i in obj.funcrefdbentry_set.exclude(abundance=None):
-                        model_hits.append((i, str(i), hit_value))
+                    break
             else:
-                model_name = model._meta.model_name
-                for obj in qs.iterator():
-                    # use hit as-is, no proxy
-                    hit_value = getattr(obj, search_field_name)
-                    model_hits.append((obj, hit_value, None))
-
-            if model_hits:
-                self.hits.append((
-                    have_abundance,
-                    model._meta.verbose_name_plural,
-                    model_name,
-                    model_hits,
-                ))
-            else:
-                self.no_hit_models.append(model._meta.verbose_name_plural)
+                have_abundance = False
+            model = content_type.model_class()
+            hits = [
+                (i.content_object, str(i.content_object), None)
+                for i in grp
+            ]
+            self.hits.append((
+                have_abundance,
+                model._meta.verbose_name_plural,
+                model._meta.model_name,
+                hits,
+            ))
 
 
 class TableView(BaseFilterMixin, ModelTableMixin, SingleTableView):

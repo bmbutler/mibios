@@ -1,16 +1,19 @@
 """
 GLAMR-specific modeling
 """
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 from django.db import models, router, transaction
 from django.urls import reverse
 
 from mibios_omics.models import AbstractDataset, AbstractSample
 from mibios_umrad.fields import AccessionField
 from mibios_umrad.models import Model
-from mibios_umrad.model_utils import ch_opt, fk_opt, uniq_opt, opt
+from mibios_umrad.model_utils import ch_opt, fk_opt, fk_req, uniq_opt, opt
 
 from .fields import OptionalURLField
-from .load import DatasetLoader, ReferenceLoader, SampleLoader
+from .load import \
+    DatasetLoader, ReferenceLoader, SampleLoader, SearchTermManager
 
 
 class Dataset(AbstractDataset):
@@ -235,6 +238,19 @@ class Sample(AbstractSample):
     def __str__(self):
         return self.sample_name or self.sample_id or self.biosample \
             or super().__str__()
+
+
+class SearchTerm(models.Model):
+    term = models.CharField(max_length=32, db_index=True)
+    has_hit = models.BooleanField(default=False)
+    content_type = models.ForeignKey(ContentType, **fk_req)
+    object_id = models.PositiveIntegerField()
+    content_object = GenericForeignKey('content_type', 'object_id')
+
+    objects = SearchTermManager()
+
+    def __str__(self):
+        return self.term
 
 
 def load_meta_data(dry_run=False):

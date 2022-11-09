@@ -1,8 +1,10 @@
 from pandas import isna, Timestamp
 
 from django.conf import settings
+from django.core.exceptions import FieldDoesNotExist
 
 from mibios_umrad.manager import InputFileError, Loader
+from mibios_umrad.model_utils import delete_all_objects_quickly
 from mibios_umrad.utils import CSV_Spec, ExcelSpec, atomic_dry
 
 
@@ -226,3 +228,52 @@ class SampleLoader(Loader):
         """ samples meta data """
         template = dict(meta_data_loaded=True)
         super().load(template=template, validate=validate, **kwargs)
+
+
+class SearchTermManager(Loader):
+    def reindex(self):
+        delete_all_objects_quickly(self.model)
+        from .search_utils import spellfix_models as models, update_spellfix
+        for i in models:
+            self._index_model(i)
+        update_spellfix()
+
+    def _index_model(self, model):
+        """
+        update the search index
+        """
+        if model._meta.model_name == 'compoundname':
+            abund_lookup = 'compoundrecord__abundance'
+        elif model._meta.model_name == 'functionname':
+            abund_lookup = 'funcrefdbentry__abundance'
+        else:
+            try:
+                model._meta.get_field('abundance')
+            except FieldDoesNotExist:
+                abund_lookup = None
+            else:
+                abund_lookup = 'abundance'
+        print(f'Collecting search terms for {model._meta.verbose_name}... ',
+              end='', flush=True)
+        if abund_lookup:
+            # get PKs of objects with hits/abundance
+            f = {abund_lookup: None}
+            whits = model.objects.exclude(**f).values_list('pk', flat=True)
+            whits = set((i for i in whits.iterator()))
+            print(f'with hits: {len(whits)} / total: ', end='', flush=True)
+        else:
+            whits = set()
+
+        fname = model.get_search_field().name
+        qs = model.objects.all()
+        print(f'{qs.count()} [OK]')
+        max_length = self.model._meta.get_field('term').max_length
+        objs = (
+            self.model(
+                term=getattr(i, fname)[:max_length],
+                has_hit=(i.pk in whits),
+                content_object=i,
+            )
+            for i in qs.iterator()
+        )
+        self.bulk_create(objs)

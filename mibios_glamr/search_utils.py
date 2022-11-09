@@ -15,6 +15,7 @@ from mibios_umrad.models import (
     CompoundRecord, CompoundName, FunctionName, Location, Metal,
     FuncRefDBEntry, ReactionRecord, Taxon, Uniprot, UniRef100,
 )
+from .models import SearchTerm
 
 log = getLogger(__name__)
 
@@ -91,18 +92,17 @@ def update_spellfix(spellfix_ext_path=None):
                     f'{SPELLFIX_TABLE} USING spellfix1')
         cur.execute(f'DELETE FROM {SPELLFIX_TABLE}_vocab')
         log.info('spellfix table deleted')
-        for model in spellfix_models:
-            cur.execute(
-                'INSERT INTO {spellfix_table}(word) SELECT {field} '
-                'FROM {table} WHERE {field} NOT IN '
-                '(SELECT word FROM {spellfix_table}_vocab)'.format(
-                    spellfix_table=SPELLFIX_TABLE,
-                    field=model.get_search_field().name,
-                    table=model._meta.db_table,
-                )
+        cur.execute(
+            'INSERT INTO {spellfix_table}(word) SELECT {field} '
+            'FROM {table} WHERE {field} NOT IN '
+            '(SELECT word FROM {spellfix_table}_vocab)'.format(
+                spellfix_table=SPELLFIX_TABLE,
+                field='term',
+                table=SearchTerm._meta.db_table,
             )
-            log.info(f'added to search suggestions: {model._meta.model_name}')
+        )
         cur.execute('COMMIT')
+        log.info('spellfix table populated')
 
 
 def get_suggestions(query):
