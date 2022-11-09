@@ -470,10 +470,41 @@ def delete_all_objects_quickly(model):
     way slower for large tables.
     """
     db_alias = router.db_for_write(model)
-    with connections[db_alias].cursor() as cur:
-        sql = f'delete from {model._meta.db_table}'
-        print('INFO:', sql)
-        cur.execute(sql)
+    conn = connections[db_alias]
+
+    with conn.cursor() as cur:
+        if conn.vendor == 'postgres':
+            sql = [f'TRUNCATE TABLE {model._meta.db_table} CASCADE']
+        else:
+            # sqlite or other
+            # 1. get model cascade, models with FKs initially go last
+            cascade = []
+            todo = [model]
+            while todo:
+                curmod = todo.pop(0)
+                cascade.append(curmod)
+                for i in curmod._meta.get_fields():
+                    if i.one_to_many:
+                        todo.append(i.remote_field.model)
+                    elif i.many_to_many:
+                        if hasattr(i, 'through'):
+                            cascade.append(i.through)
+                        else:
+                            cascade.append(i.remote_field.through)
+                    else:
+                        pass
+
+            # 2. reverse order and remove duplicates
+            models = []
+            for i in reversed(cascade):
+                if i not in models:
+                    models.append(i)
+
+            sql = [f'delete from {i._meta.db_table}' for i in models]
+
+        for i in sql:
+            print('INFO:', i)
+            cur.execute(i)
         res = cur.fetchall()
     if res != []:
         raise RuntimeError('expected empty list returned')
