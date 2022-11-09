@@ -11,7 +11,7 @@ Hits: {% for have_abundance, hit_model_plural, model_name, hits in search_hits %
 <p>Did you mean...?
 <ul>
 {% for i in suggestions %}
-<li><a href="{% url 'search_hits' %}?query={{ i }}">{{ i }}</a></li>
+<li><a href="{% url 'search_hits' %}?query={{ i }}{% if field_data_only %}&field_data_only=on{% endif %}">{{ i }}</a></li>
 {% endfor %}
 </ul>
 {% endif %}
