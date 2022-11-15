@@ -150,8 +150,7 @@ class AbstractSample(Model):
     # mapping data / header items from bbmap output:
     read_count = models.PositiveIntegerField(
         **opt,
-        help_text='number of reads (post-QC, fwd+rev) used for assembly '
-                  'mapping',
+        help_text='number of read pairs (post-QC) used for assembly mapping',
     )
     reads_mapped_contigs = models.PositiveIntegerField(
         **opt,
@@ -980,9 +979,11 @@ class ContigLike(SequenceLike):
     bases = models.PositiveIntegerField(**opt)
     coverage = models.DecimalField(decimal_places=4, max_digits=10, **opt)
     reads_mapped = models.PositiveIntegerField(**opt)
-    rpkm = models.DecimalField(decimal_places=4, max_digits=10, **opt)
+    rpkm_bbmap = models.DecimalField(decimal_places=4, max_digits=10, **opt)
+    rpkm = models.FloatField(**opt)
     frags_mapped = models.PositiveIntegerField(**opt)
-    fpkm = models.DecimalField(decimal_places=4, max_digits=10, **opt)
+    fpkm_bbmap = models.DecimalField(decimal_places=4, max_digits=10, **opt)
+    fpkm = models.FloatField(**opt)
     # taxon + lca from contigs file
     taxid = models.ManyToManyField(TaxID, related_name='classified_%(class)s')
     lca = models.ForeignKey(Taxon, **fk_opt)

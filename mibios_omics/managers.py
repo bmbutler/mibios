@@ -472,15 +472,27 @@ class ContigLoader(ContigLikeLoader):
         _, _, value = value.partition('_')
         return value.upper()
 
+    def calc_rpkm(self, value, row, obj):
+        """ calculate rpkm based on total post-QC read-pairs """
+        return (1_000_000_000 * int(obj.reads_mapped)
+                / int(obj.length) / self.sample.read_count)
+
+    def calc_fpkm(self, value, row, obj):
+        """ calculate fpkm based on total post-QC read-pairs """
+        return (1_000_000_000 * int(obj.frags_mapped)
+                / int(obj.length) / self.sample.read_count)
+
     rpkm_spec = BBMap_RPKM_Spec(
         ('#Name', 'contig_id', trim_id),
         ('Length', 'length'),
         ('Bases', 'bases'),
         ('Coverage', 'coverage'),
         ('Reads', 'reads_mapped'),
-        ('RPKM', 'rpkm'),
+        ('RPKM', 'rpkm_bbmap'),
         ('Frags', 'frags_mapped'),
-        ('FPKM', 'fpkm'),
+        ('FPKM', 'fpkm_bbmap'),
+        (BBMap_RPKM_Spec.CALC_VALUE, 'rpkm', calc_rpkm),
+        (BBMap_RPKM_Spec.CALC_VALUE, 'fpkm', calc_fpkm),
     )
 
     @atomic_dry
@@ -579,10 +591,20 @@ class GeneLoader(ContigLikeLoader):
         return sample.get_metagenome_path() / 'genes' \
             / f'{sample.tracking_id}_READSvsGENES.rpkm'
 
-    def extract_gene_id(self, value, record):
+    def extract_gene_id(self, value, row, obj):
         """ get just the gene id from what was a post-prodigal fasta header """
         # deadbeef_123_1 # bla bla bla => 123_1
         return value.split(maxsplit=1)[0].partition('_')[2]
+
+    def calc_rpkm(self, value, row, obj):
+        """ calculate rpkm based on total post-QC read-pairs """
+        return (1_000_000_000 * obj.reads_mapped
+                / obj.length / self.sample.read_count)
+
+    def calc_fpkm(self, value, row, obj):
+        """ calculate fpkm based on total post-QC read-pairs """
+        return (1_000_000_000 * obj.frags_mapped
+                / obj.length / self.sample.read_count)
 
     rpkm_spec = BBMap_RPKM_Spec(
         ('#Name', 'gene_id', extract_gene_id),
@@ -590,9 +612,11 @@ class GeneLoader(ContigLikeLoader):
         ('Bases', 'bases'),
         ('Coverage', 'coverage'),
         ('Reads', 'reads_mapped'),
-        ('RPKM', 'rpkm'),
+        ('RPKM', 'rpkm_bbmap'),
         ('Frags', 'frags_mapped'),
-        ('FPKM', 'fpkm'),
+        ('FPKM', 'fpkm_bbmap'),
+        (BBMap_RPKM_Spec.CALC_VALUE, 'rpkm', calc_rpkm),
+        (BBMap_RPKM_Spec.CALC_VALUE, 'fpkm', calc_fpkm),
     )
 
     def get_set_from_fa_head_extra_kw(self, sample):
