@@ -74,6 +74,9 @@ class SampleLoadMixin:
     load_flag_attr = None
     """ may be specified by implementing class """
 
+    sample = None
+    """ sample is set by load_sample() for use in per-field helper methods """
+
     @atomic_dry
     def load_sample(self, sample, **kwargs):
         if 'flag' in kwargs:
@@ -90,7 +93,10 @@ class SampleLoadMixin:
         if 'file' not in kwargs:
             kwargs.update(file=self.get_file(sample))
 
+        self.sample = sample
         self.load(template={'sample': sample}, **kwargs)
+        # ensure subsequent calls of manager methods never get wrong sample:
+        self.sample = None
 
         if flag:
             setattr(sample, flag, True)
