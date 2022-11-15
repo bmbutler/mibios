@@ -393,23 +393,36 @@ class ContigLikeLoader(SequenceLikeLoader):
             file = self.get_rpkm_path(sample)
 
         # read header data
+        reads = None
+        mapped = None
         with open(file) as ifile:
+            print(f'Reading from {ifile.name} ...')
             while True:
+                pos = ifile.tell()
                 line = ifile.readline()
-                if not line.startswith('#'):
+                if line.startswith('#Name\t') or not line.startswith('#'):
+                    # we're past the preamble
+                    ifile.seek(pos)
                     break
                 key, _, data = line.strip().partition('\t')
                 if key == '#Reads':
-                    data = int(data)
-                    if sample.read_count is not None:
-                        if sample.read_count != data:
-                            print(
-                                'Warning: overwriting existing read count with'
-                                f'different value: {sample.read_count}->{data}'
-                            )
-                    sample.read_count = data
+                    reads = int(data)
                 elif key == '#Mapped':
-                    setattr(sample, self.reads_mapped_sample_attr, int(data))
+                    mapped = int(data)
+
+        if reads is None or mapped is None:
+            raise RuntimeError('Failed parsing (mapped) read counts')
+
+        if sample.read_count is not None and sample.read_count != reads:
+            print(f'Warning: overwriting existing read count with'
+                  f'different value: {sample.read_count}->{reads}')
+        sample.read_count = reads
+
+        mapped_old_val = getattr(sample, self.reads_mapped_sample_attr)
+        if mapped_old_val is not None and mapped_old_val != mapped:
+            print(f'Warning: overwriting existing mapped read count with'
+                  f'different value: {mapped_old_val}->{mapped}')
+        setattr(sample, self.reads_mapped_sample_attr, mapped)
         sample.save()
 
         self.load_sample(
