@@ -345,6 +345,7 @@ def chunker(iterable, n):
 class InputFileSpec:
     IGNORE_COLUMN = object()
     SKIP_ROW = object()
+    CALC_VALUE = object()
 
     empty_values = []
     """
@@ -387,46 +388,49 @@ class InputFileSpec:
         self.empty_values += self.loader.empty_values
 
         cols = []  # used column header
-        all_cols = []  # all column headers, as in file
+        all_cols = []  # all row column headers, as in file
         keys = []  # used keys, usually field names
-        all_keys = []  # keys incl. Nones
-        conv = []  # conversion functions, one (or None) per used columns
+        row_keys = []  # all row keys incl. Nones
+        # conversion functions, one (or None) per used columns plus non-column
+        # value calculation:
+        conv = []
 
-        for row in column_specs:
+        for spec_line in column_specs:
             # TODO: re-write as match statement?
             # FIXME: two-str-items format can be <col> <field> OR <field> <fun>
             # with no super easy way to distinguish them
-            orig_row = row
-            if not isinstance(row, tuple):
+            orig_spec_line = spec_line
+            if not isinstance(spec_line, tuple):
                 # no-header-simple-format
-                row = (row, )
+                spec_line = (spec_line, )
 
             if self.has_header is None:
                 # detect header presence from first spec piece
-                if len(row) == 1:
+                if len(spec_line) == 1:
                     self.has_header = False
-                elif len(row) == 2 and callable(row[1]):
+                elif len(spec_line) == 2 and callable(spec_line[1]):
                     self.has_header = False
                 else:
                     self.has_header = True
 
             if not self.has_header:
-                # add None as column header
-                row = (None, *row)
+                # add None as column name placeholder
+                spec_line = (None, *spec_line)
 
-            colname, key, *convfunc = row
-            if self.has_header:
-                all_cols.append(colname)
-            else:
-                if colname is not None:
-                    raise RuntimeError(
-                        f'got column name but assumed no header: {orig_row}')
+            colname, key, *convfunc = spec_line
 
-            all_keys.append(key)
+            if colname is not self.CALC_VALUE:
+                # current spec item is for a column in input
+                if self.has_header:
+                    all_cols.append(colname)
+                elif colname is not None:
+                    raise RuntimeError(f'got column name but assumed no '
+                                       f'header: {orig_spec_line}')
+                row_keys.append(key)
 
-            if key is None:
-                # ignore this column
-                continue
+                if key is None:
+                    # ignore this column
+                    continue
 
             if '.' in key:
                 key, _, attr = key.partition('.')
@@ -456,13 +460,17 @@ class InputFileSpec:
                     convfunc = partial(convfunc, self.loader)
                 else:
                     raise ValueError(f'not a callable: {convfunc}')
-                conv.append(convfunc)
             else:
-                conv.append(None)
+                convfunc = None
+
+            if colname is self.CALC_VALUE and convfunc is None:
+                raise ValueError('callable for value calculation missing')
+
+            conv.append(convfunc)
 
         self.all_cols = all_cols
         self.cols = cols
-        self.all_keys = all_keys
+        self.row_keys = row_keys
         self.keys = keys
         self._convfuncs_raw = conv
 
@@ -501,22 +509,28 @@ class InputFileSpec:
 
     def row_data(self, row):
         """
-        List a row as tuples (field, func, value)
+        Generate a row as tuples (field, func, value)
 
-        Blank/empty values will be set to None here
+        Blank/empty values will be set to None here.  Extra items for
+        calculated field values are added.
 
         :param list row: A list of str
         """
-        row_data = []
         fields = list(self.get_fields())
         convfuncs = list(self.get_convfuncs())
-        for key, value in zip(self.all_keys, row):
-            if key is not None:
-                field = fields.pop(0)
-                if value in self.empty_values or value in field.empty_values:
-                    value = None
-                row_data.append((field, convfuncs.pop(0), value))
-        return row_data
+        # zip: skips extra columns in row beyond row_keys
+        for key, value in zip(self.row_keys, row):
+            if key is None:
+                continue  # skip this column
+            field = fields.pop(0)
+            if value in self.empty_values or value in field.empty_values:
+                value = None
+            yield (field, convfuncs.pop(0), value)
+        # non-row items, values get calculated
+        for i, j in zip(fields, convfuncs):
+            if i is None or j is None:
+                raise ValueError(f'expect field and callable but got {i}/{j}')
+            yield (i, j, None)
 
     def row2dict(self, row):
         """ turn a row (of values) into a dict with field names as keys """
@@ -550,7 +564,7 @@ class CSV_Spec(InputFileSpec):
                     f'Unexpected header row: first mismatch in column '
                     f'{i}: got "{a}", expected "{b}"'
                 )
-        if len(head) != len(self):
+        if len(head) != len(self.all_cols):
             raise ValueError(
                 f'expecting {len(self)} columns but got '
                 f'{len(head)} in header row'

@@ -179,7 +179,7 @@ class AlignmentLoader(BulkLoader, SampleLoadMixin):
     def get_file(self, sample):
         return sample.get_metagenome_path() / f'{sample.tracking_id}_GENES.m8'
 
-    def query2gene_pk(self, value, row):
+    def query2gene_pk(self, value, row, obj):
         """
         get gene PK from qseqid column for genes
 
@@ -189,7 +189,7 @@ class AlignmentLoader(BulkLoader, SampleLoadMixin):
         gene_id = value.split('\t', maxsplit=1)[0].partition('_')[2]
         return self.gene_id_map[gene_id]
 
-    def upper(self, value, row):
+    def upper(self, value, row, obj):
         """
         upper-case the uniref100 id
 
@@ -448,7 +448,7 @@ class ContigLoader(ContigLikeLoader):
         return sample.get_metagenome_path() / 'assembly' \
             / f'{sample.tracking_id}_READSvsCONTIGS.rpkm'
 
-    def trim_id(self, value, record):
+    def trim_id(self, value, row, obj):
         """ trim tracking id off, e.g. deadbeef_123 => 123 """
         _, _, value = value.partition('_')
         return value.upper()

@@ -15,7 +15,7 @@ from mibios.models import (
     QuerySet as MibiosQuerySet,
 )
 
-from .utils import (CSV_Spec, InputFileSpec, ProgressPrinter, atomic_dry,
+from .utils import (CSV_Spec, ProgressPrinter, atomic_dry,
                     get_last_timer)
 
 
@@ -329,7 +329,7 @@ class BaseLoader(DjangoManager):
     def _load_rows(self, rows, sep='\t', dry_run=False, template={},
                    skip_on_error=False, validate=False, update=False,
                    bulk=True, first_lineno=None):
-        ncols = len(self.spec)
+        ncols = len(self.spec.all_cols)
         fields = self.spec.get_fields()
         num_line_errors = 0
         max_line_errors = 10  # > 0
@@ -397,7 +397,7 @@ class BaseLoader(DjangoManager):
 
                 if callable(fn):
                     try:
-                        value = fn(value, row)
+                        value = fn(value, row, obj)
                     except InputFileError as e:
                         if skip_on_error:
                             print(f'\nERROR on line {lineno}: {e} -- will '
@@ -406,9 +406,9 @@ class BaseLoader(DjangoManager):
                             break  # skips line
                         raise
 
-                    if value is InputFileSpec.IGNORE_COLUMN:
+                    if value is self.spec.IGNORE_COLUMN:
                         continue  # next column
-                    elif value is InputFileSpec.SKIP_ROW:
+                    elif value is self.spec.SKIP_ROW:
                         row_skip_count += 1
                         break  # skips line / avoids for-else block
 
@@ -482,7 +482,7 @@ class BaseLoader(DjangoManager):
                     # TODO: find out why leaving '' in for int fields fails
                     # ValueError @ django/db/models/fields/__init__.py:1825
                     setattr(obj, field.name, value)
-            else:  # else of for
+            else:  # the for else / row not skipped / keep obj
                 if validate:
                     try:
                         obj.full_clean()
@@ -725,7 +725,7 @@ class BaseLoader(DjangoManager):
         return value.split(';')
 
     def _parse_rows(self, rows):
-        ncols = len(self.spec)
+        ncols = len(self.spec.all_cols)
 
         data = []
         for row in rows:
@@ -736,7 +736,7 @@ class BaseLoader(DjangoManager):
                 )
 
             rec = {}
-            for key, value in zip(self.spec.all_keys, row):
+            for key, value in zip(self.spec.row_keys, row):
                 if key is None:
                     continue
                 try:
@@ -799,7 +799,7 @@ class CompoundRecordLoader(BulkLoader):
     def get_file(self):
         return settings.UMRAD_ROOT / 'MERGED_CPD_DB.txt'
 
-    def chargeconv(self, value, row):
+    def chargeconv(self, value, row, obj):
         """ convert '2+' -> 2 / '2-' -> -2 """
         if value == '' or value is None:
             return None
@@ -813,7 +813,7 @@ class CompoundRecordLoader(BulkLoader):
             except ValueError as e:
                 raise InputFileError from e
 
-    def collect_others(self, value, row):
+    def collect_others(self, value, row, obj):
         """ triggered on kegg columns, collects from other sources too """
         # assume that value == row[7]
         lst = self.split_m2m_value(';'.join(row[7:12]))
@@ -914,14 +914,14 @@ class ReactionRecordLoader(BulkLoader):
     def get_file(self):
         return settings.UMRAD_ROOT / 'MERGED_RXN_DB.txt'
 
-    def errata_check(self, value, row):
+    def errata_check(self, value, row, obj):
         """ skip extra header rows """
         # FIXME: remove this function when source data is fixed
         if value == 'rxn':
             return CSV_Spec.SKIP_ROW
         return value
 
-    def process_xrefs(self, value, row):
+    def process_xrefs(self, value, row, obj):
         """
         collect data from all xref columns
 
@@ -934,7 +934,7 @@ class ReactionRecordLoader(BulkLoader):
         xrefs = [(i, ) for i in xrefs if i != row[0]]  # rm this rxn itself
         return xrefs
 
-    def process_compounds(self, value, row):
+    def process_compounds(self, value, row, obj):
         """
         collect data from the 18 compound columns
 
@@ -1168,7 +1168,7 @@ class UniRef100Loader(BulkLoader):
         pp = ProgressPrinter('func xrefs db values assigned')
         FuncRefDBEntry.objects.bulk_update(pp(objs), ['db'])
 
-    def process_func_xrefs(self, value, row):
+    def process_func_xrefs(self, value, row, obj):
         """ collect COG through EC columns """
         ret = []
         for (db_code, _), vals in zip(self.func_dbs, row[13:19]):
@@ -1184,7 +1184,7 @@ class UniRef100Loader(BulkLoader):
                 ret.append((i, ))
         return ret
 
-    def process_reactions(self, value, row):
+    def process_reactions(self, value, row, obj):
         """ collect all reactions """
         rxns = set()
         for i in row[17:20]:

@@ -27,7 +27,7 @@ class DatasetLoader(Loader):
 
         return value
 
-    def get_reference_ids(self, value, row):
+    def get_reference_ids(self, value, row, obj):
         if value is None or value == '':
             return self.spec.IGNORE_COLUMN
 
@@ -112,11 +112,11 @@ class SampleLoader(Loader):
     def get_file(self):
         return settings.GLAMR_META_ROOT / 'Great_Lakes_Omics_Datasets.xlsx - samples.tsv'  # noqa:E501
 
-    def fix_sample_id(self, value, row):
+    def fix_sample_id(self, value, row, obj):
         """ Remove leading "SAMPLE_" from accession value """
         return value.removeprefix('Sample_')
 
-    def parse_bool(self, value, row):
+    def parse_bool(self, value, row, obj):
         # Only parse str values.  The pandas reader may give us booleans
         # already for some reason (for the modified_or_experimental but not the
         # has_paired data) ?!?
@@ -131,7 +131,7 @@ class SampleLoader(Loader):
                 )
         return value
 
-    def check_ids(self, value, row):
+    def check_ids(self, value, row, obj):
         """ check that we have at least some ID value """
         if value:
             return value
@@ -144,7 +144,7 @@ class SampleLoader(Loader):
         # consider row blank
         return self.spec.SKIP_ROW
 
-    def ensure_tz(self, value, row):
+    def ensure_tz(self, value, row, obj):
         """ add missing time zone """
         # Django would, in DateTimeField.get_prep_value(), add the configured
         # TZ for naive timestamps also, BUT would spam us with WARNINGs, so
