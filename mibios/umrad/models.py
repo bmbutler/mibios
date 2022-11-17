@@ -544,7 +544,7 @@ class UniRef100(Model):
 # development stuff
 def delete_all_uniref100_etc():
     r = get_registry()
-    for i in r.apps['mibios_umrad'].get_models():
+    for i in r.apps['mibios.umrad'].get_models():
         if i._meta.model_name.startswith('tax'):
             continue
         print(f'Deleting: {i} ', end='', flush=True)

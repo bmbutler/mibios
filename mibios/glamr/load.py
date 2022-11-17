@@ -3,9 +3,9 @@ from pandas import isna, Timestamp
 from django.conf import settings
 from django.core.exceptions import FieldDoesNotExist
 
-from mibios_umrad.manager import InputFileError, Loader
-from mibios_umrad.model_utils import delete_all_objects_quickly
-from mibios_umrad.utils import CSV_Spec, ExcelSpec, atomic_dry
+from mibios.umrad.manager import InputFileError, Loader
+from mibios.umrad.model_utils import delete_all_objects_quickly
+from mibios.umrad.utils import CSV_Spec, ExcelSpec, atomic_dry
 
 
 class DatasetLoader(Loader):

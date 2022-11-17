@@ -1,6 +1,6 @@
 from django.conf import settings
 
-from mibios_umrad.fields import PathField
+from mibios.umrad.fields import PathField
 
 
 class DataPathField(PathField):

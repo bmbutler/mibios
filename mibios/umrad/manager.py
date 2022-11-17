@@ -779,7 +779,7 @@ class BaseLoader(DjangoManager):
 
     def quick_erase(self):
         quickdel = import_string(
-            'mibios_umrad.model_utils.delete_all_objects_quickly'
+            'mibios.umrad.model_utils.delete_all_objects_quickly'
         )
         quickdel(self.model)
 
@@ -1099,7 +1099,7 @@ class TaxonLoader(Loader):
 
     def quick_erase(self):
         quickdel = import_string(
-            'mibios_umrad.model_utils.delete_all_objects_quickly'
+            'mibios.umrad.model_utils.delete_all_objects_quickly'
         )
         quickdel(self.model._meta.get_field('taxid').related_model)
         quickdel(self.model._meta.get_field('ancestors').remote_field.through)
@@ -1144,8 +1144,8 @@ class UniRef100Loader(BulkLoader):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._Taxon = import_string('mibios_umrad.models.Taxon')
-        FuncRefDBEntry = import_string('mibios_umrad.models.FuncRefDBEntry')
+        self._Taxon = import_string('mibios.umrad.models.Taxon')
+        FuncRefDBEntry = import_string('mibios.umrad.models.FuncRefDBEntry')
         self.func_dbs = FuncRefDBEntry.DB_CHOICES
 
     def get_file(self):
@@ -1158,7 +1158,7 @@ class UniRef100Loader(BulkLoader):
         # set DB values for func xrefs -- can't do this in the regular load
         # as there we only have the accession to work with with m2m-related
         # objects
-        FuncRefDBEntry = import_string('mibios_umrad.models.FuncRefDBEntry')
+        FuncRefDBEntry = import_string('mibios.umrad.models.FuncRefDBEntry')
         a2objs = FuncRefDBEntry.objects.in_bulk(field_name='accession')
         objs = []
         for acc, db in self.funcref2db.items():

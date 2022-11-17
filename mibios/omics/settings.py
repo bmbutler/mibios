@@ -1,20 +1,20 @@
 """
-settings for the mibios_omics app
+settings for the mibios.omics app
 """
 from os import environ
 
 from mibios.ops.settings import *  # noqa:F403
 
 # hook up the apps
-INSTALLED_APPS.append('mibios_umrad.apps.AppConfig')  # noqa:F405
-INSTALLED_APPS.append('mibios_omics.apps.AppConfig')  # noqa:F405
+INSTALLED_APPS.append('mibios.umrad.apps.AppConfig')  # noqa:F405
+INSTALLED_APPS.append('mibios.omics.apps.AppConfig')  # noqa:F405
 
 # defaults for those swappable models (they are strings <appname>.<model_name>)
-OMICS_SAMPLE_MODEL = 'mibios_omics.Sample'
-OMICS_DATASET_MODEL = 'mibios_omics.Dataset'
+OMICS_SAMPLE_MODEL = 'omics.Sample'
+OMICS_DATASET_MODEL = 'omics.Dataset'
 
 # register logging
-LOGGING['loggers']['mibios_omics'] = LOGGING['loggers']['mibios']  # noqa:F405
+LOGGING['loggers']['omics'] = LOGGING['loggers']['mibios']  # noqa:F405
 
 
 def get_db_settings(db_dir='.', db_infix=''):

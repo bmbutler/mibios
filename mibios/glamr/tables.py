@@ -3,8 +3,8 @@ from django.utils.html import escape, format_html, mark_safe
 
 from django_tables2 import A, Column, Table, TemplateColumn
 
-from mibios_glamr import models as glamr_models
-from mibios_omics import models as omics_models
+from mibios.glamr import models as glamr_models
+from mibios.omics import models as omics_models
 
 
 def get_record_url(*args):

@@ -1,5 +1,5 @@
 """
-url declarations for the mibios_glamr app
+url declarations for the mibios.glamr app
 """
 # FIXME: this module is, for now, called url0.  If we were to call it the usual
 # url, then the mibios.url will try to include it.  This, when combined with

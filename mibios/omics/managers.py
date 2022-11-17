@@ -26,9 +26,9 @@ from django.db.models import prefetch_related_objects
 from django.utils.module_loading import import_string
 
 from mibios.models import QuerySet
-from mibios_umrad.models import TaxID, Taxon, UniRef100
-from mibios_umrad.manager import BulkLoader, Manager
-from mibios_umrad.utils import CSV_Spec, atomic_dry
+from mibios.umrad.models import TaxID, Taxon, UniRef100
+from mibios.umrad.manager import BulkLoader, Manager
+from mibios.umrad.utils import CSV_Spec, atomic_dry
 
 from . import get_sample_model
 from .utils import get_fasta_sequence
@@ -502,7 +502,7 @@ class ContigLoader(ContigLikeLoader):
 
         This populates the Contig.lca/taxid fields
         """
-        Gene = import_string('mibios_omics.models.Gene')
+        Gene = import_string('mibios.omics.models.Gene')
         # TODO: make this a Contig manager method?  Or Sample method?
         genes = Gene.objects.filter(sample=sample)
         # genes = genes.exclude(hits=None)
@@ -631,7 +631,7 @@ class GeneLoader(ContigLikeLoader):
 
         This also populates Gene.lca / Gene.besthit fields
         """
-        Alignment = import_string('mibios_omics.models.Alignment')
+        Alignment = import_string('mibios.omics.models.Alignment')
 
         # Get UniRef100.taxids m2m links
         TUT = UniRef100._meta.get_field('taxids').remote_field.through

@@ -6,10 +6,10 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import models, router, transaction
 from django.urls import reverse
 
-from mibios_omics.models import AbstractDataset, AbstractSample
-from mibios_umrad.fields import AccessionField
-from mibios_umrad.models import Model
-from mibios_umrad.model_utils import ch_opt, fk_opt, fk_req, uniq_opt, opt
+from mibios.omics.models import AbstractDataset, AbstractSample
+from mibios.umrad.fields import AccessionField
+from mibios.umrad.models import Model
+from mibios.umrad.model_utils import ch_opt, fk_opt, fk_req, uniq_opt, opt
 
 from .fields import OptionalURLField
 from .load import \

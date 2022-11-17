@@ -17,12 +17,12 @@ from mibios import get_registry
 from mibios.data import TableConfig
 from mibios.models import Q
 from mibios.views import ExportBaseMixin, TextRendererZipped
-from mibios_omics import get_sample_model
-from mibios_omics.models import (
+from mibios.omics import get_sample_model
+from mibios.omics.models import (
     CompoundAbundance, FuncAbundance, TaxonAbundance
 )
-from mibios_umrad.models import FuncRefDBEntry
-from mibios_omics.models import Gene
+from mibios.umrad.models import FuncRefDBEntry
+from mibios.omics.models import Gene
 from . import models, tables
 from .forms import (
     AdvancedSearchForm, QBuilderForm, QLeafEditForm,

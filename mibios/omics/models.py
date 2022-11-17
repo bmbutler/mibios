@@ -9,13 +9,13 @@ from django.db import models
 from django.db.transaction import atomic, set_rollback
 
 from mibios.data import TableConfig
-from mibios_umrad.fields import AccessionField
-from mibios_umrad.model_utils import (
+from mibios.umrad.fields import AccessionField
+from mibios.umrad.model_utils import (
     digits, opt, ch_opt, fk_req, fk_opt, uniq_opt, Model,
 )
-from mibios_umrad.models import (CompoundRecord, FuncRefDBEntry, TaxID, Taxon,
+from mibios.umrad.models import (CompoundRecord, FuncRefDBEntry, TaxID, Taxon,
                                  UniRef100)
-from mibios_umrad.utils import ProgressPrinter
+from mibios.umrad.utils import ProgressPrinter
 
 from . import managers, get_sample_model, sra
 from .amplicon import get_target_genes, quick_analysis, quick_annotation
@@ -84,7 +84,7 @@ class AbstractSample(Model):
 
     # sample data accounting flags
     meta_data_loaded = models.BooleanField(
-        # this flag is not managed in mibios_omics but by downstream
+        # this flag is not managed in mibios.omics but by downstream
         # implementers of the abstract sample model
         default=False,
         help_text='meta data successfully loaded',

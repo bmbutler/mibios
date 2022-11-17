@@ -10,8 +10,8 @@ from django.db.backends.signals import connection_created
 from django.db.utils import OperationalError
 from django.dispatch import receiver
 
-from mibios_omics import get_sample_model
-from mibios_umrad.models import (
+from mibios.omics import get_sample_model
+from mibios.umrad.models import (
     CompoundRecord, CompoundName, FunctionName, Location, Metal,
     FuncRefDBEntry, ReactionRecord, Taxon, Uniprot, UniRef100,
 )
