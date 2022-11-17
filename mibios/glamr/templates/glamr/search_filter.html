@@ -1,13 +1,13 @@
 {% load glamr_extras %}
-{% if qnode.negated %}(NOT){% endif %} -{{ qnode.connector }}-{% if editable %}{% include 'mibios_glamr/search_node_form.html' %}{% endif %}
+{% if qnode.negated %}(NOT){% endif %} -{{ qnode.connector }}-{% if editable %}{% include 'glamr/search_node_form.html' %}{% endif %}
 <ul class="list-group">
 {% for child in qnode.children %}
     <li class="list-group-item">
     {% with qnode=child qnode_path=qnode_path|append:forloop.counter0 col_width=col_width|add:"-2" %}
     {% if child|is_q %}
-        {% include "mibios_glamr/search_filter.html" %}
+        {% include "glamr/search_filter.html" %}
     {% else %}
-    {{ child|qformat }}{% if editable %} {% include 'mibios_glamr/search_leaf_form.html' %}{% endif %}
+    {{ child|qformat }}{% if editable %} {% include 'glamr/search_leaf_form.html' %}{% endif %}
     {% endif %}
     {% endwith %}
     </li>

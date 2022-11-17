@@ -1,10 +1,10 @@
-{% extends "mibios_glamr/base.html" %}
+{% extends "glamr/base.html" %}
 {% block content %}
 
 <div class="container-fluid">
 <h2>Explore {{ model_verbose_name_plural }}</h2>
 <a href="{% url 'search_initial' %}">change data category</a>
-{% include "mibios_glamr/search_form_simple.html" %}
+{% include "glamr/search_form_simple.html" %}
 </div>
 
 <div class="container-fluid">
@@ -12,15 +12,15 @@
 
 <div class="row bg-light">
 {% if qnode %}
-<ul class="list-group"><li class="list-group-item">{% include "mibios_glamr/search_filter.html" %}</li></ul>
+<ul class="list-group"><li class="list-group-item">{% include "glamr/search_filter.html" %}</li></ul>
 {% else %}
-<p>Filter is empty, all data will be selected. Add filter item: {% include "mibios_glamr/search_new_form.html" %}</p>
+<p>Filter is empty, all data will be selected. Add filter item: {% include "glamr/search_new_form.html" %}</p>
 {% endif %}
 </div>
 
 <div class="row">
 {% if view.filter_item_form %}
-    {% include "mibios_glamr/search_filter_item_form.html" %}
+    {% include "glamr/search_filter_item_form.html" %}
 {% else %}
     <form class="g-3" action="{% url 'generic_table' model=model_name %}">
     <button type="submit" class="bnt btn-primary">Show filtered {{ model_verbose_name }} data</button>

@@ -6,8 +6,8 @@
     <meta name="viewport" content="width=device-width,initial-scale=1.0" />
     <title>{% block title %}{{ page_title | join:" | " | default:'GLAMR' }}{% endblock %}</title>
     {% block link %}
-    <link rel="icon" type="image/png" href="{% static 'mibios_glamr/img/GLMA_Logo_Icon.png' %}">
-    <link rel="stylesheet" href="{% static 'mibios_glamr/css/bootstrap.min.css' %}">
+    <link rel="icon" type="image/png" href="{% static 'glamr/img/GLMA_Logo_Icon.png' %}">
+    <link rel="stylesheet" href="{% static 'glamr/css/bootstrap.min.css' %}">
     <link rel="stylesheet" href="{% static 'django_tables2/bootstrap.css' %}">
     {% endblock %}
 </head>
@@ -16,7 +16,7 @@
     {{ version_info }}
 {% for k, v in version_info.items %}{{ k }}: {{ v|default:'(not available)' }}
 {% endfor %}-->
-<script src="{% static 'mibios_glamr/js/bootstrap.min.js' %}" defer></script>
+<script src="{% static 'glamr/js/bootstrap.min.js' %}" defer></script>
 <div class="container-fluid">
     <nav class="navbar navbar-expand-sm navbar-dark bg-primary">
     <div class="container-fluid">
@@ -25,7 +25,7 @@
                 <a class="navbar-brand" href="{{ view.request.META.SCRIPT_NAME }}/">GLAMR</a>
             </li>
             <li class="nav-item">
-                <a class="navbar-brand" href="{{ view.request.META.SCRIPT_NAME }}/"><img src="{% static 'mibios_glamr/img/GLMA_Logo_Icon.png' %}" alt="GLAMR logo" style="width:110px;vertical-align:bottom;margin-top:-30px;margin-bottom:-50px;padding:0;"></a>
+                <a class="navbar-brand" href="{{ view.request.META.SCRIPT_NAME }}/"><img src="{% static 'glamr/img/GLMA_Logo_Icon.png' %}" alt="GLAMR logo" style="width:110px;vertical-align:bottom;margin-top:-30px;margin-bottom:-50px;padding:0;"></a>
             </li>
         </ul>
     </div>

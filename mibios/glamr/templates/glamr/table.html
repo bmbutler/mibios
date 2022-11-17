@@ -1,11 +1,11 @@
-{% extends "mibios_glamr/base.html" %}
+{% extends "glamr/base.html" %}
 {% load render_table from django_tables2 %}
 {% block content %}
 <div class="container-fluid">
 <h2>{{ model_verbose_name_plural }}</h2>
 {% if qnode %}
 with filter:</br>
-{% include 'mibios_glamr/search_filter.html' %}
+{% include 'glamr/search_filter.html' %}
 (<a href="{% url 'search_model' model=model_name %}">change</a>)
 {% else %}
 all {{ model_verbose_name }} data shown (<a href="{% url 'search_model' model=model_name %}">add filter</a>)

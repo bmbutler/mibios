@@ -317,7 +317,7 @@ class AbundanceView(ExportMixin, SingleTableView):
     """
     Lists abundance data for a single object of a variable model
     """
-    template_name = 'mibios_glamr/abundance.html'
+    template_name = 'glamr/abundance.html'
 
     def get_table_class(self):
         if self.model is CompoundAbundance:
@@ -365,7 +365,7 @@ class AbundanceGeneView(ModelTableMixin, SingleTableView):
 
     Can export genes in fasta format
     """
-    template_name = 'mibios_glamr/abundance_genes.html'
+    template_name = 'glamr/abundance_genes.html'
     model = Gene
     exclude = ['id', 'sample']
 
@@ -423,7 +423,7 @@ class AbundanceGeneView(ModelTableMixin, SingleTableView):
 
 
 class BaseDetailView(DetailView):
-    template_name = 'mibios_glamr/detail.html'
+    template_name = 'glamr/detail.html'
     max_to_many = 16
 
     def get_context_data(self, **ctx):
@@ -504,7 +504,7 @@ class DatasetView(BaseDetailView):
 
 class DemoFrontPageView(SingleTableView):
     model = models.Dataset
-    template_name = 'mibios_glamr/demo_frontpage.html'
+    template_name = 'glamr/demo_frontpage.html'
     table_class = tables.DatasetTable
 
     def get_table_data(self):
@@ -557,7 +557,7 @@ class RecordView(BaseDetailView):
 
 
 class OverView(SingleTableView):
-    template_name = 'mibios_glamr/overview.html'
+    template_name = 'glamr/overview.html'
     table_class = tables.OverViewTable
 
     # lookup from sample to object
@@ -620,7 +620,7 @@ class OverView(SingleTableView):
 
 
 class OverViewSamplesView(SingleTableView):
-    template_name = 'mibios_glamr/overview_samples.html'
+    template_name = 'glamr/overview_samples.html'
     table_class = tables.OverViewSamplesTable
 
     # lookup from sample to object
@@ -670,7 +670,7 @@ class OverViewSamplesView(SingleTableView):
 class SampleListView(SingleTableView):
     """ List of samples belonging to a given dataset  """
     model = get_sample_model()
-    template_name = 'mibios_glamr/sample_list.html'
+    template_name = 'glamr/sample_list.html'
     table_class = tables.SampleTable
 
     def get_queryset(self):
@@ -693,7 +693,7 @@ class SampleView(BaseDetailView):
 
 class SearchView(TemplateView):
     """ offer a form for advanced search, offer model list """
-    template_name = 'mibios_glamr/search_init.html'
+    template_name = 'glamr/search_init.html'
 
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
@@ -707,7 +707,7 @@ class SearchView(TemplateView):
 
 class SearchModelView(EditFilterMixin, TemplateView):
     """ offer model-based searching """
-    template_name = 'mibios_glamr/search_model.html'
+    template_name = 'glamr/search_model.html'
     model = None
 
     def get_context_data(self, **ctx):
@@ -716,7 +716,7 @@ class SearchModelView(EditFilterMixin, TemplateView):
 
 
 class SearchHitView(TemplateView):
-    template_name = 'mibios_glamr/search_hits.html'
+    template_name = 'glamr/search_hits.html'
 
     # tri-state indicator if search results hit field data or just reference
     reference_hit_only = None
@@ -790,7 +790,7 @@ class SearchHitView(TemplateView):
 
 
 class TableView(BaseFilterMixin, ModelTableMixin, SingleTableView):
-    template_name = 'mibios_glamr/table.html'
+    template_name = 'glamr/table.html'
 
     def get_queryset(self):
         self.conf.q = [self.q]
@@ -803,7 +803,7 @@ class TableView(BaseFilterMixin, ModelTableMixin, SingleTableView):
 
 class ToManyListView(SingleTableView):
     """ view relations belonging to one object """
-    template_name = 'mibios_glamr/relations_list.html'
+    template_name = 'glamr/relations_list.html'
     table_class = tables.SingleColumnRelatedTable
 
     def setup(self, request, *args, **kwargs):
@@ -849,7 +849,7 @@ class ToManyListView(SingleTableView):
 
 class ToManyFullListView(ModelTableMixin, ToManyListView):
     """ relations view but with full model-based table """
-    template_name = 'mibios_glamr/relations_full_list.html'
+    template_name = 'glamr/relations_full_list.html'
 
     def setup(self, request, *args, **kwargs):
         super().setup(request, *args, **kwargs)

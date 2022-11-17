@@ -1,9 +1,9 @@
-{% extends "mibios_glamr/base.html" %}
+{% extends "glamr/base.html" %}
 {% load static %}
 {% load render_table from django_tables2 %}
 {% block content %}
 
-{% include "mibios_glamr/search_form_simple.html" %}
+{% include "glamr/search_form_simple.html" %}
 <h3>Available data sets</h3>
 {% render_table table %}
 
