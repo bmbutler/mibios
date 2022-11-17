@@ -695,7 +695,7 @@ class BaseLoader(DjangoManager):
         """
         prep_values = {j: i for i, j in field.choices}
 
-        def prep_choice_value(self, value, row=None):
+        def prep_choice_value(self, value, row=None, obj=None):
             """ get the prepared field value for a choice field """
             return prep_values.get(value, value)
 

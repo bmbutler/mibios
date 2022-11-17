@@ -15,7 +15,7 @@ class DatasetLoader(Loader):
         return settings.GLAMR_META_ROOT\
             / 'Great_Lakes_Omics_Datasets.xlsx.ods'
 
-    def ensure_id(self, value, row):
+    def ensure_id(self, value, row, obj):
         """ skip rows without some id """
         idcols = ['dataset', 'NCBI_BioProject', 'JGI_Project_ID', 'GOLD_ID',
                   'MG-RAST_study']
@@ -85,7 +85,7 @@ class ReferenceLoader(Loader):
         return settings.GLAMR_META_ROOT\
             / 'Great_Lakes_Omics_Datasets.xlsx.ods'
 
-    def fix_doi(self, value, record):
+    def fix_doi(self, value, record, obj):
         if value is not None and 'doi-org.proxy.lib.umich.edu' in value:
             # fix, don't require umich weblogin to follow these links
             value = value.replace('doi-org.proxy.lib.umich.edu', 'doi.org')
