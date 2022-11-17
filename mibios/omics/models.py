@@ -356,11 +356,13 @@ class AbstractSample(Model):
 
         Returns the AmpliconAnalysisUnit object
         """
+        '''
         obj = AmpliconAnalysisUnit.objects.get_or_create(
             dataset=self.dataset,
             # TODO
         )
         # TODO: need better localization data to do this
+        '''
 
 
 class AbstractDataset(Model):
@@ -529,6 +531,7 @@ class AmpliconAnalysisUnit(Model):
             ('dataset', 'seq_platform', 'is_paired_end', 'fwd_primer',
              'rev_primer',),
         )
+'''
 
 
 class Bin(Model):
