@@ -598,13 +598,13 @@ class GeneLoader(ContigLikeLoader):
 
     def calc_rpkm(self, value, row, obj):
         """ calculate rpkm based on total post-QC read-pairs """
-        return (1_000_000_000 * obj.reads_mapped
-                / obj.length / self.sample.read_count)
+        return (1_000_000_000 * int(obj.reads_mapped)
+                / int(obj.length) / self.sample.read_count)
 
     def calc_fpkm(self, value, row, obj):
         """ calculate fpkm based on total post-QC read-pairs """
-        return (1_000_000_000 * obj.frags_mapped
-                / obj.length / self.sample.read_count)
+        return (1_000_000_000 * int(obj.frags_mapped)
+                / int(obj.length) / self.sample.read_count)
 
     rpkm_spec = BBMap_RPKM_Spec(
         ('#Name', 'gene_id', extract_gene_id),
