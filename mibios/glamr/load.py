@@ -158,6 +158,12 @@ class SampleLoader(Loader):
             value = None
         return value
 
+    def parse_human_int(self, value, row, obj):
+        """
+        allow use of comma to separate thousands
+        """
+        return value.replace(',', '')
+
     spec = CSV_Spec(
         ('SampleID', 'sample_id'),  # B
         ('SampleName', 'sample_name', check_ids),  # C
@@ -215,9 +221,9 @@ class SampleLoader(Loader):
         ('Col_DOM', 'col_dom'),  # AZ
         ('suspend_part_matter', 'suspend_part_matter'),  # BA
         ('suspend_vol_solid', 'suspend_vol_solid'),  # BB
-        ('Microcystis_count', 'microcystis_count'),  # BC
-        ('Planktothris_Count', 'planktothris_count'),  # BD
-        ('Anabaena-D_count', 'anabaena_d_count'),  # BE
+        ('Microcystis_count', 'microcystis_count', parse_human_int),  # BC
+        ('Planktothris_Count', 'planktothris_count', parse_human_int),  # BD
+        ('Anabaena-D_count', 'anabaena_d_count', parse_human_int),  # BE
         ('Cylindrospermopsis_count', 'cylindrospermopsis_count'),  # BF
         ('ice_cover', None),  # TODO
         ('Notes', 'notes'),  # BG
