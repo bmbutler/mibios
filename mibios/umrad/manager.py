@@ -6,7 +6,7 @@ from operator import attrgetter, length_hint
 from time import sleep
 
 from django.conf import settings
-from django.core.exceptions import FieldDoesNotExist, ValidationError
+from django.core.exceptions import ValidationError
 from django.db.models.manager import Manager as DjangoManager
 from django.utils.module_loading import import_string
 
@@ -253,7 +253,7 @@ class BaseLoader(DjangoManager):
     """
 
     def load(self, spec=None, start=0, limit=None, dry_run=False, sep=None,
-             parse_only=False, file=None, template={}, skip_on_error=False,
+             parse_into=None, file=None, template={}, skip_on_error=False,
              update=False, bulk=False, validate=True):
         """
         Load data from file
@@ -263,8 +263,9 @@ class BaseLoader(DjangoManager):
         :param int limit:
             Stop after reading this many records.  If None (the default), then
             load all data.
-        :param bool parse_only:
-            Return each row as a dict and don't use the general loader logic.
+        :param list parse_into:
+            If an empty list is passed, then we run in "parse only" mode.  The
+            parsed data is appended to the provided list.
         :param bool skip_on_error:
             If True, then certain Exceptions raised while processing a line of
             the input file cause the line to be skipped and an error message to
@@ -293,8 +294,9 @@ class BaseLoader(DjangoManager):
                 stop = start + limit
             row_it = islice(row_it, start, stop)
 
-        if parse_only:
-            return self._parse_rows(row_it)
+        if parse_into is not None:
+            self._parse_rows(row_it, parse_into=parse_into)
+            return
 
         try:
             return self._load_rows(
@@ -714,34 +716,16 @@ class BaseLoader(DjangoManager):
         """
         return value.split(';')
 
-    def _parse_rows(self, rows):
-        ncols = len(self.spec.all_cols)
-
-        data = []
+    def _parse_rows(self, rows, parse_into):
         for row in rows:
-            if len(row) != ncols:
-                raise ValueError(
-                    f'bad num of cols ({len(row)}), {row=} '
-                    f'{ncols=}'
-                )
-
             rec = {}
-            for key, value in zip(self.spec.row_keys, row):
-                if key is None:
-                    continue
-                try:
-                    field = self.model._meta.get_field(key)
-                except FieldDoesNotExist:
-                    # caller must handle values from m2m field (if any)
-                    pass
-                else:
-                    if field.many_to_many:
-                        value = self.split_m2m_value(value)
+            for field, _, value in self.spec.row_data(row):
+                if field.many_to_many and value is not None:
+                    value = self.split_m2m_value(value)
 
-                rec[key] = value
+                rec[field.name] = value
 
-            data.append(rec)
-        return data
+            parse_into.append(rec)
 
     def _get_objects_for_update(self, template):
         """
