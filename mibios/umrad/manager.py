@@ -329,8 +329,7 @@ class BaseLoader(DjangoManager):
     def _load_rows(self, rows, sep='\t', dry_run=False, template={},
                    skip_on_error=False, validate=False, update=False,
                    bulk=True, first_lineno=None):
-        ncols = len(self.spec.all_cols)
-        fields = self.spec.get_fields()
+        fields = self.spec.fields
         num_line_errors = 0
         max_line_errors = 10  # > 0
 
@@ -381,15 +380,6 @@ class BaseLoader(DjangoManager):
         for lineno, row in enumerate(rows, start=first_lineno):
             if num_line_errors >= max_line_errors:
                 raise RuntimeError('ERROR: too many per-line errors')
-
-            if len(row) != ncols:
-                err_msg = (f'\nERROR: on line {lineno}: bad num of cols: '
-                           f'{len(row)} expected: {ncols=}')
-                if skip_on_error:
-                    print(err_msg)
-                    num_line_errors += 1
-                    continue
-                raise InputFileError(err_msg)
 
             obj = None
             m2m = {}

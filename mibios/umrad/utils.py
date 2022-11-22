@@ -355,6 +355,8 @@ class InputFileSpec:
 
     def __init__(self, *column_specs):
         self._spec = column_specs or None
+
+        # set by setup():
         self._fields = None
         self._convfuncs = None
         self.model = None
@@ -387,19 +389,17 @@ class InputFileSpec:
 
         self.empty_values += self.loader.empty_values
 
-        cols = []  # used column header
-        all_cols = []  # all row column headers, as in file
-        keys = []  # used keys, usually field names
-        row_keys = []  # all row keys incl. Nones
-        # conversion functions, one (or None) per used columns plus non-column
-        # value calculation:
-        conv = []
+        col_names = []  # all row column headers, as in file
+        col_index = []  # index of actually used columns
+        keys = []
+        field_names = []
+        convfuncs = []
 
+        cur_col_index = None  # for non-header input, defined by order in spec
         for spec_line in column_specs:
             # TODO: re-write as match statement?
             # FIXME: two-str-items format can be <col> <field> OR <field> <fun>
             # with no super easy way to distinguish them
-            orig_spec_line = spec_line
             if not isinstance(spec_line, tuple):
                 # no-header-simple-format
                 spec_line = (spec_line, )
@@ -414,79 +414,98 @@ class InputFileSpec:
                     self.has_header = True
 
             if not self.has_header:
-                # add None as column name placeholder
-                spec_line = (None, *spec_line)
+                spec_line = (self.NO_HEADER, *spec_line)
 
             colname, key, *convfunc = spec_line
 
-            if colname is not self.CALC_VALUE:
+            if len(convfunc) == 0:
+                convfunc = None
+            elif len(convfunc) == 1:
+                convfunc = convfunc[0]
+            else:
+                raise ValueError(f'too many items in spec for {colname}/{key}')
+
+            if colname is self.CALC_VALUE:
+                if key is None:
+                    raise RuntimeError('require key (field name) for for which'
+                                       'to calculate a value')
+                if convfunc is None:
+                    raise ValueError('callable for value calculation missing')
+
+                col_names.append(colname)
+                col_index.append(cur_col_index)
+            else:
                 # current spec item is for a column in input
-                if self.has_header:
-                    all_cols.append(colname)
-                elif colname is not None:
-                    raise RuntimeError(f'got column name but assumed no '
-                                       f'header: {orig_spec_line}')
-                row_keys.append(key)
+                if not self.has_header:
+                    # add 0-based numerical index for column name
+                    # these have to be counted here
+                    if cur_col_index is None:
+                        cur_col_index = 0
+                    else:
+                        cur_col_index += 1
 
                 if key is None:
                     # ignore this column
                     continue
 
-            if '.' in key:
-                key, _, attr = key.partition('.')
-                self.fk_attrs[key] = attr
+                if not self.has_header:
+                    col_index.append(cur_col_index)
 
+            col_names.append(colname)
             keys.append(key)
-            if convfunc:
-                if len(convfunc) > 1:
-                    raise ValueError(
-                        f'too many items in spec for {colname}/{key}'
-                    )
-                convfunc = convfunc[0]
-                if isinstance(convfunc, str):
-                    convfunc_name = convfunc
-                    # getattr gives us abound method:
-                    convfunc = getattr(loader, convfunc_name)
-                    if not callable(convfunc):
-                        raise ValueError(
-                            f'not the name of a {self.loader} method: '
-                            f'{convfunc_name}'
-                        )
-                elif callable(convfunc):
-                    # Assume it's a function that takes the loader as
-                    # 1st arg.  We get this when the previoudsly
-                    # delclared method's identifier is passed directly
-                    # in the spec's declaration.
-                    convfunc = partial(convfunc, self.loader)
-                else:
-                    raise ValueError(f'not a callable: {convfunc}')
+
+            if '.' in key:
+                field_name, _, attr = key.partition('.')
+                self.fk_attrs[field_name] = attr
             else:
-                convfunc = None
+                field_name = key
 
-            if colname is self.CALC_VALUE and convfunc is None:
-                raise ValueError('callable for value calculation missing')
+            field_names.append(field_name)
 
-            conv.append(convfunc)
+            if convfunc is None:
+                pass
+            elif isinstance(convfunc, str):
+                convfunc_name = convfunc
+                # getattr gives us a bound method:
+                convfunc = getattr(loader, convfunc_name)
+                if not callable(convfunc):
+                    raise ValueError(
+                        f'not the name of a {self.loader} method: '
+                        f'{convfunc_name}'
+                    )
+            elif callable(convfunc):
+                # Assume it's a function that takes the loader as
+                # 1st arg.  We get this when the previoudsly
+                # delclared method's identifier is passed directly
+                # in the spec's declaration.
+                convfunc = partial(convfunc, self.loader)
+            else:
+                raise ValueError(f'not a callable: {convfunc}')
 
-        self.all_cols = all_cols
-        self.cols = cols
-        self.row_keys = row_keys
+            convfuncs.append(convfunc)
+
+        self.col_names = col_names
+        self.col_index = col_index
         self.keys = keys
-        self._convfuncs_raw = conv
+        self.field_names = field_names
+        self._convfuncs_raw = convfuncs
 
     def __len__(self):
         return len(self._spec)
 
-    def get_fields(self):
+    @property
+    def fields(self):
         if self._fields is None:
-            self._fields = \
-                tuple((self.model._meta.get_field(i) for i in self.keys))
+            self._fields = tuple(
+                (self.model._meta.get_field(i) for i in self.field_names)
+            )
         return self._fields
 
-    def get_convfuncs(self):
+    @property
+    def convfuncs(self):
         if self._convfuncs is None:
             convfuncs = []
-            for field, fn in zip(self.get_fields(), self._convfuncs_raw):
+            for field, fn in zip(self.fields, self._convfuncs_raw):
                 if fn is None and field.choices:
                     # automatically attach prep method for choice fields
                     convfuncs.append(
@@ -516,21 +535,18 @@ class InputFileSpec:
 
         :param list row: A list of str
         """
-        fields = list(self.get_fields())
-        convfuncs = list(self.get_convfuncs())
-        # zip: skips extra columns in row beyond row_keys
-        for key, value in zip(self.row_keys, row):
-            if key is None:
-                continue  # skip this column
-            field = fields.pop(0)
-            if value in self.empty_values or value in field.empty_values:
+        it = zip(self.fields, self.convfuncs, self.col_names, self.col_index)
+        for field, fn, col_name, col_i in it:
+            if col_name is self.CALC_VALUE:
+                # value will be calculated
+                if fn is None:
+                    raise ValueError(f'expect a callable but got {fn}')
                 value = None
-            yield (field, convfuncs.pop(0), value)
-        # non-row items, values get calculated
-        for i, j in zip(fields, convfuncs):
-            if i is None or j is None:
-                raise ValueError(f'expect field and callable but got {i}/{j}')
-            yield (i, j, None)
+            else:
+                value = row[col_i]
+                if value in self.empty_values or value in field.empty_values:
+                    value = None
+            yield (field, fn, value)
 
     def row2dict(self, row):
         """ turn a row (of values) into a dict with field names as keys """
@@ -551,24 +567,30 @@ class CSV_Spec(InputFileSpec):
         """
         consumes and checks a single line of columns headers
 
+        Calling this will set up the column_index that is needed to iterate
+        over the rows.
+
         Overwrite this method if your file has a more complex layout.  Make
         sure this method consumes all non-data rows at the beginning of the
         file.
         """
         head = file.readline().rstrip('\n').split(self.sep)
-        cols = self.all_cols
-        for i, (a, b) in enumerate(zip(head, cols), start=1):
-            # ignore column number differences here, will catch later
-            if a != b:
-                raise ValueError(
-                    f'Unexpected header row: first mismatch in column '
-                    f'{i}: got "{a}", expected "{b}"'
-                )
-        if len(head) != len(self.all_cols):
-            raise ValueError(
-                f'expecting {len(self)} columns but got '
-                f'{len(head)} in header row'
-            )
+        col_pos = {colname: pos for pos, colname in enumerate(head)}
+
+        column_index = []
+        for col in self.col_names:
+            if col is self.CALC_VALUE:
+                column_index.append(col_pos)
+            else:
+                try:
+                    pos = col_pos[col]
+                except KeyError:
+                    raise RuntimeError(
+                        f'column not found: {col}, header: {head}'
+                    )
+
+                column_index.append(pos)
+        self.col_index = column_index
 
     def iterrows(self):
         """
@@ -598,7 +620,8 @@ class ExcelSpec(InputFileSpec):
         df = pandas.read_excel(
             str(self.path),
             sheet_name=self.sheet_name,
-            usecols=self.all_cols,
+            # TODO: only read columns we need
+            # usecols=...,
             na_values=self.empty_values,
             keep_default_na=False,
         )
@@ -607,13 +630,36 @@ class ExcelSpec(InputFileSpec):
         df = df.where(pandas.notnull(df), None)
         return df
 
+    def process_header(self, df):
+        """
+        Populate the column index
+        """
+        col_pos = {colname: pos for pos, colname in enumerate(df.columns)}
+
+        column_index = []
+        for col in self.col_names:
+            if col is self.CALC_VALUE:
+                column_index.append(col_pos)
+            else:
+                try:
+                    pos = col_pos[col]
+                except KeyError:
+                    raise RuntimeError(
+                        f'column not found: {col=} in {col_pos=}'
+                    )
+
+                column_index.append(pos)
+        self.col_index = column_index
+
     def iterrows(self):
         """
         An iterator over the table's rows, yields Pandas.Series instances
 
         :param pathlib.Path path: path to the data file
         """
-        for _, row in self.get_dataframe().iterrows():
+        df = self.get_dataframe()
+        self.process_header(df)  # this call has to be made somewhere
+        for _, row in df.iterrows():
             yield row
 
 
