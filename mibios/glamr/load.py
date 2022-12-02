@@ -162,7 +162,10 @@ class SampleLoader(Loader):
         """
         allow use of comma to separate thousands
         """
-        return value.replace(',', '')
+        if value:
+            return value.replace(',', '')
+        else:
+            return value
 
     spec = CSV_Spec(
         ('SampleID', 'sample_id'),  # B
