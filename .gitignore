@@ -1,9 +1,16 @@
+/settings.py
+/initial_import
+/userlist
+/build/
+/static/
+# created by running code during development:
+__pycache__/
+/debug.log
+/secret.key
 /.coverage
 /import.log
 /db.sqlite3
-/initial_import
-/secret.key
-/userlist
-/build/
-/debug.log
-/static/
+/profile.cumulative.txt
+/profile.tottime.txt
+# the most common vim swap files
+.*.swp
