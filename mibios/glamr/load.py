@@ -10,6 +10,7 @@ from mibios.umrad.utils import CSV_Spec, ExcelSpec, atomic_dry
 
 class DatasetLoader(Loader):
     empty_values = ['NA', 'Not Listed', 'NF']
+    default_load_kwargs = dict(validate=True, bulk=False)
 
     def get_file(self):
         return settings.GLAMR_META_ROOT\
@@ -80,6 +81,7 @@ class RefSpec(ExcelSpec):
 
 class ReferenceLoader(Loader):
     empty_values = ['NA', 'Not Listed']
+    default_load_kwargs = dict(validate=True, bulk=False)
 
     def get_file(self):
         return settings.GLAMR_META_ROOT\
@@ -108,6 +110,7 @@ class ReferenceLoader(Loader):
 class SampleLoader(Loader):
     """ loader for Great_Lakes_AMplicon_Datasets.xlsx """
     empty_values = ['NA', 'Not Listed', 'NF', '#N/A']
+    default_load_kwargs = dict(validate=True, bulk=False)
 
     def get_file(self):
         return settings.GLAMR_META_ROOT / 'Great_Lakes_Omics_Datasets.xlsx - samples.tsv'  # noqa:E501

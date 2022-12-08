@@ -239,6 +239,23 @@ class BaseLoader(DjangoManager):
     """
     empty_values = []
 
+    _DEFAULT_LOAD_KWARGS = dict(
+        sep=None,
+        skip_on_error=False,
+        update=False,
+        bulk=False,
+        validate=False,
+    )
+    # Inheriting classes can set default kwargs for load() here.  In __init__()
+    # anything missing is set from _DEFAULT_LOAD_KWARGS above, which inheriting
+    # classes should not change (assuming they want to use our load().
+    default_load_kwargs = {}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for k, v in self._DEFAULT_LOAD_KWARGS.items():
+            self.default_load_kwargs.setdefault(k, v)
+
     def get_file(self):
         """
         Return pathlib.Path to input data file
@@ -252,9 +269,8 @@ class BaseLoader(DjangoManager):
     simple list, listing the fields in the right order.
     """
 
-    def load(self, spec=None, start=0, limit=None, dry_run=False, sep=None,
-             parse_into=None, file=None, template={}, skip_on_error=False,
-             update=False, bulk=False, validate=True):
+    def load(self, spec=None, start=0, limit=None, dry_run=False,
+             parse_into=None, file=None, template={}, **kwargs):
         """
         Load data from file
 
@@ -278,9 +294,14 @@ class BaseLoader(DjangoManager):
 
         May assume empty table ?!?
         """
+        # set default kwargs if any are missing
+        for k, v in self.default_load_kwargs.items():
+            kwargs.setdefault(k, v)
+
+        # setup spec
         setup_kw = dict(spec=spec)
-        if sep is not None:
-            setup_kw['sep'] = sep
+        if kwargs['sep'] is not None:
+            setup_kw['sep'] = kwargs['sep']
         if file is not None:
             setup_kw['path'] = file
         self.setup_spec(**setup_kw)
@@ -302,13 +323,9 @@ class BaseLoader(DjangoManager):
             return self._load_rows(
                 row_it,
                 template=template,
-                sep=sep,
                 dry_run=dry_run,
-                skip_on_error=skip_on_error,
-                validate=validate,
-                update=update,
-                bulk=bulk,
                 first_lineno=start + 2 if self.spec.has_header else 1,
+                **kwargs
             )
         except Exception:
             # cleanup progress printing (if any)
