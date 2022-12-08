@@ -1,7 +1,10 @@
-from pandas import isna, Timestamp
+from datetime import datetime
+import re
 
 from django.conf import settings
 from django.core.exceptions import FieldDoesNotExist
+from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
 
 from mibios.umrad.manager import InputFileError, Loader
 from mibios.umrad.model_utils import delete_all_objects_quickly
@@ -143,18 +146,73 @@ class SampleLoader(Loader):
         # consider row blank
         return self.spec.SKIP_ROW
 
-    def ensure_tz(self, value, obj):
-        """ add missing time zone """
-        # Django would, in DateTimeField.get_prep_value(), add the configured
-        # TZ for naive timestamps also, BUT would spam us with WARNINGs, so
-        # this here is only to avoid those warnings.
-        # Pandas.read_excel should give us Timestamp instances here
-        if isinstance(value, Timestamp):
-            if value.tz is None and settings.USE_TZ:
-                value = value.tz_localize(settings.TIME_ZONE)
-        elif isna(value):
-            # blank fields get type NaTType
-            value = None
+    # re for yyyy or yyyy-mm (year or year/month only) timestamp formats
+    partial_date_pat = re.compile(r'^([0-9]{4})(?:-([0-9]{2})?)$')
+
+    def process_timestamp(self, value, obj):
+        """
+        process the collection time stamp
+
+        1. Partial dates: years only get saves as Jan 1st and year-month gets
+           the first of month; and the original form is saves as string in
+           collection_ts_partial column
+        2. Add timezone to timestamps if needed (and hoping the configued TZ is
+           appropriate).  This avoids spamming of warnings from the
+           DateTimeField's to_python() method in some cases.
+        """
+        if value is None:
+            return None
+
+        old_value = value
+        del value
+
+        try:
+            value = parse_datetime(old_value)
+        except ValueError as e:
+            # invalid date/time
+            raise InputFileError from e
+
+        if value is None:
+            # failed parsing as datetime, try date
+            try:
+                value = parse_date(old_value)
+            except ValueError as e:
+                # invalid date
+                raise InputFileError from e
+
+            if value is not None:
+                # add fake time (midnight)
+                value = datetime(value.year, value.month, value.day)
+                obj.collection_ts_partial = self.model.DATE_ONLY
+        else:
+            # got a complete timestamp
+            obj.collection_ts_partial = self.model.FULL_TIMESTAMP
+
+        if value is None:
+            # failed parsing as ISO 8601, try for year-month and year only
+            # which MIMARKS/MIXS allows
+            m = self.partial_date_pat.match(old_value)
+
+            if m is not None:
+                year, month = m.groups()
+                year = int(year)
+                if month is None:
+                    month = 1
+                    obj.collection_ts_partial = self.model.YEAR_ONLY
+                else:
+                    month = int(month)
+                    obj.collection_ts_partial = self.model.MONTH_ONLY
+
+                try:
+                    value = datetime(year, month, 1)
+                except ValueError as e:
+                    # invalid year or month
+                    raise InputFileError('failed parsing timestamp') from e
+
+        # value should now be a datetime instance
+        if value.tzinfo is None:
+            default_timezone = timezone.get_default_timezone()
+            value = timezone.make_aware(value, default_timezone)
         return value
 
     def parse_human_int(self, value, obj):
@@ -184,7 +242,7 @@ class SampleLoader(Loader):
         ('GAZ_id', 'gaz_id'),  # M
         ('lat', 'latitude'),  # N
         ('lon', 'longitude'),  # O
-        ('collection_date', 'collection_timestamp', ensure_tz),  # P
+        ('collection_date', 'collection_timestamp', process_timestamp),  # P
         ('NOAA_Site', 'noaa_site'),  # Q
         ('env_broad_scale', 'env_broad_scale'),  # R
         ('env_local_scale', 'env_local_scale'),  # S
