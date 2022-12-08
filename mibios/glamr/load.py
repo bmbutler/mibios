@@ -5,25 +5,20 @@ from django.core.exceptions import FieldDoesNotExist
 
 from mibios.umrad.manager import InputFileError, Loader
 from mibios.umrad.model_utils import delete_all_objects_quickly
-from mibios.umrad.utils import CSV_Spec, ExcelSpec, atomic_dry
+from mibios.umrad.utils import CSV_Spec, atomic_dry
 
 
 class DatasetLoader(Loader):
-    empty_values = ['NA', 'Not Listed', 'NF']
+    empty_values = ['NA', 'Not Listed', 'NF', '#N/A']
     default_load_kwargs = dict(validate=True, bulk=False)
 
     def get_file(self):
         return settings.GLAMR_META_ROOT\
-            / 'Great_Lakes_Omics_Datasets.xlsx.ods'
+            / 'Great_Lakes_Omics_Datasets.xlsx - studies_datasets.tsv'
 
     def ensure_id(self, value, obj):
-        """ skip rows without some id """
-        idcols = ['dataset', 'NCBI_BioProject', 'JGI_Project_ID', 'GOLD_ID',
-                  'MG-RAST_study']
-        for i in idcols:
-            if row[i]:
-                break
-        else:
+        """ skip rows without dataset id """
+        if not value:
             return self.spec.SKIP_ROW
 
         return value
@@ -47,7 +42,7 @@ class DatasetLoader(Loader):
 
         return tuple((getattr(ref, i) for i in id_lookups))
 
-    spec = ExcelSpec(
+    spec = CSV_Spec(
         ('dataset', 'dataset_id', ensure_id),
         # ('Primary_pub', 'reference', get_reference_ids),
         ('Primary_pub', 'reference.reference_id'),
@@ -64,19 +59,7 @@ class DatasetLoader(Loader):
         ('Sequencing Platform', 'sequencing_platform'),
         ('Size Fraction(s)', 'size_fraction'),
         ('Notes', 'note'),
-        # on Google it's "studies/datasets" but without "/" in ODF
-        sheet_name='studiesdatasets',
     )
-
-
-class RefSpec(ExcelSpec):
-    """ allow skipping of empty rows """
-    def iterrows(self):
-        for row in super().iterrows():
-            if isna(row['Reference']) or row['Reference'] == '':
-                # empty row or no ref
-                continue
-            yield row
 
 
 class ReferenceLoader(Loader):
@@ -85,7 +68,7 @@ class ReferenceLoader(Loader):
 
     def get_file(self):
         return settings.GLAMR_META_ROOT\
-            / 'Great_Lakes_Omics_Datasets.xlsx.ods'
+            / 'Great_Lakes_Omics_Datasets.xlsx - papers.tsv'
 
     def fix_doi(self, value, obj):
         if value is not None and 'doi-org.proxy.lib.umich.edu' in value:
@@ -93,9 +76,22 @@ class ReferenceLoader(Loader):
             value = value.replace('doi-org.proxy.lib.umich.edu', 'doi.org')
         return value
 
-    spec = RefSpec(
-        ('PaperID', 'reference_id'),
-        ('Reference', 'short_reference'),
+    def check_skip(self, value, obj):
+        """ determine if row needs to be skipped """
+        if value == 'paper_17':
+            return self.spec.SKIP_ROW
+
+        if value == 'Koeppel et al. 2022':
+            return self.spec.SKIP_ROW
+
+        if not value:
+            return self.spec.SKIP_ROW
+
+        return value
+
+    spec = CSV_Spec(
+        ('PaperID', 'reference_id', check_skip),
+        ('Reference', 'short_reference', check_skip),
         ('Authors', 'authors'),
         ('Title', 'title'),
         ('Abstract', 'abstract'),
@@ -103,7 +99,6 @@ class ReferenceLoader(Loader):
         ('Journal', 'publication'),
         ('DOI', 'doi', fix_doi),
         ('Associated_datasets', None),  # TODO: handle this
-        sheet_name='papers',
     )
 
 

@@ -176,7 +176,7 @@ class Reference(Model):
 class Sample(AbstractSample):
 
     project_id = models.CharField(
-        max_length=16, **ch_opt,
+        max_length=32, **ch_opt,
         help_text='Project accession, e.g. NCBI bioproject',
     )
     biosample = models.CharField(max_length=16, **ch_opt)
