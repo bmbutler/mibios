@@ -16,7 +16,7 @@ class DatasetLoader(Loader):
         return settings.GLAMR_META_ROOT\
             / 'Great_Lakes_Omics_Datasets.xlsx.ods'
 
-    def ensure_id(self, value, row, obj):
+    def ensure_id(self, value, obj):
         """ skip rows without some id """
         idcols = ['dataset', 'NCBI_BioProject', 'JGI_Project_ID', 'GOLD_ID',
                   'MG-RAST_study']
@@ -28,7 +28,7 @@ class DatasetLoader(Loader):
 
         return value
 
-    def get_reference_ids(self, value, row, obj):
+    def get_reference_ids(self, value, obj):
         if value is None or value == '':
             return self.spec.IGNORE_COLUMN
 
@@ -87,7 +87,7 @@ class ReferenceLoader(Loader):
         return settings.GLAMR_META_ROOT\
             / 'Great_Lakes_Omics_Datasets.xlsx.ods'
 
-    def fix_doi(self, value, record, obj):
+    def fix_doi(self, value, obj):
         if value is not None and 'doi-org.proxy.lib.umich.edu' in value:
             # fix, don't require umich weblogin to follow these links
             value = value.replace('doi-org.proxy.lib.umich.edu', 'doi.org')
@@ -115,11 +115,11 @@ class SampleLoader(Loader):
     def get_file(self):
         return settings.GLAMR_META_ROOT / 'Great_Lakes_Omics_Datasets.xlsx - samples.tsv'  # noqa:E501
 
-    def fix_sample_id(self, value, row, obj):
+    def fix_sample_id(self, value, obj):
         """ Remove leading "SAMPLE_" from accession value """
         return value.removeprefix('Sample_')
 
-    def parse_bool(self, value, row, obj):
+    def parse_bool(self, value, obj):
         # Only parse str values.  The pandas reader may give us booleans
         # already for some reason (for the modified_or_experimental but not the
         # has_paired data) ?!?
@@ -134,20 +134,21 @@ class SampleLoader(Loader):
                 )
         return value
 
-    def check_ids(self, value, row, obj):
+    def check_ids(self, value, obj):
         """ check that we have at least some ID value """
         if value:
             return value
 
         # check other ID columns
-        row = self.spec.row2dict(row)
-        if row['biosample'] or row['sra_accession']:
+        if self.get_current_value('biosample'):
+            return value
+        if self.get_current_value('sra_accession'):
             return value
 
         # consider row blank
         return self.spec.SKIP_ROW
 
-    def ensure_tz(self, value, row, obj):
+    def ensure_tz(self, value, obj):
         """ add missing time zone """
         # Django would, in DateTimeField.get_prep_value(), add the configured
         # TZ for naive timestamps also, BUT would spam us with WARNINGs, so
@@ -161,7 +162,7 @@ class SampleLoader(Loader):
             value = None
         return value
 
-    def parse_human_int(self, value, row, obj):
+    def parse_human_int(self, value, obj):
         """
         allow use of comma to separate thousands
         """

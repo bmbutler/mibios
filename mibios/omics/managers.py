@@ -185,7 +185,7 @@ class AlignmentLoader(BulkLoader, SampleLoadMixin):
     def get_file(self, sample):
         return sample.get_metagenome_path() / f'{sample.tracking_id}_GENES.m8'
 
-    def query2gene_pk(self, value, row, obj):
+    def query2gene_pk(self, value, obj):
         """
         get gene PK from qseqid column for genes
 
@@ -195,7 +195,7 @@ class AlignmentLoader(BulkLoader, SampleLoadMixin):
         gene_id = value.split('\t', maxsplit=1)[0].partition('_')[2]
         return self.gene_id_map[gene_id]
 
-    def upper(self, value, row, obj):
+    def upper(self, value, obj):
         """
         upper-case the uniref100 id
 
@@ -467,17 +467,17 @@ class ContigLoader(ContigLikeLoader):
         return sample.get_metagenome_path() / 'assembly' \
             / f'{sample.tracking_id}_READSvsCONTIGS.rpkm'
 
-    def trim_id(self, value, row, obj):
+    def trim_id(self, value, obj):
         """ trim tracking id off, e.g. deadbeef_123 => 123 """
         _, _, value = value.partition('_')
         return value.upper()
 
-    def calc_rpkm(self, value, row, obj):
+    def calc_rpkm(self, value, obj):
         """ calculate rpkm based on total post-QC read-pairs """
         return (1_000_000_000 * int(obj.reads_mapped)
                 / int(obj.length) / self.sample.read_count)
 
-    def calc_fpkm(self, value, row, obj):
+    def calc_fpkm(self, value, obj):
         """ calculate fpkm based on total post-QC read-pairs """
         return (1_000_000_000 * int(obj.frags_mapped)
                 / int(obj.length) / self.sample.read_count)
@@ -591,17 +591,17 @@ class GeneLoader(ContigLikeLoader):
         return sample.get_metagenome_path() / 'genes' \
             / f'{sample.tracking_id}_READSvsGENES.rpkm'
 
-    def extract_gene_id(self, value, row, obj):
+    def extract_gene_id(self, value, obj):
         """ get just the gene id from what was a post-prodigal fasta header """
         # deadbeef_123_1 # bla bla bla => 123_1
         return value.split(maxsplit=1)[0].partition('_')[2]
 
-    def calc_rpkm(self, value, row, obj):
+    def calc_rpkm(self, value, obj):
         """ calculate rpkm based on total post-QC read-pairs """
         return (1_000_000_000 * int(obj.reads_mapped)
                 / int(obj.length) / self.sample.read_count)
 
-    def calc_fpkm(self, value, row, obj):
+    def calc_fpkm(self, value, obj):
         """ calculate fpkm based on total post-QC read-pairs """
         return (1_000_000_000 * int(obj.frags_mapped)
                 / int(obj.length) / self.sample.read_count)

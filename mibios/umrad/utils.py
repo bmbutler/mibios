@@ -548,9 +548,9 @@ class InputFileSpec:
                     value = None
             yield (field, fn, value)
 
-    def row2dict(self, row):
-        """ turn a row (of values) into a dict with field names as keys """
-        return {field.name: val for field, _, val in self.row_data(row)}
+    def row2dict(self, row_data):
+        """ turn result of row_data() into a dict with field names as keys """
+        return {field.name: val for field, _, val in row_data}
 
 
 class CSV_Spec(InputFileSpec):

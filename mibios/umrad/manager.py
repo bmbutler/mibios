@@ -396,21 +396,22 @@ class BaseLoader(DjangoManager):
         fk_skip_count = 0
         pk = None
 
-        for lineno, row in enumerate(rows, start=first_lineno):
+        for lineno in self.iterate_rows(rows, start=first_lineno):
             if num_line_errors >= max_line_errors:
                 raise RuntimeError('ERROR: too many per-line errors')
 
             obj = None
             m2m = {}
-            for field, fn, value in self.spec.row_data(row):
+            for field, fn, value in self.current_row_data:
 
                 if callable(fn):
                     try:
-                        value = fn(value, row, obj)
+                        value = fn(value, obj)
                     except InputFileError as e:
                         if skip_on_error:
-                            print(f'\nERROR on line {lineno}: {e} -- will '
-                                  f'skip offending row\n{row}')
+                            print(f'\nERROR on line {lineno}: value was '
+                                  f'"{value}" -- {e} -- will skip offending '
+                                  f'row\n{self.current_row}')
                             num_line_errors += 1
                             break  # skips line
                         raise
@@ -432,7 +433,8 @@ class BaseLoader(DjangoManager):
                                 print(
                                     f'\nERROR on line {lineno}: update mode, '
                                     f'but found no record with key {e} -- '
-                                    f'will skip offending row:\n{row}'
+                                    f'will skip offending row:\n'
+                                    f'{self.current_row}'
                                 )
                                 num_line_errors += 1
                                 break  # skip this row
@@ -498,11 +500,11 @@ class BaseLoader(DjangoManager):
                     except ValidationError as e:
                         if skip_on_error:
                             print(f'\nERROR on line {lineno}: {e} -- will '
-                                  f'skip offending row\n{row}')
+                                  f'skip offending row\n{self.current_row}')
                             num_line_errors += 1
                             continue  # skips line
                         print(f'\nERROR on line {lineno}: {e}')
-                        print('offending row:', row)
+                        print('offending row:', self.current_row)
                         print(f'{vars(obj)=}')
                         raise
 
@@ -510,7 +512,7 @@ class BaseLoader(DjangoManager):
                 if m2m:
                     m2m_data[obj.get_accessions()] = m2m
 
-        del fkmap, field, value, row, pk, obj, m2m
+        del fkmap, field, value, pk, obj, m2m
         if update:
             del obj_pool
         sleep(0.2)  # let the progress meter finish before printing warnings
@@ -733,10 +735,36 @@ class BaseLoader(DjangoManager):
         """
         return value.split(';')
 
+    def iterate_rows(self, rows, start=0):
+        """
+        Helper to advance over rows manage the current row's data
+
+        This generator will yield the current row's number
+        """
+        get_row_data = self.spec.row_data  # get a local ref
+        for i, row in enumerate(rows, start=start):
+            self.current_row = row
+            self.current_row_data = list(get_row_data(row))
+            yield i
+
+    def get_current_value(self, field_name):
+        """ Return a value from the current row """
+        try:
+            for field, _, value in self.current_row_data:
+                if field.name == field_name:
+                    return value
+        except AttributeError:
+            if not hasattr(self, 'current_row_data'):
+                # iterate_rows() needs to set up current_row_data first
+                raise RuntimeError('iterate_rows() must be called first')
+            raise  # something else going on
+
+        raise ValueError(f'no such field in row data: {field_name}')
+
     def _parse_rows(self, rows, parse_into):
-        for row in rows:
+        for _ in self.iterate_rows(rows):
             rec = {}
-            for field, _, value in self.spec.row_data(row):
+            for field, _, value in self.current_row_data:
                 if field.many_to_many and value is not None:
                     value = self.split_m2m_value(value)
 
@@ -790,7 +818,7 @@ class CompoundRecordLoader(BulkLoader):
     def get_file(self):
         return settings.UMRAD_ROOT / 'MERGED_CPD_DB.txt'
 
-    def chargeconv(self, value, row, obj):
+    def chargeconv(self, value, obj):
         """ convert '2+' -> 2 / '2-' -> -2 """
         if value == '' or value is None:
             return None
@@ -804,13 +832,13 @@ class CompoundRecordLoader(BulkLoader):
             except ValueError as e:
                 raise InputFileError from e
 
-    def collect_others(self, value, row, obj):
+    def collect_others(self, value, obj):
         """ triggered on kegg columns, collects from other sources too """
-        # assume that value == row[7]
-        lst = self.split_m2m_value(';'.join(row[7:12]))
+        # assume that value == current_row[7]
+        lst = self.split_m2m_value(';'.join(self.current_row[7:12]))
         try:
             # remove the record itself
-            lst.remove(row[0])
+            lst.remove(self.current_row[0])
         except ValueError:
             pass
         return ';'.join(lst)
@@ -905,32 +933,34 @@ class ReactionRecordLoader(BulkLoader):
     def get_file(self):
         return settings.UMRAD_ROOT / 'MERGED_RXN_DB.txt'
 
-    def errata_check(self, value, row, obj):
+    def errata_check(self, value, obj):
         """ skip extra header rows """
         # FIXME: remove this function when source data is fixed
         if value == 'rxn':
             return CSV_Spec.SKIP_ROW
         return value
 
-    def process_xrefs(self, value, row, obj):
+    def process_xrefs(self, value, obj):
         """
         collect data from all xref columns
 
         subsequenc rxn xref columns will then be skipped
         Returns list of tuples.
         """
+        row = self.current_row
         xrefs = []
         for i in row[3:6]:  # the alt_* columns
             xrefs += self.split_m2m_value(i)
         xrefs = [(i, ) for i in xrefs if i != row[0]]  # rm this rxn itself
         return xrefs
 
-    def process_compounds(self, value, row, obj):
+    def process_compounds(self, value, obj):
         """
         collect data from the 18 compound columns
 
         Will remove duplicates.  Other compound columns should be skipped
         """
+        row = self.current_row
         all_cpds = []
         # outer loop: source values in order of column sets in input file
         for i, src in enumerate(('CH', 'KG', 'BC')):
@@ -1159,10 +1189,10 @@ class UniRef100Loader(BulkLoader):
         pp = ProgressPrinter('func xrefs db values assigned')
         FuncRefDBEntry.objects.bulk_update(pp(objs), ['db'])
 
-    def process_func_xrefs(self, value, row, obj):
+    def process_func_xrefs(self, value, obj):
         """ collect COG through EC columns """
         ret = []
-        for (db_code, _), vals in zip(self.func_dbs, row[13:19]):
+        for (db_code, _), vals in zip(self.func_dbs, self.current_row[13:19]):
             for i in self.split_m2m_value(vals):
                 try:
                     db = self.funcref2db[i]
@@ -1175,14 +1205,14 @@ class UniRef100Loader(BulkLoader):
                 ret.append((i, ))
         return ret
 
-    def process_reactions(self, value, row, obj):
+    def process_reactions(self, value, obj):
         """ collect all reactions """
         rxns = set()
-        for i in row[17:20]:
+        for i in self.current_row[17:20]:
             items = self.split_m2m_value(i)
             for j in items:
                 if j in rxns:
-                    raise InputFileError(f'reaction accession dupe: {row}')
+                    raise InputFileError('reaction accession dupe')
                 else:
                     rxns.add(j)
         return [(i, ) for i in rxns]
