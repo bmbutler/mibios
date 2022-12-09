@@ -790,10 +790,14 @@ class BaseLoader(DjangoManager):
         ]
         get_pool_key = attrgetter(*pool_key_fields)
         # so the key is either a scalar value or a tuple of values
-        obj_pool = {
-            get_pool_key(i): i
-            for i in self.filter(**template).iterator()
-        }
+        obj_pool = {}
+        for i in self.filter(**template).iterator():
+            key = get_pool_key(i)
+            if key in obj_pool:
+                # Field should be unique, but maybe nulls are allowed, anyways,
+                # can't let this go through here
+                raise RuntimeError(f'duplicate key: {key=} {len(obj_pool)=}')
+            obj_pool[key] = i
         return obj_pool
 
     def quick_erase(self):

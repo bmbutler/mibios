@@ -65,6 +65,7 @@ class Dataset(AbstractDataset):
     )
     note = models.TextField(**ch_opt)
 
+    accession_fields = ('dataset_id', )
     loader = DatasetLoader()
     orphan_group_description = 'samples without a data set'
 
