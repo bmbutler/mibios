@@ -359,7 +359,7 @@ class BaseLoader(DjangoManager):
 
         if update:
             print(f'Retrieving {self.model._meta.model_name} records for '
-                  f'update mode... ')
+                  f'update mode... ', end='', flush=True)
             obj_pool = self._get_objects_for_update(template)
             print(f'[{len(obj_pool)} OK]')
 
@@ -389,7 +389,8 @@ class BaseLoader(DjangoManager):
             }
             print('[OK]')
 
-        objs = []
+        new_objs = []  # will be created
+        old_objs = []  # will be updated
         m2m_data = {}
         missing_fks = defaultdict(set)
         row_skip_count = 0
@@ -401,6 +402,7 @@ class BaseLoader(DjangoManager):
                 raise RuntimeError('ERROR: too many per-line errors')
 
             obj = None
+            obj_is_new = None
             m2m = {}
             for field, fn, value in self.current_row_data:
 
@@ -423,25 +425,23 @@ class BaseLoader(DjangoManager):
                         break  # skips line / avoids for-else block
 
                 if obj is None:
+                    # the first field
                     if update:
                         # first field MUST identify the object, the value's
                         # type must match the obj pool's keys
                         try:
                             obj = obj_pool[value]
-                        except KeyError as e:
-                            if skip_on_error:
-                                print(
-                                    f'\nERROR on line {lineno}: update mode, '
-                                    f'but found no record with key {e} -- '
-                                    f'will skip offending row:\n'
-                                    f'{self.current_row}'
-                                )
-                                num_line_errors += 1
-                                break  # skip this row
-                            raise
+                        except KeyError:
+                            obj = self.model(**template)
+                            obj_is_new = True
+                        else:
+                            # this value is already set, next field please
+                            obj_is_new = False
+                            continue
 
                     else:
                         obj = self.model(**template)
+                        obj_is_new = True
 
                 if field.many_to_many:
                     # the "value" here is a list of tuples of through model
@@ -508,7 +508,11 @@ class BaseLoader(DjangoManager):
                         print(f'{vars(obj)=}')
                         raise
 
-                objs.append(obj)
+                if obj_is_new:
+                    new_objs.append(obj)
+                else:
+                    old_objs.append(obj)
+
                 if m2m:
                     m2m_data[obj.get_accessions()] = m2m
 
@@ -531,7 +535,7 @@ class BaseLoader(DjangoManager):
             print(f'Skipped {row_skip_count} rows (blank rows/other reasons '
                   f'see file spec)')
 
-        if not objs:
+        if not new_objs and not old_objs:
             print('WARNING: nothing saved, empty file or all got skipped')
             return
 
@@ -539,36 +543,34 @@ class BaseLoader(DjangoManager):
             del fname, bad_ids
         del missing_fks, row_skip_count, fk_skip_count
 
-        if update:
-            # m2m fields must be updated later
+        if old_objs:
             update_fields = [i.name for i in fields if not i.many_to_many]
             if bulk:
-                self.bulk_update(objs, fields=update_fields)
+                self.bulk_update(old_objs, fields=update_fields)
             else:
                 pp = ProgressPrinter(
-                    f'{self.model._meta.model_name} objects saved'
+                    f'{self.model._meta.model_name} objects updated'
                 )
-                for i in pp(objs):
+                for i in pp(old_objs):
                     try:
                         i.save(update_fields=update_fields)
                     except Exception as e:
                         print(f'exception {e} while saving {i}:\n{vars(i)=}')
                         raise
-        else:
+
+        if new_objs:
             if bulk:
-                self.bulk_create(objs)
+                self.bulk_create(new_objs)
             else:
-                for n, i in enumerate(objs, start=1):
+                for i in new_objs:
                     try:
                         i.save()
                     except Exception as e:
-                        # reported number is approximate since we may have
-                        # skipped lines
-                        print(f'ERROR: {type(e)}: {e} at or a little before '
-                              f'line {n} while saving object:\n'
-                              f'{i}:\n{vars(i)=}')
+                        print(f'ERROR: {type(e)}: {e} while saving object: {i}'
+                              f'\n{vars(i)=}')
                         raise
-        del objs
+
+        del new_objs, old_objs
 
         if m2m_data:
             # get accession -> pk map
@@ -691,12 +693,17 @@ class BaseLoader(DjangoManager):
             for i, j, *params in rels
         ]
 
-        if update:
-            print('Deleting m2m links for update... ', end='', flush=True)
-            old = Through.objects.filter(uniref100__pk__in=m2m_data.keys())
-            delcount, _ = old.delete()
-            print(f'[{delcount} OK]')
-            del old
+        # we don't know which objects are new and which got updated, so
+        # deleting is all here so we can bulk create below
+        print('Deleting existing m2m links for update... ', end='', flush=True)
+        f = {our_id_name + '__pk__in': m2m_data.keys()}
+        qs = Through.objects.filter(**f)
+        # FIXME: delete() will fail for a large queryset >250,000 rows with
+        # sqlite3's "too many variables"
+        delcount, _ = qs.delete()
+
+        print(f'[{delcount} OK]')
+        del f, qs
 
         self.bulk_create_wrapper(Through.objects.bulk_create)(through_objs)
 
