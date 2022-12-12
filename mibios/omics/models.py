@@ -469,10 +469,10 @@ class AbstractDataset(Model):
         stypes = set(self.sample_set.values_list('sample_type', flat=True))
         num = len(stypes)
         if num == 0:
-            raise RuntimeError('data set has no samples')
+            raise RuntimeError('Data set has no samples')
         elif num > 1:
             # TODO: do we need to support this?
-            raise RuntimeError('multiple types: {stypes}')
+            raise RuntimeError('Multiple types: {stypes}')
         return stypes.pop()
 
     def get_fastq_path(self, sample_type=None):

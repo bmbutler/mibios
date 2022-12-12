@@ -69,8 +69,7 @@ class Dataset(AbstractDataset):
 
     objects = Manager.from_queryset(DatasetQuerySet)()
     loader = DatasetLoader()
-
-    orphan_group_description = 'samples without a data set'
+    orphan_group_description = 'Samples without a data set'
 
     class Meta:
         default_manager_name = 'objects'

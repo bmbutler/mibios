@@ -267,7 +267,7 @@ def table_factory(model=None, field_names=[], conf=None,
     """
     if model is None:
         if conf is None:
-            raise ValueError('model and conf must not both be None')
+            raise ValueError('Model and conf must not both be None')
         model = conf.model
 
     if not field_names:
