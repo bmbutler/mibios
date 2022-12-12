@@ -16,7 +16,7 @@ from mibios.models import (
 )
 
 from .utils import (CSV_Spec, ProgressPrinter, atomic_dry,
-                    get_last_timer)
+                    get_last_timer, make_int_in_filter)
 
 
 log = getLogger(__name__)
@@ -693,15 +693,12 @@ class BaseLoader(DjangoManager):
             for i, j, *params in rels
         ]
 
-        # we don't know which objects are new and which got updated, so
-        # deleting is all here so we can bulk create below
+        # we don't know which objects are new and which got updated, so we're
+        # deleting it all here so we can bulk create below
         print('Deleting existing m2m links for update... ', end='', flush=True)
-        f = {our_id_name + '__pk__in': m2m_data.keys()}
+        f = make_int_in_filter(our_id_name + '__pk', m2m_data.keys())
         qs = Through.objects.filter(**f)
-        # FIXME: delete() will fail for a large queryset >250,000 rows with
-        # sqlite3's "too many variables"
         delcount, _ = qs.delete()
-
         print(f'[{delcount} OK]')
         del f, qs
 

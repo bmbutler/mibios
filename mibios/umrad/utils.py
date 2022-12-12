@@ -1,7 +1,7 @@
 from datetime import datetime
 from functools import partial, wraps
 from inspect import signature
-from itertools import zip_longest
+from itertools import chain, zip_longest
 from operator import length_hint
 import os
 from pathlib import Path
@@ -12,6 +12,7 @@ import sys
 import pandas
 
 from django.db import router, transaction
+from django.db.models import Q
 
 # Workaround for weird pandas/xlrd=1.2/defusedxml combination runtime issue,
 # we'll get an AttributeError: 'ElementTree' object has no attribute
@@ -729,3 +730,69 @@ def atomic_dry(f):
                 transaction.set_rollback(True, dbalias)
             return retval
     return wrapper
+
+
+def compile_ranges(int_list, min_range_size=2):
+    """
+    Compile ranges and singles from sequence of integers
+
+    This is a helper for make_int_in_filter.
+
+    Ranges will be (start, end) and inclusive, as for Django's range lookup and
+    SQL's BETWEEN operator.
+    """
+    END = object()
+    singles = []
+    ranges = []
+    range_min = None
+    range_max = None
+
+    ints = chain(sorted(set(int_list)), [END])
+    first = next(ints)
+    if first is END:
+        return ranges, singles
+    else:
+        # initilize a range
+        range_min = first
+        range_max = first
+
+    for i in ints:
+        if i == range_max + 1:
+            # extend current range
+            range_max = i
+        else:
+            # finish current range
+            if range_max - range_min + 1 >= min_range_size:
+                ranges.append((range_min, range_max))
+            else:
+                for j in range(range_min, range_max + 1):
+                    singles.append(j)
+            # start new range
+            range_min = i
+            range_max = i
+    return ranges, singles
+
+
+def make_int_in_filter(lookup_name, integers):
+    """
+    Make a range lookup filter from a list of integers
+
+    Use this for really long lists of mostly consequetive integers.  If the
+    given list has only singles, or is empty, this will return the expected
+
+        Q(<lookup_name>__in=integers)
+
+    but for consequitive numbers __range lookups will be added as in
+
+        Q(<lookup_name>__range=(start, end))
+
+    The idea is that for most workloads this will result in a smaller SQL
+    statement and maybe even a smaller query execution time.  In particular
+    with sqlite2 we seem to run into some limit when using __in with a list of
+    more than 250,000 integers, givinh us a "too many variables" error.
+    """
+    ranges, singles = compile_ranges(integers)
+    q = Q(**{lookup_name + '__in': singles})
+    for start, end in ranges:
+        q = q | Q(**{lookup_name + '__range': (start, end)})
+    return q
