@@ -1,0 +1,23 @@
+.glamr-logo {
+	width: 110px;
+	vertical-align: bottom;
+	margin-top: -30px;
+	margin-bottom: -42px;
+	padding: 0;
+}
+
+.navbar-main{
+	text-align: center;
+	background-color: #244075;
+	margin-top: 5px;
+	margin-bottom: 5px;
+}
+
+.glamr-brand{
+	padding-top: 10px;
+	margin-bottom:7px;
+}
+
+.basic-item{
+	padding-top: 12px;
+}
