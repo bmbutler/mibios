@@ -506,7 +506,7 @@ class DemoFrontPageView(SingleTableView):
     model = models.Dataset
     template_name = 'glamr/demo_frontpage.html'
     table_class = tables.DatasetTable
-
+    
     def get_table_data(self):
         data = super().get_table_data()
         orphans = models.Dataset.orphans
