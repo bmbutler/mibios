@@ -1,0 +1,112 @@
+{% load django_tables2 %}
+{% load i18n %}
+{% block table-wrapper %}
+    <div class="container-fluid" >
+        {% block table %}
+        {% block table.thead %}
+            {% if table.show_header %}
+                <div {{ table.attrs.thead.as_html }}>
+                    <div>
+                    {% for column in table.columns %}
+                        <span {{ column.attrs.th.as_html }}>
+                            {% if column.orderable %}
+                                <a href="{% querystring table.prefixed_order_by_field=column.order_by_alias.next %}">{{ column.header }}</a>
+                            {% else %}
+                                {{ column.header }}
+                            {% endif %}
+                        </span>
+                    {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+            {% endblock table.thead %}
+
+            {% block table.tbody %}
+                <div class="row">
+                    {% for row in table.paginated_rows %}
+                        {% block table.tbody.row %}
+                            <ul>
+                                <li class="card bg-light mb-1">
+                                    <div class="card-body">
+                                    {% for column, cell in row.items %}
+                                        {% if cell|length > 0 %}
+                                        {% if column.attrs.cardTitle %}
+                                            <div style="display: flex; flex-direction: row">
+                                                <h5 class="card-title">{{ cell }}</h5>
+                                            </div>
+                                        {% else %}
+                                            <div class="card-text">
+                                                {% if column.attrs.showFieldTitle %}{{ column.header }}: {% endif %}
+                                                {% if column.localize == None %}{{ cell }}{% else %}{% if column.localize %}{{ cell|localize }}{% else %}{{ cell|unlocalize }}{% endif %}{% endif %}
+                                            </div>
+                                        {% endif %}
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                                </li>
+                            </ul>
+                        {% endblock table.tbody.row %}
+                    {% empty %}
+                        {% if table.empty_text %}
+                            {% block table.tbody.empty_text %}
+                                <div>{{ table.empty_text }}</div>
+                            {% endblock table.tbody.empty_text %}
+                        {% endif %}
+
+                    {% endfor %}
+                </div>
+            {% endblock table.tbody %}
+
+            {% block table.tfoot %}
+                {% if table.has_footer %}
+                    <div {{ table.attrs.tfoot.as_html }}>
+                    <div>
+                        {% for column in table.columns %}
+                            <p {{ column.attrs.tf.as_html }}>{{ column.footer }}</p>
+                        {% endfor %}
+                    </div>
+                    </div>
+                {% endif %}
+            {% endblock table.tfoot %}
+        {% endblock table %}
+</div>
+        {% block pagination %}
+            {% if table.page and table.paginator.num_pages > 1 %}
+                <nav aria-label="Table navigation">
+                    <ul class="pagination justify-content-center">
+                        {% if table.page.has_previous %}
+                            {% block pagination.previous %}
+                                <li class="previous page-item">
+                                    <a href="{% querystring table.prefixed_page_field=table.page.previous_page_number %}" class="page-link">
+                                        <span aria-hidden="true">&laquo;</span>
+                                        {% trans 'previous' %}
+                                    </a>
+                                </li>
+                            {% endblock pagination.previous %}
+                        {% endif %}
+                        {% if table.page.has_previous or table.page.has_next %}
+                            {% block pagination.range %}
+                                {% for p in table.page|table_page_range:table.paginator %}
+                                    <li class="page-item{% if table.page.number == p %} active{% endif %}">
+                                        <a class="page-link" {% if p != '...' %}href="{% querystring table.prefixed_page_field=p %}"{% endif %}>
+                                            {{ p }}
+                                        </a>
+                                    </li>
+                                {% endfor %}
+                            {% endblock pagination.range %}
+                        {% endif %}
+                        {% if table.page.has_next %}
+                            {% block pagination.next %}
+                                <li class="next page-item">
+                                    <a href="{% querystring table.prefixed_page_field=table.page.next_page_number %}" class="page-link">
+                                        {% trans 'next' %}
+                                        <span aria-hidden="true">&raquo;</span>
+                                    </a>
+                                </li>
+                            {% endblock pagination.next %}
+                        {% endif %}
+                    </ul>
+                </nav>
+            {% endif %}
+        {% endblock pagination %}
+{% endblock table-wrapper %}

@@ -6,6 +6,7 @@ from django_tables2 import A, Column, Table, TemplateColumn
 from mibios.glamr import models as glamr_models
 from mibios.omics import models as omics_models
 
+import string
 
 def get_record_url(*args):
     """
@@ -121,28 +122,51 @@ class TaxonAbundanceTable(Table):
 
 
 class DatasetTable(Table):
-    samples = Column(
-        verbose_name='Available samples',
-        order_by=A('-sample_count'),
-    )
     scheme = Column(
         empty_values=(),  # so render_foo can still take over for blank scheme
         verbose_name='Description',
         linkify=True,
+        attrs={
+            'showFieldTitle': False,
+            'cardTitle': True
+        }
+    )
+    samples = Column(
+        verbose_name='Available samples',
+        order_by=A('-sample_count'),
+        attrs={
+            'showFieldTitle': False,
+        }
     )
     reference = Column(
         linkify=lambda value: getattr(value, 'doi'),
+        attrs={
+            'showFieldTitle': True,
+        }
     )
     water_bodies = Column(
         verbose_name='Water bodies',
+        attrs={
+            'showFieldTitle': True,
+        }
     )
-    material_type = Column()
+    material_type = Column(
+        attrs={
+            'showFieldTitle': True,
+        }
+    )
     sample_type = Column(
         empty_values=(),
         verbose_name='Sample type',
+        attrs={
+            'showFieldTitle': True,
+        }
     )
     external_urls = Column(
         verbose_name='External links',
+        attrs={
+            'showFieldTitle': True,
+        }
     )
 
     class Meta:
@@ -154,8 +178,16 @@ class DatasetTable(Table):
 
     def render_scheme(self, value, record):
         r = record
-        return r.scheme or r.short_name or r.bioproject \
+        scheme = r.scheme or r.short_name or r.bioproject \
             or r.jgi_project or r.gold_id or str(record)
+        return string.capwords(scheme)
+
+    def render_material_type(self, value, record):
+        # special case for eDNA
+        if value.lower() == 'edna':
+            return 'eDNA'
+
+        return value.capitalize()
 
     def render_external_urls(self, value, record):
         # value is a list of tuples (accession, url)
@@ -163,7 +195,7 @@ class DatasetTable(Table):
         for accession, url in value:
             if url:
                 items.append(
-                    format_html('<a href="{}">{}</a>', url, accession)
+                    format_html('<a href="{}" class="card-link">{}</a>', url, accession)
                 )
             else:
                 items.append(escape(accession))
@@ -182,10 +214,10 @@ class DatasetTable(Table):
 
     def render_samples(self, record):
         if record.sample_count <= 0:
-            return 'No samples'
+            return mark_safe(f'<div class="btn btn-primary disabled">No samples</div>')
 
         url = record.get_samples_url()
-        return mark_safe(f'<a href="{url}">{record.sample_count}</a>')
+        return mark_safe(f'<a href="{url}" class="btn btn-primary">{record.sample_count} available samples</a>')
 
 
 def get_sample_url(sample):

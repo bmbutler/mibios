@@ -12,6 +12,7 @@ from django.http import Http404, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
 from django.views.generic import DetailView
 from django.views.generic.base import TemplateView
+from django.views.generic.list import ListView
 
 from mibios import get_registry
 from mibios.data import TableConfig
@@ -506,7 +507,7 @@ class DemoFrontPageView(SingleTableView):
     model = models.Dataset
     template_name = 'glamr/demo_frontpage.html'
     table_class = tables.DatasetTable
-    
+
     def get_table_data(self):
         data = super().get_table_data()
         orphans = models.Dataset.orphans
