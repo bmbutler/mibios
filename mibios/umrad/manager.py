@@ -349,17 +349,13 @@ class BaseLoader(DjangoManager):
                    skip_on_error=False, validate=False, update=False,
                    bulk=True, first_lineno=None):
         fields = self.spec.fields
+        model_name = self.model._meta.model_name
         num_line_errors = 0
         max_line_errors = 10  # > 0
 
-        pp = ProgressPrinter(
-            f'{self.model._meta.model_name} rows read from file'
-        )
-        rows = pp(rows)
-
         if update:
-            print(f'Retrieving {self.model._meta.model_name} records for '
-                  f'update mode... ', end='', flush=True)
+            print(f'Retrieving {model_name} records for update mode... ',
+                  end='', flush=True)
             obj_pool = self._get_objects_for_update(template)
             print(f'[{len(obj_pool)} OK]')
 
@@ -389,6 +385,7 @@ class BaseLoader(DjangoManager):
             }
             print('[OK]')
 
+        pp = ProgressPrinter(f'{model_name} rows read from file')
         new_objs = []  # will be created
         old_objs = []  # will be updated
         m2m_data = {}
@@ -397,7 +394,7 @@ class BaseLoader(DjangoManager):
         fk_skip_count = 0
         pk = None
 
-        for lineno in self.iterate_rows(rows, start=first_lineno):
+        for lineno in self.iterate_rows(pp(rows), start=first_lineno):
             if num_line_errors >= max_line_errors:
                 raise RuntimeError('ERROR: too many per-line errors')
 
@@ -548,9 +545,7 @@ class BaseLoader(DjangoManager):
             if bulk:
                 self.bulk_update(old_objs, fields=update_fields)
             else:
-                pp = ProgressPrinter(
-                    f'{self.model._meta.model_name} objects updated'
-                )
+                pp = ProgressPrinter(f'{model_name} records updated')
                 for i in pp(old_objs):
                     try:
                         i.save(update_fields=update_fields)
@@ -562,7 +557,8 @@ class BaseLoader(DjangoManager):
             if bulk:
                 self.bulk_create(new_objs)
             else:
-                for i in new_objs:
+                pp = ProgressPrinter(f'{model_name} records saved')
+                for i in pp(new_objs):
                     try:
                         i.save()
                     except Exception as e:
