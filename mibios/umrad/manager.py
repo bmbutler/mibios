@@ -7,6 +7,7 @@ from time import sleep
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.db import connection, transaction
 from django.db.models.manager import Manager as DjangoManager
 from django.utils.module_loading import import_string
 
@@ -162,7 +163,9 @@ class BulkCreateWrapperMixin:
                 except Exception as e:
                     print(f'ERROR updating {model_name or "?"}: batch 1st: '
                           f'{vars(batch[0])=}')
-                    raise RuntimeError('error updating batch', batch) from e
+                    print(f'{len(batch)=} {batch[:10]=}')
+                    print(f'{batch[-10:]=}')
+                    raise RuntimeError('error updating batch') from e
                 pp.inc(len(batch))
 
             pp.finish()
@@ -761,6 +764,34 @@ class BaseLoader(DjangoManager):
 
         raise ValueError(f'no such field in row data: {field_name}')
 
+    @atomic_dry
+    def fast_bulk_update(self, objs, fields, batch_size=None):
+        """
+        A faster alternative for bulk_update
+
+        This does not use QuerySet.update() machinery that bulk_update benefits
+        from, so there are some limitations:
+
+        * no support for dealing multi-table inheritance
+
+        On the other hand this can run much faster and can handle many update
+        fields just fine.
+        """
+        if connection.vendor != 'sqlite':
+            # TODO: need implementation for postgres
+            return self.bulk_update(objs, fields, batch_size=batch_size)
+
+        if connection.vendor == 'sqlite':
+            meth = self._fast_bulk_update_sqlite_batch
+            if batch_size is None:
+                # limit batch size to maximum allowed variable
+                batch_size = \
+                    settings.SQLITE_MAX_VARIABLE_NUMBER // (len(fields) + 1)
+        else:
+            raise NotImplementedError
+
+        return self.bulk_update_wrapper(meth)(objs, fields, batch_size)
+
     def _parse_rows(self, rows, parse_into):
         for _ in self.iterate_rows(rows):
             rec = {}
@@ -799,6 +830,73 @@ class BaseLoader(DjangoManager):
                 raise RuntimeError(f'duplicate key: {key=} {len(obj_pool)=}')
             obj_pool[key] = i
         return obj_pool
+
+    def _fast_bulk_update_sqlite_batch(self, objs, field_names):
+        """
+        Fast-update a single batch under sqlite3
+
+        objs -- an iterable of objects to be updated
+
+        This implements a four step process:
+
+            1. create a temporary table
+            2. insert data and primary keys into the temp table
+            3. update real table from temp table
+            4. drop the temp table again
+
+        The column definitions for the temporary table may be missing some
+        constraint bits, e.g. decimal places for the decimal fields.  Is it not
+        entirely clear whether this may cause data loss.
+
+        The generated SQL has one variable per updated field plus primary key
+        per object.  Sqlite3 has a compiled-in SQLITE_MAX_VARIABLE_NUMBER value
+        that limits how many variables may be include. This limits the number
+        of objects that can be processed.  The relevant batching must be
+        managed by the caller.
+        """
+        TEMP_TABLE = 'temp_fast_bulk_update_table'
+        pk_field = self.model._meta.pk
+        fields = [pk_field] + [
+            self.model._meta.get_field(i)
+            for i in field_names
+        ]
+        for i in fields:
+            if i not in self.model._meta.local_concrete_fields:
+                # wrong field name or m2m or model inheritance
+                raise RuntimeError(f'not local+concrete: {i} of {self.model}')
+        col_defs = ', '.join([
+            f'{i.column} {i.db_type(connection)}'
+            for i in fields
+        ])
+        create_sql = f'CREATE TEMP TABLE {TEMP_TABLE} ({col_defs})'
+
+        col_names = ', '.join([i.column for i in fields])
+        # placeholders & parameters
+        # (there can be lots and lots of them, up to SQLITE_MAX_VARIABLE_NUM)
+        insert_params = []
+        field_n_attrs = tuple(((i, i.attname) for i in fields))
+        for obj_count, i in enumerate(objs, start=1):
+            for field, attr in field_n_attrs:
+                insert_params.append(
+                    field.get_db_prep_save(getattr(i, attr), connection)
+                )
+        num_fields = len(fields)
+        values = ','.join(['({})'.format(','.join(['%s'] * num_fields))] * obj_count)  # noqa: E501
+
+        insert_sql = f'INSERT INTO {TEMP_TABLE} ({col_names}) VALUES {values}'
+        table = self.model._meta.db_table
+        set_expr = ', '.join([
+            f'{i.column} = updates_tmp.{i.column}'
+            for i in fields
+        ])
+        cond = f'{table}.{pk_field.column} = {TEMP_TABLE}.{pk_field.column}'
+        update_sql = \
+            f'UPDATE {table} SET {set_expr} FROM {TEMP_TABLE} WHERE {cond}'
+        with transaction.atomic(), connection.cursor() as cur:
+            cur.execute(create_sql, [])
+            cur.execute(insert_sql, insert_params)
+            cur.execute(update_sql, [])
+            cur.execute(f'DROP TABLE {TEMP_TABLE}', [])
 
     def quick_erase(self):
         quickdel = import_string(
