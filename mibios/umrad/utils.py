@@ -347,6 +347,7 @@ class InputFileSpec:
     IGNORE_COLUMN = object()
     SKIP_ROW = object()
     CALC_VALUE = object()
+    NO_HEADER = object()
 
     empty_values = []
     """
