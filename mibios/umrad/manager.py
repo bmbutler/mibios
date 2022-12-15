@@ -546,7 +546,7 @@ class BaseLoader(DjangoManager):
         if old_objs:
             update_fields = [i.name for i in fields if not i.many_to_many]
             if bulk:
-                self.bulk_update(old_objs, fields=update_fields)
+                self.fast_bulk_update(old_objs, fields=update_fields)
             else:
                 pp = ProgressPrinter(f'{model_name} records updated')
                 for i in pp(old_objs):
@@ -778,7 +778,7 @@ class BaseLoader(DjangoManager):
         fields just fine.
         """
         if connection.vendor != 'sqlite':
-            # TODO: need implementation for postgres
+            # TODO: need implementation for postgres, fallback for now
             return self.bulk_update(objs, fields, batch_size=batch_size)
 
         if connection.vendor == 'sqlite':
@@ -1289,7 +1289,7 @@ class UniRef100Loader(BulkLoader):
             obj.db = db
             objs.append(obj)
         pp = ProgressPrinter('func xrefs db values assigned')
-        FuncRefDBEntry.objects.bulk_update(pp(objs), ['db'])
+        FuncRefDBEntry.name_loader.fast_bulk_update(pp(objs), ['db'])
 
     def process_func_xrefs(self, value, obj):
         """ collect COG through EC columns """

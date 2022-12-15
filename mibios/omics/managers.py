@@ -8,11 +8,11 @@ Assumes that UMRAD and sample meta-data is loaded
     s = Sample.objects.get(sample_id='samp_14')
     Contig.loader.load_fasta_sample(s)
     Gene.loader.load_fasta_sample(s)
-    Contig.loader.load_abundance_sample(s, bulk=False)
-    Gene.loader.load_abundance_sample(s, bulk=False)
+    Contig.loader.load_abundance_sample(s)
+    Gene.loader.load_abundance_sample(s)
     Alignment.loader.load_sample(s)
     Gene.loader.assign_gene_lca(s)
-    Contig.loader.assign_gene_lca(s)
+    Contig.loader.assign_contig_lca(s)
     TaxonAbundance.loader.load_sample(s)
 
 """
@@ -553,7 +553,7 @@ class ContigLoader(ContigLikeLoader):
         )
         self.bulk_create_wrapper(Through.objects.bulk_create)(objs)
 
-        self.bulk_update(contigs.values(), fields=['lca'])
+        self.fast_bulk_update(contigs.values(), fields=['lca'])
 
 
 class FuncAbundanceLoader(BulkLoader, SampleLoadMixin):
@@ -695,7 +695,7 @@ class GeneLoader(ContigLikeLoader):
         self.bulk_create_wrapper(Through.objects.bulk_create)(objs)
 
         # update lca field for all genes incl. the unknowns
-        self.bulk_update(genes, fields=['lca', 'besthit_id'])
+        self.fast_bulk_update(genes, fields=['lca', 'besthit'])
         print('Erasing lca for genes without any hits... ', end='', flush=True)
         num_unknown = self.filter(hits=None).update(lca=None)
         print(f'{num_unknown} [OK]')
