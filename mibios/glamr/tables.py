@@ -128,7 +128,8 @@ class DatasetTable(Table):
         linkify=True,
         attrs={
             'showFieldTitle': False,
-            'cardTitle': True
+            'cardTitle': True,
+            'navID': "scheme-sort"
         }
     )
     samples = Column(
@@ -136,23 +137,28 @@ class DatasetTable(Table):
         order_by=A('-sample_count'),
         attrs={
             'showFieldTitle': False,
+            'defaultSort': True,
+            'navID': "samples-sort"
         }
     )
     reference = Column(
         linkify=lambda value: getattr(value, 'doi'),
         attrs={
             'showFieldTitle': True,
+            'navID': "reference-sort"
         }
     )
     water_bodies = Column(
         verbose_name='Water bodies',
         attrs={
             'showFieldTitle': True,
+            'navID': "water_bodies-sort"
         }
     )
     material_type = Column(
         attrs={
             'showFieldTitle': True,
+            'navID': "material_type-sort"
         }
     )
     sample_type = Column(
@@ -160,12 +166,14 @@ class DatasetTable(Table):
         verbose_name='Sample type',
         attrs={
             'showFieldTitle': True,
+            'navID': "sample_type-sort"
         }
     )
     external_urls = Column(
         verbose_name='External links',
         attrs={
             'showFieldTitle': True,
+            'navID': "external_urls-sort"
         }
     )
 

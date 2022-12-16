@@ -1,21 +1,57 @@
 {% load django_tables2 %}
 {% load i18n %}
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        if(window.location.search){
+            console.log("Sorting...")
+            $('.icon-sort').removeClass('bi-caret-down-fill');
+            $('.icon-sort').removeClass('bi-caret-up-fill');
+            $('.icon-sort').addClass('bi-caret-down');
+
+            var activeElement = window.location.search.split("=")[1]
+            if(activeElement.split("-").length > 1){
+                activeElement = activeElement.split("-")[1]
+                
+                $("#"+activeElement + "-sort-icon").addClass('bi-caret-up-fill')
+            }
+            else{
+                $("#"+activeElement+"-sort-icon").addClass('bi-caret-down-fill')
+            }
+            $("#"+activeElement+"-sort-icon").removeClass('bi-caret-down');
+            $('.sort').removeClass('active');
+            $("#"+activeElement + "-sort").addClass('active');
+        }
+        else {
+            $("#samples-sort").addClass('active');
+            $("#samples-sort-icon").removeClass('bi-caret-down')
+            $("#samples-sort-icon").addClass('bi-caret-up-fill')
+        }
+    });
+</script>
+
 {% block table-wrapper %}
     <div class="container-fluid" >
         {% block table %}
         {% block table.thead %}
             {% if table.show_header %}
                 <div {{ table.attrs.thead.as_html }}>
-                    <div>
-                    {% for column in table.columns %}
-                        <span {{ column.attrs.th.as_html }}>
-                            {% if column.orderable %}
-                                <a href="{% querystring table.prefixed_order_by_field=column.order_by_alias.next %}">{{ column.header }}</a>
-                            {% else %}
-                                {{ column.header }}
-                            {% endif %}
-                        </span>
-                    {% endfor %}
+                    <div class="card bg-light mb-3">
+                        <div class="card-body p-2">
+                            <ul class="nav nav-pills mb-1" id="pills-tab">
+                            {% for column in table.columns %}
+                                    {% if column.orderable %}
+                                        <li class="nav-item">
+                                            <a class="sort nav-link" id={{ column.attrs.navID }} data-toggle="pill" href="{% querystring table.prefixed_order_by_field=column.order_by_alias.next %}">{{ column.header }}<i id="{{column.attrs.navID}}-icon" class="icon-sort bi bi-caret-down m-1"></i></a>
+                                        </li>
+                                    {% else %}
+                                        <li class="nav-item">
+                                            <span class="nav-link" id={{ column.attrs.navID }} data-toggle="pill" href="#">{{ column.header }}</span>
+                                        </li>
+                                    {% endif %}
+                            {% endfor %}
+                            </ul>
+                        </div>
                     </div>
                 </div>
             {% endif %}
