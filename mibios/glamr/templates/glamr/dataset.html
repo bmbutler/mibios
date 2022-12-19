@@ -1,0 +1,69 @@
+{% extends "glamr/base.html" %}
+{% load render_table from django_tables2 %}
+
+{% block content %}
+
+{% if object.scheme %}
+	<h3>{{ object }}</h3>
+	<h6><i>{{object.scheme}}</i></h6>
+{% else %}
+	<h3>Samples Without a Data Set</h3>
+{% endif %}
+<div>       
+	{% for name, url, value in details %}
+		<div>
+		    {% if name == 'Samples' and url %}
+		    	<a href="{{ url }}" class="btn btn-primary mb-2">{{ value }}</a>
+		    {% endif %}
+		    {% if name == 'Reference' %}
+		    	<a href="{{ url }}" class="mb-2">{{ value }}</a>
+		    {% endif %}
+		</div>
+	{% endfor %}
+
+{% if object.scheme %}
+	<div class="card mb-2 mt-2">
+		<div style="display: flex; flex-direction: row" class="card-header">
+            <h6 class="card-title">Details</h6>
+        </div>
+		<div class="card-body">
+			<table class="table table-hover table-condensed"><tbody>
+			{% for name, url, value in details %}
+			    {% if name != 'Samples' and name != 'Reference' %}
+			    	<tr><div class="card-text">
+			    		<td>{{ name }}:</td>
+				    	<td>
+				    		{% if url %}
+				    			<a href="{{ url }}">{{ value }}</a>
+				    		{% else %}
+				    			{{ value|default_if_none:"<missing/>" }}
+				    		{% endif %}
+				    	</td>
+				    </div></tr>
+			    {% endif %}
+			{% endfor %}
+		</tbody></table>
+		</div>
+	</div>
+	<div class="card mb-2">
+		<div style="display: flex; flex-direction: row" class="card-header">
+            <h6 class="card-title">Related Records</h6>
+        </div>
+		<div class="card-body">
+	    	{% for name, model_name, qs, field in relations %}
+				<div>
+				    {% for obj in qs %}
+				    	<a href="{% url 'record' model=model_name pk=obj.pk %}">{{ obj }}</a>{% if not forloop.last %}&nbsp;|&nbsp;{% endif %}
+				    	{% empty %}
+				    		-
+				    {% endfor %}
+				    {% if qs|length == view.max_to_many %}[...]<br><a href="{% url 'relations' model=object_model_name pk=object.pk field=field.name %}">[view all]</a>{% endif %}
+				</div>
+			{% endfor %}
+		</div>
+	</div>	
+{% endif %}
+
+</div>
+
+{% endblock %}
