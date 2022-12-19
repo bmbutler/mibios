@@ -20,6 +20,9 @@ from itertools import groupby, islice
 from logging import getLogger
 from operator import itemgetter
 import os
+import shutil
+import subprocess
+import tempfile
 
 from django.conf import settings
 from django.db.models import prefetch_related_objects
@@ -862,7 +865,7 @@ class SampleManager(Manager):
             )
 
 
-class TaxonAbundanceLoader(Manager):
+class TaxonAbundanceManager(Manager):
     """ loader manager for the TaxonAbundance model """
     ok_field_name = 'tax_abund_ok'
 
@@ -922,3 +925,75 @@ class TaxonAbundanceLoader(Manager):
         self.bulk_create(objs)
         setattr(sample, self.ok_field_name, True)
         sample.save()
+
+    def as_krona_input_text(self, sample, field):
+        """
+        Generate input text data for krona
+
+        Will return an empty string if no abundance data is saved for the given
+        sample.
+        """
+        qs = self.filter(sample=sample).select_related('taxon')
+        qs = qs.prefetch_related('taxon__ancestors')
+
+        rows = []
+        for i in qs.iterator():
+            lin = sorted(i.taxon.ancestors.all(), key=lambda x: x.rank)
+            row = [str(getattr(i, field))] + [i.name for i in lin]
+            rows.append('\t'.join(row))
+        return '\n'.join(rows)
+
+    def as_krona_html(self, sample, field, outpath=None):
+        """
+        Generate the krona html file
+
+        If outpath is given this is save to the file system, if it is None, the
+        default, then Krona's html content is the return value (indended to be
+        used by a view).  In the latter case a None return value indicates
+        either an error with running the krona generator or missing abundance
+        data (Check the django error log for details.)
+        """
+        # TODO: caching, have a settings option to store krona's static files
+        # (CSS, ...) locally instead of at sourceforge or wherever.
+        with tempfile.TemporaryDirectory() as tmpd:
+            krona_in = tmpd + '/data.txt'
+            krona_out = tmpd + '/krona.html'
+
+            with open(krona_in, 'w') as ofile:
+                txt = self.as_krona_input_text(sample, field)
+                if txt:
+                    ofile.write(txt)
+                else:
+                    # no abundance data for this sample.  If we were to
+                    # continue, krona will happily make a page, which would be
+                    # mostly empty, will little indication whats going on.
+                    if outpath is None:
+                        raise ValueError('no abundance data')
+                    else:
+                        # assume the calling view handles errors
+                        log.error(
+                            'no tax abundance data, not generating krona page'
+                        )
+                        return None
+
+            cmd = [
+                'ktImportText',
+                '-n', f'all of {sample}',
+                '-o', krona_out,
+                krona_in
+            ]
+            try:
+                subprocess.run(cmd, cwd=tmpd, check=True)
+            except subprocess.CalledProcessError as e:
+                # e.g. krona not installed
+                if outpath is None:
+                    raise
+                else:
+                    log.error(f'krona failed: {e}')
+                    return None
+
+            if outpath is None:
+                with open(krona_out) as ifile:
+                    return ifile.read()
+            else:
+                shutil.copy2(krona_out, outpath)

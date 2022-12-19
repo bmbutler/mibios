@@ -228,7 +228,7 @@ class AbstractSample(Model):
         Gene.loader.load_sample(self)
         FuncAbundance.loader.load_sample(self)
         CompoundAbundance.loader.load_sample(self)
-        TaxonAbundance.loader.load_sample(self)
+        TaxonAbundance.objects.load_sample(self)
         set_rollback(dry_run)
 
     def get_fastq_prefix(self):
@@ -861,7 +861,7 @@ class TaxonAbundance(Model):
     taxon = models.ForeignKey(Taxon, **fk_req, related_name='abundance')
     sum_gene_rpkm = models.DecimalField(**digits(12, 4))
 
-    loader = managers.TaxonAbundanceLoader()
+    objects = managers.TaxonAbundanceManager()
 
     class Meta(Model.Meta):
         unique_together = (
