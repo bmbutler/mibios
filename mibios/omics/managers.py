@@ -964,20 +964,25 @@ class TaxonAbundanceManager(Manager):
             ))
         self.bulk_create(objs)
 
-    def as_krona_input_text(self, sample, field):
+    def as_krona_input_text(self, sample, field_name):
         """
         Generate input text data for krona
 
         Will return an empty string if no abundance data is saved for the given
         sample.
         """
+        # field_name may be user input from http requests, double-check that
+        # this is a real field, so we don't send garbage to krona (via the
+        # getattr below)
+        self.model._meta.get_field(field_name)  # may raise FieldDoesNotExist
+
         qs = self.filter(sample=sample).select_related('taxon')
         qs = qs.prefetch_related('taxon__ancestors')
 
         rows = []
         for i in qs.iterator():
             lin = sorted(i.taxon.ancestors.all(), key=lambda x: x.rank)
-            row = [str(getattr(i, field))] + [i.name for i in lin]
+            row = [str(getattr(i, field_name))] + [i.name for i in lin]
             rows.append('\t'.join(row))
         return '\n'.join(rows)
 
@@ -1006,13 +1011,13 @@ class TaxonAbundanceManager(Manager):
                     # continue, krona will happily make a page, which would be
                     # mostly empty, will little indication whats going on.
                     if outpath is None:
-                        raise ValueError('no abundance data')
-                    else:
                         # assume the calling view handles errors
                         log.error(
                             'no tax abundance data, not generating krona page'
                         )
                         return None
+                    else:
+                        raise ValueError('no abundance data')
 
             cmd = [
                 'ktImportText',
