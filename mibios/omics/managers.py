@@ -21,6 +21,7 @@ from logging import getLogger
 from operator import itemgetter
 import os
 import shutil
+from statistics import median
 import subprocess
 import tempfile
 
@@ -455,6 +456,33 @@ class ContigLikeLoader(SequenceLikeLoader):
 
         return lca
 
+    def abundance_stats(self, sample):
+        """
+        Calculate various abundance based statistics per taxon and sample
+
+        Return value is intended to be fed into the per-taxon abundance table.
+        """
+        qs = (self
+              .filter(sample=sample)
+              .exclude(lca=None)
+              .select_related('lca')
+              .order_by('-lca__rank', 'lca'))
+        stats = {}
+        for lca, objs in groupby(qs.iterator(), key=lambda x: x.lca):
+            objs = list(objs)
+
+            # weighted fpkm averages
+            wmedian_fpkm = median((i.fpkm for i in objs for _ in range(i.length)))  # noqa:E501
+
+            stats[lca] = {}
+            stats[lca]['wmedian_fpkm'] = wmedian_fpkm
+            stats[lca]['count'] = len(objs)
+            stats[lca]['length'] = sum((i.length for i in objs))
+            stats[lca]['reads_mapped'] = sum((i.reads_mapped for i in objs))
+            stats[lca]['frags_mapped'] = sum((i.frags_mapped for i in objs))
+
+        return stats
+
 
 class ContigLoader(ContigLikeLoader):
     """ Manager for the Contig model """
@@ -870,61 +898,71 @@ class TaxonAbundanceManager(Manager):
     ok_field_name = 'tax_abund_ok'
 
     @atomic_dry
-    def load_sample(self, sample, validate=False):
+    def populate_sample(self, sample, validate=False):
         """
         populate the taxon abundance table for a single sample
 
         This requires that the sample's genes' LCAs have been set.
         """
-        print('Fetching taxonomy... ', end='', flush=True)
-        Ancestry = Taxon._meta.get_field('ancestors').remote_field.through
-        qs = (
-            Ancestry.objects
-            .filter(from_taxon__gene__sample=sample)
-            .distinct()
-            .values_list('from_taxon_id', 'to_taxon_id')
-            .order_by('from_taxon_id')
-        )
-        # map of PKs from a gene's taxon to list of ancestor tax nodes
-        # (for those that have ancestors, so not root's immediate children
-        # (domains of life and unplaced stuff))
-        ancestors = {
-            from_pk: [i for _, i in grp]
-            for from_pk, grp in groupby(qs, key=lambda x: x[0])
-        }
-        print(f'{len(ancestors)} [OK]')
+        qs = self.filter(sample=sample)
+        if qs.exists():
+            print('Deleting existing data... ', end='', flush=True)
+            _, num_deleted = qs.delete()
+            print(f'{num_deleted} [OK]')
 
-        print('Accumulating RPKMs... ', end='', flush=True)
-        data = {}
-        qs = sample.gene_set.values_list('lca_id', 'rpkm')
-        for lca_id, gene_rpkm in qs.iterator():
-            if lca_id is None:
-                continue
+        Contig = import_string('mibios.omics.models.Contig')
+        Gene = import_string('mibios.omics.models.Gene')
+        print('Compiling stats for contigs... ', end='', flush=True)
+        contig_stats = Contig.loader.abundance_stats(sample)
+        print(f'{len(contig_stats)} [OK]')
+        print('Compiling stats for genes... ', end='', flush=True)
+        gene_stats = Gene.loader.abundance_stats(sample)
+        print(f'{len(gene_stats)} [OK]')
 
-            for j in [lca_id] + ancestors.get(lca_id, []):
-                try:
-                    data[j] += gene_rpkm
-                except KeyError:
-                    data[j] = gene_rpkm
-        print(f'{len(data)} [OK]')
+        # taxa for which we have stats don't quite overlap genes vs. contigs,
+        # but we'll create an object for each taxon and fill in default values
+        # (0.0) for each statistics that is missing
+        taxa = set(contig_stats.keys()).union(gene_stats.keys())
 
-        objs = (
-            self.model(sample=sample, taxon_id=k, sum_gene_rpkm=v)
-            for k, v in data.items()
-        )
+        def fpkm(count, length):
+            """
+            calculate fpkm: count per kb length per 1m sequenced readpairs
+            """
+            if not count and not length:
+                # return 0.0 fpkm for missing data and avoid zero division
+                # but still catch bad data (zero length but non-zero count)
+                return 0.0
+            return 1_000_000_000 * count / (length * sample.read_count)
 
-        if validate:
-            objs = list(objs)
-            for i in objs:
-                try:
-                    i.full_clean()
-                except Exception:
-                    print(f'validation failed: {vars(i)}')
-                    raise
+        total = sample.read_count
+        objs = []
+        empty_dict = {}  # stand-in so getting the default works
+        for taxon in taxa:
+            cont_st = contig_stats.get(taxon, empty_dict)
+            gene_st = gene_stats.get(taxon, empty_dict)
 
+            len_contigs = cont_st.get('length', 0)
+            len_genes = gene_st.get('length', 0)
+            frags_mapped_contig = cont_st.get('frags_mapped', 0)
+            frags_mapped_gene = gene_st.get('frags_mapped', 0)
+
+            objs.append(self.model(
+                sample=sample,
+                taxon=taxon,
+                count_contig=cont_st.get('count', 0),
+                count_gene=gene_st.get('count', 0),
+                len_contig=len_contigs,
+                len_gene=len_genes,
+                mean_fpkm_contig=fpkm(frags_mapped_contig, len_contigs),
+                mean_fpkm_gene=fpkm(frags_mapped_gene, len_genes),
+                wmedian_fpkm_contig=cont_st.get('wmedian_fpkm', 0.0),
+                wmedian_fpkm_gene=gene_st.get('wmedian_fpkm', 0.0),
+                norm_reads_contig=cont_st.get('reads_mapped', 0.0) / total,
+                norm_reads_gene=gene_st.get('reads_mapped', 0.0) / total,
+                norm_frags_contig=frags_mapped_contig / total,
+                norm_frags_gene=frags_mapped_gene / total,
+            ))
         self.bulk_create(objs)
-        setattr(sample, self.ok_field_name, True)
-        sample.save()
 
     def as_krona_input_text(self, sample, field):
         """
