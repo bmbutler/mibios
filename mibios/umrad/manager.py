@@ -244,7 +244,7 @@ class BaseLoader(DjangoManager):
 
     _DEFAULT_LOAD_KWARGS = dict(
         sep=None,
-        skip_on_error=False,
+        skip_on_error=0,
         update=False,
         bulk=False,
         validate=False,
@@ -273,7 +273,7 @@ class BaseLoader(DjangoManager):
     """
 
     def load(self, spec=None, start=0, limit=None, dry_run=False,
-             parse_into=None, file=None, template={}, **kwargs):
+             parse_into=None, file=None, template={}, changes=False, **kwargs):
         """
         Load data from file
 
@@ -285,8 +285,8 @@ class BaseLoader(DjangoManager):
         :param list parse_into:
             If an empty list is passed, then we run in "parse only" mode.  The
             parsed data is appended to the provided list.
-        :param bool skip_on_error:
-            If True, then certain Exceptions raised while processing a line of
+        :param int skip_on_error:
+            If not 0, then certain Exceptions raised while processing a line of
             the input file cause the line to be skipped and an error message to
             be printed.
         :param bool validate:
@@ -349,12 +349,10 @@ class BaseLoader(DjangoManager):
 
     @atomic_dry
     def _load_rows(self, rows, sep='\t', dry_run=False, template={},
-                   skip_on_error=False, validate=False, update=False,
+                   skip_on_error=0, validate=False, update=False,
                    bulk=True, first_lineno=None):
         fields = self.spec.fields
         model_name = self.model._meta.model_name
-        num_line_errors = 0
-        max_line_errors = 10  # > 0
 
         if update:
             print(f'Retrieving {model_name} records for update mode... ',
@@ -398,9 +396,6 @@ class BaseLoader(DjangoManager):
         pk = None
 
         for lineno in self.iterate_rows(pp(rows), start=first_lineno):
-            if num_line_errors >= max_line_errors:
-                raise RuntimeError('ERROR: too many per-line errors')
-
             obj = None
             obj_is_new = None
             m2m = {}
@@ -410,13 +405,16 @@ class BaseLoader(DjangoManager):
                     try:
                         value = fn(value, obj)
                     except InputFileError as e:
+                        msg = (f'\nERROR at line {lineno} / field {field}: '
+                               f'value was "{value}" -- {e}')
                         if skip_on_error:
-                            print(f'\nERROR on line {lineno}: value was '
-                                  f'"{value}" -- {e} -- will skip offending '
-                                  f'row\n{self.current_row}')
-                            num_line_errors += 1
+                            print(msg, '-- will skip offending row:')
+                            print(self.current_row)
+                            skip_on_error -= 1
                             break  # skips line
-                        raise
+                        else:
+                            print(msg)
+                            raise
 
                     if value is self.spec.IGNORE_COLUMN:
                         continue  # next column
