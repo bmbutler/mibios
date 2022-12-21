@@ -431,11 +431,9 @@ class InputFileSpec:
                 if key is None:
                     raise RuntimeError('require key (field name) for for which'
                                        'to calculate a value')
-                if convfunc is None:
-                    raise ValueError('callable for value calculation missing')
 
-                col_names.append(colname)
-                col_index.append(cur_col_index)
+                if not self.has_header:
+                    col_index.append(self.CALC_VALUE)
             else:
                 # current spec item is for a column in input
                 if not self.has_header:
@@ -542,7 +540,10 @@ class InputFileSpec:
             if col_name is self.CALC_VALUE:
                 # value will be calculated
                 if fn is None:
-                    raise ValueError(f'expect a callable but got {fn}')
+                    # No method was provided in spec, so we let them skip this
+                    # one and trust that this field was or will be set via some
+                    # other field's processing.
+                    value = self.IGNORE_COLUMN
                 value = None
             else:
                 value = row[col_i]
@@ -582,13 +583,13 @@ class CSV_Spec(InputFileSpec):
         column_index = []
         for col in self.col_names:
             if col is self.CALC_VALUE:
-                column_index.append(col_pos)
+                column_index.append(self.CALC_VALUE)
             else:
                 try:
                     pos = col_pos[col]
                 except KeyError:
                     raise RuntimeError(
-                        f'column not found: {col}, header: {head}'
+                        f'column "{col}" not found in header: {head}'
                     )
 
                 column_index.append(pos)
