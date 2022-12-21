@@ -2,7 +2,7 @@ from collections import defaultdict
 from functools import partial
 from itertools import islice
 from logging import getLogger
-from operator import attrgetter, length_hint
+from operator import attrgetter, countOf, length_hint
 from time import sleep
 
 from django.conf import settings
@@ -429,15 +429,23 @@ class BaseLoader(DjangoManager):
                     if update:
                         # first field MUST identify the object, the value's
                         # type must match the obj pool's keys
-                        try:
+                        if value is None:
+                            row_skip_count += 1
+                            break  # skips line
+                        elif value in obj_pool:
                             obj = obj_pool[value]
-                        except KeyError:
+                            if obj is None:
+                                raise RuntimeError(
+                                    f'duplicate key value: {value} at line '
+                                    f'{lineno}'
+                                )
+                            obj_pool[value] = None
+                            obj_is_new = False
+                            # this value is already set, next field please
+                            continue
+                        else:
                             obj = self.model(**template)
                             obj_is_new = True
-                        else:
-                            # this value is already set, next field please
-                            obj_is_new = False
-                            continue
 
                     else:
                         obj = self.model(**template)
@@ -518,7 +526,11 @@ class BaseLoader(DjangoManager):
 
         del fkmap, field, value, pk, obj, m2m
         if update:
-            del obj_pool
+            missing = len(obj_pool) - countOf(obj_pool.values(), None)
+            if missing:
+                print(f'WARNING: {missing} existing {model_name} records '
+                      f'missing from input data')
+            del obj_pool, missing
         sleep(0.2)  # let the progress meter finish before printing warnings
 
         for fname, bad_ids in missing_fks.items():
