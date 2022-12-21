@@ -331,6 +331,7 @@ class BaseLoader(DjangoManager):
                 template=template,
                 dry_run=dry_run,
                 first_lineno=start + 2 if self.spec.has_header else 1,
+                changes=changes,
                 **kwargs
             )
         except Exception:
@@ -353,7 +354,7 @@ class BaseLoader(DjangoManager):
     @atomic_dry
     def _load_rows(self, rows, sep='\t', dry_run=False, template={},
                    skip_on_error=0, validate=False, update=False,
-                   bulk=True, first_lineno=None):
+                   bulk=True, first_lineno=None, changes=False):
         fields = self.spec.fields
         model_name = self.model._meta.model_name
 
@@ -391,7 +392,7 @@ class BaseLoader(DjangoManager):
 
         pp = ProgressPrinter(f'{model_name} rows read from file')
         new_objs = []  # will be created
-        old_objs = []  # will be updated
+        upd_objs = []  # will be updated
         m2m_data = {}
         missing_fks = defaultdict(set)
         row_skip_count = 0
@@ -507,20 +508,20 @@ class BaseLoader(DjangoManager):
                     try:
                         obj.full_clean()
                     except ValidationError as e:
+                        print(f'\nERROR on line {lineno}: '
+                              f'{"(new)" if obj_is_new else "(update)"} {e}'
+                              f'offending row:\n{self.current_row}')
                         if skip_on_error:
-                            print(f'\nERROR on line {lineno}: {e} -- will '
-                                  f'skip offending row\n{self.current_row}')
-                            num_line_errors += 1
+                            print('-- skipped row --')
+                            skip_on_error -= 1
                             continue  # skips line
-                        print(f'\nERROR on line {lineno}: {e}')
-                        print('offending row:', self.current_row)
                         print(f'{vars(obj)=}')
                         raise
 
                 if obj_is_new:
                     new_objs.append(obj)
                 else:
-                    old_objs.append(obj)
+                    upd_objs.append(obj)
 
                 if m2m:
                     m2m_data[obj.get_accessions()] = m2m
@@ -548,7 +549,7 @@ class BaseLoader(DjangoManager):
             print(f'Skipped {row_skip_count} rows (blank rows/other reasons '
                   f'see file spec)')
 
-        if not new_objs and not old_objs:
+        if not new_objs and not upd_objs:
             print('WARNING: nothing saved, empty file or all got skipped')
             return
 
@@ -556,13 +557,31 @@ class BaseLoader(DjangoManager):
             del fname, bad_ids
         del missing_fks, row_skip_count, fk_skip_count
 
-        if old_objs:
+        if upd_objs:
             update_fields = [i.name for i in fields if not i.many_to_many]
+            if changes:
+                # retrieve old objects again
+                upd_q = make_int_in_filter('pk', [i.pk for i in upd_objs])
+                old_objs = self.filter(upd_q).in_bulk()
+                # compile changes
+                change_set = []
+                for i in upd_objs:
+                    items = []
+                    for j in update_fields:
+                        old_value = getattr(old_objs[i.pk], j)
+                        upd_value = getattr(i, j)
+                        if old_value != upd_value:
+                            items.append(f'{j}: {old_value} -> {upd_value}')
+                    if items:
+                        items = [(i.pk, getattr(i, fields[0].name))] + items
+                        change_set.append(items)
+                del upd_q, old_objs, old_value, upd_value, items
+
             if bulk:
-                self.fast_bulk_update(old_objs, fields=update_fields)
+                self.fast_bulk_update(upd_objs, fields=update_fields)
             else:
                 pp = ProgressPrinter(f'{model_name} records updated')
-                for i in pp(old_objs):
+                for i in pp(upd_objs):
                     try:
                         i.save(update_fields=update_fields)
                     except Exception as e:
@@ -573,7 +592,7 @@ class BaseLoader(DjangoManager):
             if bulk:
                 self.bulk_create(new_objs)
             else:
-                pp = ProgressPrinter(f'{model_name} records saved')
+                pp = ProgressPrinter(f'new {model_name} records saved')
                 for i in pp(new_objs):
                     try:
                         i.save()
@@ -582,7 +601,7 @@ class BaseLoader(DjangoManager):
                               f'\n{vars(i)=}')
                         raise
 
-        del new_objs, old_objs
+        del new_objs, upd_objs
 
         if m2m_data:
             # get accession -> pk map
@@ -601,6 +620,9 @@ class BaseLoader(DjangoManager):
                 self._update_m2m(field.name, m2m_data, update=update)
 
         sleep(1)  # let progress meter finish
+
+        if changes:
+            return change_set
 
     def _update_m2m(self, field_name, m2m_data, update=False):
         """
