@@ -108,7 +108,7 @@ class ReferenceLoader(Loader):
 class SampleLoader(Loader):
     """ loader for Great_Lakes_AMplicon_Datasets.xlsx """
     empty_values = ['NA', 'Not Listed', 'NF', '#N/A']
-    default_load_kwargs = dict(validate=True, bulk=False)
+    default_load_kwargs = dict(validate=True, bulk=False, update=True)
 
     def get_file(self):
         return settings.GLAMR_META_ROOT / 'Great_Lakes_Omics_Datasets.xlsx - samples.tsv'  # noqa:E501
@@ -290,10 +290,10 @@ class SampleLoader(Loader):
     )
 
     @atomic_dry
-    def load_meta(self, validate=True, **kwargs):
+    def load_meta(self, **kwargs):
         """ samples meta data """
         template = dict(meta_data_loaded=True)
-        super().load(template=template, validate=validate, **kwargs)
+        return self.load(template=template, **kwargs)
 
 
 class SearchTermManager(Loader):
