@@ -29,7 +29,10 @@ class InputFileError(Exception):
 
     We may expect this error and may tolerate it and skip the offending line
     """
-    pass
+    def __init__(self, *args):
+        args = [f'{type(i).__name__}: {i}' if isinstance(i, Exception) else i
+                for i in args]
+        super().__init__(*args)
 
 
 class BulkCreateWrapperMixin:

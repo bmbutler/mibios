@@ -170,7 +170,7 @@ class SampleLoader(Loader):
             value = parse_datetime(old_value)
         except ValueError as e:
             # invalid date/time
-            raise InputFileError from e
+            raise InputFileError(e) from e
 
         if value is None:
             # failed parsing as datetime, try date
@@ -178,7 +178,7 @@ class SampleLoader(Loader):
                 value = parse_date(old_value)
             except ValueError as e:
                 # invalid date
-                raise InputFileError from e
+                raise InputFileError(e) from e
 
             if value is not None:
                 # add fake time (midnight)
@@ -207,7 +207,7 @@ class SampleLoader(Loader):
                     value = datetime(year, month, 1)
                 except ValueError as e:
                     # invalid year or month
-                    raise InputFileError('failed parsing timestamp') from e
+                    raise InputFileError('failed parsing timestamp', e) from e
 
         # value should now be a datetime instance
         if value.tzinfo is None:
