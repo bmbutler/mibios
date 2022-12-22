@@ -11,6 +11,7 @@ import sys
 
 import pandas
 
+from django.conf import settings
 from django.db import router, transaction
 from django.db.models import Q
 
@@ -781,3 +782,15 @@ def make_int_in_filter(lookup_name, integers):
     for start, end in ranges:
         q = q | Q(**{lookup_name + '__range': (start, end)})
     return q
+
+
+def save_import_diff(model, diff, path=None):
+    """
+    Save change set to disk
+    """
+    if path is None:
+        path = settings.IMPORT_DIFF_DIR
+    file_name = f'{model._meta.model_name}.{datetime.now().isoformat()}'
+    with (Path(path) / file_name).open('w') as ofile:
+        for ((pk, record_id), change) in diff:
+            ofile.write(f'{pk}\t{record_id}\t{change}\n')

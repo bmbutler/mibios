@@ -17,7 +17,7 @@ from mibios.models import (
 )
 
 from .utils import (CSV_Spec, ProgressPrinter, atomic_dry,
-                    get_last_timer, make_int_in_filter)
+                    get_last_timer, make_int_in_filter, save_import_diff)
 
 
 log = getLogger(__name__)
@@ -251,6 +251,7 @@ class BaseLoader(DjangoManager):
         update=False,
         bulk=False,
         validate=False,
+        diff=False,
     )
     # Inheriting classes can set default kwargs for load() here.  In __init__()
     # anything missing is set from _DEFAULT_LOAD_KWARGS above, which inheriting
@@ -276,7 +277,7 @@ class BaseLoader(DjangoManager):
     """
 
     def load(self, spec=None, start=0, limit=None, dry_run=False,
-             parse_into=None, file=None, template={}, changes=False, **kwargs):
+             parse_into=None, file=None, template={}, **kwargs):
         """
         Load data from file
 
@@ -331,7 +332,6 @@ class BaseLoader(DjangoManager):
                 template=template,
                 dry_run=dry_run,
                 first_lineno=start + 2 if self.spec.has_header else 1,
-                changes=changes,
                 **kwargs
             )
         except Exception:
@@ -354,7 +354,7 @@ class BaseLoader(DjangoManager):
     @atomic_dry
     def _load_rows(self, rows, sep='\t', dry_run=False, template={},
                    skip_on_error=0, validate=False, update=False,
-                   bulk=True, first_lineno=None, changes=False):
+                   bulk=True, first_lineno=None, diff=False):
         fields = self.spec.fields
         model_name = self.model._meta.model_name
 
@@ -560,11 +560,11 @@ class BaseLoader(DjangoManager):
 
         if upd_objs:
             update_fields = [i.name for i in fields if not i.many_to_many]
-            if changes:
+            if diff:
                 # retrieve old objects again
                 upd_q = make_int_in_filter('pk', [i.pk for i in upd_objs])
                 old_objs = self.filter(upd_q).in_bulk()
-                # compile changes
+                # compile differences
                 change_set = []
                 for i in upd_objs:
                     items = []
@@ -572,6 +572,14 @@ class BaseLoader(DjangoManager):
                         old_value = getattr(old_objs[i.pk], j)
                         upd_value = getattr(i, j)
                         if old_value != upd_value:
+                            if old_value is None:
+                                old_value = '<None>'
+                            elif isinstance(old_value, str):
+                                old_value = f'"{old_value}"'
+                            if upd_value is None:
+                                upd_value = '<None>'
+                            elif isinstance(upd_value, str):
+                                upd_value = f'"{upd_value}"'
                             items.append(f'{j}: {old_value} -> {upd_value}')
                     if items:
                         items = [(i.pk, getattr(i, fields[0].name))] + items
@@ -620,9 +628,18 @@ class BaseLoader(DjangoManager):
             for field in (i for i in fields if i.many_to_many):
                 self._update_m2m(field.name, m2m_data, update=update)
 
-        sleep(1)  # let progress meter finish
+        sleep(1)  # let progress meter finish before returning
 
-        if changes:
+        if diff:
+            # save diffs to disk if configured, else return the change set
+            try:
+                diff_dir = settings.IMPORT_DIFF_DIR
+            except AttributeError:
+                pass
+            else:
+                if bool(diff_dir):
+                    save_import_diff(self.model, change_set)
+                    return
             return change_set
 
     def _update_m2m(self, field_name, m2m_data, update=False):

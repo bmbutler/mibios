@@ -11,9 +11,17 @@ from mibios.umrad.model_utils import delete_all_objects_quickly
 from mibios.umrad.utils import CSV_Spec, atomic_dry
 
 
-class DatasetLoader(Loader):
+class MetaDataLoader(Loader):
+    default_load_kwargs = dict(
+        validate=True,
+        bulk=False,
+        update=True,
+        diff=True,
+    )
+
+
+class DatasetLoader(MetaDataLoader):
     empty_values = ['NA', 'Not Listed', 'NF', '#N/A']
-    default_load_kwargs = dict(validate=True, bulk=False)
 
     def get_file(self):
         return settings.GLAMR_META_ROOT\
@@ -66,9 +74,8 @@ class DatasetLoader(Loader):
     )
 
 
-class ReferenceLoader(Loader):
+class ReferenceLoader(MetaDataLoader):
     empty_values = ['NA', 'Not Listed']
-    default_load_kwargs = dict(validate=True, bulk=False)
 
     def get_file(self):
         return settings.GLAMR_META_ROOT\
@@ -107,10 +114,9 @@ class ReferenceLoader(Loader):
     )
 
 
-class SampleLoader(Loader):
-    """ loader for Great_Lakes_AMplicon_Datasets.xlsx """
+class SampleLoader(MetaDataLoader):
+    """ loader for Great_Lakes_Omics_Datasets.xlsx """
     empty_values = ['NA', 'Not Listed', 'NF', '#N/A']
-    default_load_kwargs = dict(validate=True, bulk=False, update=True)
 
     def get_file(self):
         return settings.GLAMR_META_ROOT / 'Great_Lakes_Omics_Datasets.xlsx - samples.tsv'  # noqa:E501
