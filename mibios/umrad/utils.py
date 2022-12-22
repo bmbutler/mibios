@@ -792,5 +792,7 @@ def save_import_diff(model, diff, path=None):
         path = settings.IMPORT_DIFF_DIR
     file_name = f'{model._meta.model_name}.{datetime.now().isoformat()}'
     with (Path(path) / file_name).open('w') as ofile:
-        for ((pk, record_id), change) in diff:
-            ofile.write(f'{pk}\t{record_id}\t{change}\n')
+        for ((pk, record_id), first_change, *other_changes) in diff:
+            ofile.write(f'{pk}\t{record_id}\t{first_change}\n')
+            for i in other_changes:
+                ofile.write(f'\t\t{i}\n')
