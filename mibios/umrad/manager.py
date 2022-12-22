@@ -462,7 +462,7 @@ class BaseLoader(DjangoManager):
                     # will later be replaced by the pk/id.)  If value comes in
                     # as a str, this list-of-tuples is generated below.  If it
                     # is neither None nor a str, the we assume that a
-                    # conversion function has taken care of everything.  For
+                    # pre-processing method has taken care of everything.  For
                     # through models with additional data the parameters must
                     # be in the correct order.
                     if value is None:
@@ -739,9 +739,9 @@ class BaseLoader(DjangoManager):
 
         self.bulk_create_wrapper(Through.objects.bulk_create)(through_objs)
 
-    def get_choice_value_prep_function(self, field):
+    def get_choice_value_prep_method(self, field):
         """
-        Return conversion/processing method for choice value prepping
+        Return pre-processing method for choice value prepping
         """
         prep_values = {j: i for i, j in field.choices}
 
@@ -753,11 +753,10 @@ class BaseLoader(DjangoManager):
 
     def split_m2m_value(self, value, row=None):
         """
-        Helper to split semi-colon-separated list-field values in import file
+        Pre-processor to split semi-colon-separated list-field values
 
         This will additionally sort and remove duplicates.  If you don't want
         this use the split_m2m_value_simple() method.
-        A conversion/processing method.
         """
         # split and remove empties:
         items = (i for i in value.split(';') if i)
@@ -768,9 +767,7 @@ class BaseLoader(DjangoManager):
 
     def split_m2m_value_simple(self, value, row=None):
         """
-        Helper to split semi-colon-separated list-field values in import file
-
-        A conversion/processing method.
+        Pre-processor to split semi-colon-separated list-field values
         """
         return value.split(';')
 
@@ -957,7 +954,7 @@ class CompoundRecordLoader(BulkLoader):
         return settings.UMRAD_ROOT / 'MERGED_CPD_DB.txt'
 
     def chargeconv(self, value, obj):
-        """ convert '2+' -> 2 / '2-' -> -2 """
+        """ Pre-processor to convert '2+' -> 2 / '2-' -> -2 """
         if value == '' or value is None:
             return None
         elif value.endswith('-'):
@@ -971,7 +968,9 @@ class CompoundRecordLoader(BulkLoader):
                 raise InputFileError from e
 
     def collect_others(self, value, obj):
-        """ triggered on kegg columns, collects from other sources too """
+        """
+        Pre-processor triggered on kegg column to collect from other columns
+        """
         # assume that value == current_row[7]
         lst = self.split_m2m_value(';'.join(self.current_row[7:12]))
         try:
@@ -1060,11 +1059,11 @@ class ReactionRecordLoader(BulkLoader):
         ReactionCompound = \
             self.model._meta.get_field('compound').remote_field.through
         field = ReactionCompound._meta.get_field('side')
-        self._prep_side_val = self.get_choice_value_prep_function(field)
+        self._prep_side_val = self.get_choice_value_prep_method(field)
         field = ReactionCompound._meta.get_field('location')
-        self._prep_loc_val = self.get_choice_value_prep_function(field)
+        self._prep_loc_val = self.get_choice_value_prep_method(field)
         field = ReactionCompound._meta.get_field('transport')
-        self._prep_trn_val = self.get_choice_value_prep_function(field)
+        self._prep_trn_val = self.get_choice_value_prep_method(field)
 
         self.loc_values = [i[0] for i in ReactionCompound.LOCATION_CHOICES]
 
@@ -1072,7 +1071,7 @@ class ReactionRecordLoader(BulkLoader):
         return settings.UMRAD_ROOT / 'MERGED_RXN_DB.txt'
 
     def errata_check(self, value, obj):
-        """ skip extra header rows """
+        """ Pre-processor to skip extra header rows """
         # FIXME: remove this function when source data is fixed
         if value == 'rxn':
             return CSV_Spec.SKIP_ROW
@@ -1080,7 +1079,7 @@ class ReactionRecordLoader(BulkLoader):
 
     def process_xrefs(self, value, obj):
         """
-        collect data from all xref columns
+        Pre-processor to collect data from all xref columns
 
         subsequenc rxn xref columns will then be skipped
         Returns list of tuples.
@@ -1094,7 +1093,7 @@ class ReactionRecordLoader(BulkLoader):
 
     def process_compounds(self, value, obj):
         """
-        collect data from the 18 compound columns
+        Pre-processor to collect data from the 18 compound columns
 
         Will remove duplicates.  Other compound columns should be skipped
         """
@@ -1328,7 +1327,7 @@ class UniRef100Loader(BulkLoader):
         FuncRefDBEntry.name_loader.fast_bulk_update(pp(objs), ['db'])
 
     def process_func_xrefs(self, value, obj):
-        """ collect COG through EC columns """
+        """ Pre-processor ro collect COG through EC columns """
         ret = []
         for (db_code, _), vals in zip(self.func_dbs, self.current_row[13:19]):
             for i in self.split_m2m_value(vals):
@@ -1344,7 +1343,7 @@ class UniRef100Loader(BulkLoader):
         return ret
 
     def process_reactions(self, value, obj):
-        """ collect all reactions """
+        """ Pre-processor to collect all reactions """
         rxns = set()
         for i in self.current_row[17:20]:
             items = self.split_m2m_value(i)

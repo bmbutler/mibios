@@ -191,7 +191,7 @@ class AlignmentLoader(BulkLoader, SampleLoadMixin):
 
     def query2gene_pk(self, value, obj):
         """
-        get gene PK from qseqid column for genes
+        Pre-processor to get gene PK from qseqid column for genes
 
         The query column has all that's in the fasta header, incl. the prodigal
         data.  Also add the sample pk (gene is a FK field).
@@ -201,7 +201,7 @@ class AlignmentLoader(BulkLoader, SampleLoadMixin):
 
     def upper(self, value, obj):
         """
-        upper-case the uniref100 id
+        Pre-processor to upper-case the uniref100 id
 
         the incoming prefixes have mixed case
         """
@@ -499,7 +499,7 @@ class ContigLoader(ContigLikeLoader):
             / f'{sample.tracking_id}_READSvsCONTIGS.rpkm'
 
     def trim_id(self, value, obj):
-        """ trim tracking id off, e.g. deadbeef_123 => 123 """
+        """ Pre-processor to trim tracking id off, e.g. deadbeef_123 => 123 """
         _, _, value = value.partition('_')
         return value.upper()
 
@@ -623,7 +623,9 @@ class GeneLoader(ContigLikeLoader):
             / f'{sample.tracking_id}_READSvsGENES.rpkm'
 
     def extract_gene_id(self, value, obj):
-        """ get just the gene id from what was a post-prodigal fasta header """
+        """
+        Pre-processor to get just the gene id from prodigal fasta header
+        """
         # deadbeef_123_1 # bla bla bla => 123_1
         return value.split(maxsplit=1)[0].partition('_')[2]
 

@@ -394,7 +394,7 @@ class InputFileSpec:
         keys = []
         field_names = []
         fields = []
-        convfuncs = []
+        prepfuncs = []
 
         cur_col_index = None  # for non-header input, defined by order in spec
         for spec_line in column_specs:
@@ -417,7 +417,7 @@ class InputFileSpec:
             if not self.has_header:
                 spec_line = (self.NO_HEADER, *spec_line)
 
-            colname, key, *convfunc = spec_line
+            colname, key, *prepfunc = spec_line
 
             if colname is self.CALC_VALUE:
                 if key is None:
@@ -456,45 +456,45 @@ class InputFileSpec:
             fields.append(field)
             field_names.append(field_name)
 
-            if len(convfunc) == 0:
+            if len(prepfunc) == 0:
                 # no pre-proc method set, add auto-magic stuff as-needed here
                 if field.choices:
                     # automatically attach prep method for choice fields
-                    convfunc = self.loader.get_choice_value_prep_function(field)
-            elif len(convfunc) > 1:
+                    prepfunc = self.loader.get_choice_value_prep_method(field)
+            elif len(prepfunc) > 1:
                 raise ValueError(f'too many items in spec for {colname}/{key}')
-            elif len(convfunc) == 1 and convfunc[0] is None:
+            elif len(prepfunc) == 1 and prepfunc[0] is None:
                 # pre-proc method explicitly set to None
-                convfunc = None
+                prepfunc = None
             else:
                 # a non-None pre-proc method is given
-                convfunc = convfunc[0]
-                if isinstance(convfunc, str):
-                    convfunc_name = convfunc
+                prepfunc = prepfunc[0]
+                if isinstance(prepfunc, str):
+                    prepfunc_name = prepfunc
                     # getattr gives us a bound method:
-                    convfunc = getattr(loader, convfunc_name)
-                    if not callable(convfunc):
+                    prepfunc = getattr(loader, prepfunc_name)
+                    if not callable(prepfunc):
                         raise ValueError(
                             f'not the name of a {self.loader} method: '
-                            f'{convfunc_name}'
+                            f'{prepfunc_name}'
                         )
-                elif callable(convfunc):
+                elif callable(prepfunc):
                     # Assume it's a function that takes the loader as
                     # 1st arg.  We get this when the previoudsly
                     # delclared method's identifier is passed directly
                     # in the spec's declaration.
-                    convfunc = partial(convfunc, self.loader)
+                    prepfunc = partial(prepfunc, self.loader)
                 else:
-                    raise ValueError(f'not a callable: {convfunc}')
+                    raise ValueError(f'not a callable: {prepfunc}')
 
-            convfuncs.append(convfunc)
+            prepfuncs.append(prepfunc)
 
         self.col_names = col_names
         self.col_index = col_index
         self.keys = keys
         self.field_names = field_names
         self.fields = tuple(fields)
-        self.convfuncs = tuple(convfuncs)
+        self.prepfuncs = tuple(prepfuncs)
 
     def __len__(self):
         return len(self._spec)
@@ -517,7 +517,7 @@ class InputFileSpec:
 
         :param list row: A list of str
         """
-        it = zip(self.fields, self.convfuncs, self.col_names, self.col_index)
+        it = zip(self.fields, self.prepfuncs, self.col_names, self.col_index)
         for field, fn, col_name, col_i in it:
             if col_name is self.CALC_VALUE:
                 if fn is None:

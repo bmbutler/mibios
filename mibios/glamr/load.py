@@ -20,13 +20,14 @@ class DatasetLoader(Loader):
             / 'Great_Lakes_Omics_Datasets.xlsx - studies_datasets.tsv'
 
     def ensure_id(self, value, obj):
-        """ skip rows without dataset id """
+        """ Pre-processor to skip rows without dataset id """
         if not value:
             return self.spec.SKIP_ROW
 
         return value
 
     def get_reference_ids(self, value, obj):
+        # FIXME: is unused, can this be removed?
         if value is None or value == '':
             return self.spec.IGNORE_COLUMN
 
@@ -74,13 +75,14 @@ class ReferenceLoader(Loader):
             / 'Great_Lakes_Omics_Datasets.xlsx - papers.tsv'
 
     def fix_doi(self, value, obj):
+        """ Pre-processor to fix issue with some DOIs """
         if value is not None and 'doi-org.proxy.lib.umich.edu' in value:
             # fix, don't require umich weblogin to follow these links
             value = value.replace('doi-org.proxy.lib.umich.edu', 'doi.org')
         return value
 
     def check_skip(self, value, obj):
-        """ determine if row needs to be skipped """
+        """ Pre-processor to determine if row needs to be skipped """
         if value == 'paper_17':
             return self.spec.SKIP_ROW
 
@@ -118,6 +120,7 @@ class SampleLoader(Loader):
         return value.removeprefix('Sample_')
 
     def parse_bool(self, value, obj):
+        """ Pre-processor to parse booleans """
         # Only parse str values.  The pandas reader may give us booleans
         # already for some reason (for the modified_or_experimental but not the
         # has_paired data) ?!?
@@ -133,7 +136,7 @@ class SampleLoader(Loader):
         return value
 
     def check_ids(self, value, obj):
-        """ check that we have at least some ID value """
+        """ Pre-processor to check that we have at least some ID value """
         if value:
             return value
 
@@ -151,7 +154,7 @@ class SampleLoader(Loader):
 
     def process_timestamp(self, value, obj):
         """
-        process the collection time stamp
+        Pre-processor for the collection time stamp
 
         1. Partial dates: years only get saved as Jan 1st and year-month gets
            the first of month; this is indicated by the collection_ts_partial
@@ -219,7 +222,7 @@ class SampleLoader(Loader):
 
     def parse_human_int(self, value, obj):
         """
-        allow use of comma to separate thousands
+        Pre-processor to allow use of commas to separate thousands
         """
         if value:
             return value.replace(',', '')
