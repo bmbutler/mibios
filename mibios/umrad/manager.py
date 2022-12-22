@@ -420,11 +420,12 @@ class BaseLoader(DjangoManager):
                             print(msg)
                             raise
 
-                    if value is self.spec.IGNORE_COLUMN:
-                        continue  # next column
-                    elif value is self.spec.SKIP_ROW:
-                        row_skip_count += 1
-                        break  # skips line / avoids for-else block
+                if value is self.spec.IGNORE_COLUMN:
+                    continue  # next column
+
+                if value is self.spec.SKIP_ROW:
+                    row_skip_count += 1
+                    break  # skips line / avoids for-else block
 
                 if obj is None:
                     # the first field
