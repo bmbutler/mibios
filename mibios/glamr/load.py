@@ -153,9 +153,9 @@ class SampleLoader(Loader):
         """
         process the collection time stamp
 
-        1. Partial dates: years only get saves as Jan 1st and year-month gets
-           the first of month; and the original form is saves as string in
-           collection_ts_partial column
+        1. Partial dates: years only get saved as Jan 1st and year-month gets
+           the first of month; this is indicated by the collection_ts_partial
+           field, which is set here.
         2. Add timezone to timestamps if needed (and hoping the configued TZ is
            appropriate).  This avoids spamming of warnings from the
            DateTimeField's to_python() method in some cases.
@@ -183,10 +183,10 @@ class SampleLoader(Loader):
             if value is not None:
                 # add fake time (midnight)
                 value = datetime(value.year, value.month, value.day)
-                obj.collection_ts_partial = self.model.DATE_ONLY
+                collection_ts_partial = self.model.DATE_ONLY
         else:
             # got a complete timestamp
-            obj.collection_ts_partial = self.model.FULL_TIMESTAMP
+            collection_ts_partial = self.model.FULL_TIMESTAMP
 
         if value is None:
             # failed parsing as ISO 8601, try for year-month and year only
@@ -198,10 +198,10 @@ class SampleLoader(Loader):
                 year = int(year)
                 if month is None:
                     month = 1
-                    obj.collection_ts_partial = self.model.YEAR_ONLY
+                    collection_ts_partial = self.model.YEAR_ONLY
                 else:
                     month = int(month)
-                    obj.collection_ts_partial = self.model.MONTH_ONLY
+                    collection_ts_partial = self.model.MONTH_ONLY
 
                 try:
                     value = datetime(year, month, 1)
@@ -213,6 +213,8 @@ class SampleLoader(Loader):
         if value.tzinfo is None:
             default_timezone = timezone.get_default_timezone()
             value = timezone.make_aware(value, default_timezone)
+
+        obj.collection_ts_partial = collection_ts_partial
         return value
 
     def parse_human_int(self, value, obj):
@@ -243,6 +245,7 @@ class SampleLoader(Loader):
         ('lat', 'latitude'),  # N
         ('lon', 'longitude'),  # O
         ('collection_date', 'collection_timestamp', process_timestamp),  # P
+        (CSV_Spec.CALC_VALUE, 'collection_ts_partial', None),  # P
         ('NOAA_Site', 'noaa_site'),  # Q
         ('env_broad_scale', 'env_broad_scale'),  # R
         ('env_local_scale', 'env_local_scale'),  # S
