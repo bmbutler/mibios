@@ -359,8 +359,6 @@ class InputFileSpec:
         self._spec = column_specs or None
 
         # set by setup():
-        self._fields = None
-        self._convfuncs = None
         self.model = None
         self.loader = None
         self.path = None
@@ -395,6 +393,7 @@ class InputFileSpec:
         col_index = []  # index of actually used columns
         keys = []
         field_names = []
+        fields = []
         convfuncs = []
 
         cur_col_index = None  # for non-header input, defined by order in spec
@@ -419,13 +418,6 @@ class InputFileSpec:
                 spec_line = (self.NO_HEADER, *spec_line)
 
             colname, key, *convfunc = spec_line
-
-            if len(convfunc) == 0:
-                convfunc = None
-            elif len(convfunc) == 1:
-                convfunc = convfunc[0]
-            else:
-                raise ValueError(f'too many items in spec for {colname}/{key}')
 
             if colname is self.CALC_VALUE:
                 if key is None:
@@ -460,27 +452,40 @@ class InputFileSpec:
             else:
                 field_name = key
 
+            field = self.model._meta.get_field(field_name)
+            fields.append(field)
             field_names.append(field_name)
 
-            if convfunc is None:
-                pass
-            elif isinstance(convfunc, str):
-                convfunc_name = convfunc
-                # getattr gives us a bound method:
-                convfunc = getattr(loader, convfunc_name)
-                if not callable(convfunc):
-                    raise ValueError(
-                        f'not the name of a {self.loader} method: '
-                        f'{convfunc_name}'
-                    )
-            elif callable(convfunc):
-                # Assume it's a function that takes the loader as
-                # 1st arg.  We get this when the previoudsly
-                # delclared method's identifier is passed directly
-                # in the spec's declaration.
-                convfunc = partial(convfunc, self.loader)
+            if len(convfunc) == 0:
+                # no pre-proc method set, add auto-magic stuff as-needed here
+                if field.choices:
+                    # automatically attach prep method for choice fields
+                    convfunc = self.loader.get_choice_value_prep_function(field)
+            elif len(convfunc) > 1:
+                raise ValueError(f'too many items in spec for {colname}/{key}')
+            elif len(convfunc) == 1 and convfunc[0] is None:
+                # pre-proc method explicitly set to None
+                convfunc = None
             else:
-                raise ValueError(f'not a callable: {convfunc}')
+                # a non-None pre-proc method is given
+                convfunc = convfunc[0]
+                if isinstance(convfunc, str):
+                    convfunc_name = convfunc
+                    # getattr gives us a bound method:
+                    convfunc = getattr(loader, convfunc_name)
+                    if not callable(convfunc):
+                        raise ValueError(
+                            f'not the name of a {self.loader} method: '
+                            f'{convfunc_name}'
+                        )
+                elif callable(convfunc):
+                    # Assume it's a function that takes the loader as
+                    # 1st arg.  We get this when the previoudsly
+                    # delclared method's identifier is passed directly
+                    # in the spec's declaration.
+                    convfunc = partial(convfunc, self.loader)
+                else:
+                    raise ValueError(f'not a callable: {convfunc}')
 
             convfuncs.append(convfunc)
 
@@ -488,34 +493,11 @@ class InputFileSpec:
         self.col_index = col_index
         self.keys = keys
         self.field_names = field_names
-        self._convfuncs_raw = convfuncs
+        self.fields = tuple(fields)
+        self.convfuncs = tuple(convfuncs)
 
     def __len__(self):
         return len(self._spec)
-
-    @property
-    def fields(self):
-        if self._fields is None:
-            self._fields = tuple(
-                (self.model._meta.get_field(i) for i in self.field_names)
-            )
-        return self._fields
-
-    @property
-    def convfuncs(self):
-        if self._convfuncs is None:
-            convfuncs = []
-            for field, fn in zip(self.fields, self._convfuncs_raw):
-                if fn is None and field.choices:
-                    # automatically attach prep method for choice fields
-                    convfuncs.append(
-                        self.loader.get_choice_value_prep_function(field)
-                    )
-                else:
-                    convfuncs.append(fn)
-            self._convfuncs = tuple(convfuncs)
-
-        return self._convfuncs
 
     def iterrows(self):
         """
@@ -538,13 +520,14 @@ class InputFileSpec:
         it = zip(self.fields, self.convfuncs, self.col_names, self.col_index)
         for field, fn, col_name, col_i in it:
             if col_name is self.CALC_VALUE:
-                # value will be calculated
                 if fn is None:
                     # No method was provided in spec, so we let them skip this
                     # one and trust that this field was or will be set via some
                     # other field's processing.
                     value = self.IGNORE_COLUMN
-                value = None
+                else:
+                    # fn will calculate value
+                    value = None
             else:
                 value = row[col_i]
                 if value in self.empty_values or value in field.empty_values:
