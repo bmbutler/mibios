@@ -784,15 +784,52 @@ def make_int_in_filter(lookup_name, integers):
     return q
 
 
-def save_import_diff(model, diff, path=None):
+def save_import_diff(model, changes, unchanged_count, new_count, missing_objs,
+                     path=None, dry_run=False):
     """
-    Save change set to disk
+    Save change set to disk, called by Loader.load()
     """
     if path is None:
         path = settings.IMPORT_DIFF_DIR
-    file_name = f'{model._meta.model_name}.{datetime.now().isoformat()}'
-    with (Path(path) / file_name).open('w') as ofile:
-        for ((pk, record_id), first_change, *other_changes) in diff:
-            ofile.write(f'{pk}\t{record_id}\t{first_change}\n')
-            for i in other_changes:
+
+    summary = (f'new: {new_count},  changed: {len(changes)},  unchanged: '
+               f'{unchanged_count},  missing: {len(missing_objs)}')
+    print('Summary:', summary)
+    now = datetime.now()
+
+    if dry_run:
+        opath = Path(path) / f'{model._meta.model_name}.dryrun.txt'
+    else:
+        # try to make a unique filename, but overwrite after last attempt
+        def suffixes():
+            yield '.txt'
+            for i in range(1, 99):
+                yield f'.{i}.txt'
+        obase = Path(path) / f'{model._meta.model_name}.{now.date()}.txt'
+        for suf in suffixes():
+            opath = obase.with_suffix(suf)
+            if not opath.exists():
+                break
+
+    def fmt(val):
+        """ value formatter """
+        if val is None:
+            return '<None>'
+        elif isinstance(val, str):
+            return f'"{val}"'
+        else:
+            return val
+
+    with opath.open('w') as ofile:
+        ofile.write(f'=== {now} ===\nSummary:   {summary}\n')
+        for pk, record_id, items in changes:
+            items = [
+                f'{field}: {fmt(old)}  ->  {fmt(new)}'
+                for field, old, new in items
+            ]
+            ofile.write(f'{pk}\t{record_id}\t{items[0]}\n')
+            for i in items[1:]:
                 ofile.write(f'\t\t{i}\n')
+        for pk, key in missing_objs:
+            ofile.write(f'missing: {pk} / {key}\n')
+    print(f'Diff saved to: {opath}')

@@ -2,7 +2,7 @@ from collections import defaultdict
 from functools import partial
 from itertools import islice
 from logging import getLogger
-from operator import attrgetter, countOf, length_hint
+from operator import attrgetter, length_hint
 from time import sleep
 
 from django.conf import settings
@@ -299,8 +299,10 @@ class BaseLoader(DjangoManager):
             issue as this way the error message will point to the offending
             line.
 
-        May assume empty table ?!?
         """
+        # Most work is delegated to _load_rows(), here in the body of load() we
+        # just do some setup and clean-up stuff.
+
         # set default kwargs if any are missing
         for k, v in self.default_load_kwargs.items():
             kwargs.setdefault(k, v)
@@ -327,7 +329,7 @@ class BaseLoader(DjangoManager):
             return
 
         try:
-            return self._load_rows(
+            diff_info = self._load_rows(
                 row_it,
                 template=template,
                 dry_run=dry_run,
@@ -343,6 +345,27 @@ class BaseLoader(DjangoManager):
                 pass
             raise
 
+        if kwargs.get('diff', False):
+            change_set, unchanged_count, new_count, missing_objs = diff_info
+            if new_count or change_set or missing_objs:
+                try:
+                    diff_dir = settings.IMPORT_DIFF_DIR
+                except AttributeError:
+                    diff_dir = ''
+
+                if diff_dir:
+                    save_import_diff(
+                        self.model,
+                        change_set, unchanged_count,
+                        new_count, missing_objs,
+                        dry_run=dry_run,
+                    )
+                else:
+                    print('WARNING: IMPORT_DIFF_DIR not configured - not '
+                          'saving import diff')
+            else:
+                print('diff: no changes recorded')
+
     def setup_spec(self, spec=None, **kwargs):
         if spec is None:
             if self.spec is None:
@@ -352,9 +375,15 @@ class BaseLoader(DjangoManager):
         self.spec.setup(loader=self, **kwargs)
 
     @atomic_dry
-    def _load_rows(self, rows, sep='\t', dry_run=False, template={},
+    def _load_rows(self, rows, sep='\t', template={},
                    skip_on_error=0, validate=False, update=False,
                    bulk=True, first_lineno=None, diff=False):
+        """
+        Do the data loading, called by load()
+
+        Returns a tuple of several diff statistics if parameter diff is True,
+        else returns None.
+        """
         fields = self.spec.fields
         model_name = self.model._meta.model_name
 
@@ -529,11 +558,14 @@ class BaseLoader(DjangoManager):
 
         del fkmap, field, value, pk, obj, m2m
         if update:
-            missing = len(obj_pool) - countOf(obj_pool.values(), None)
-            if missing:
-                print(f'WARNING: {missing} existing {model_name} records '
-                      f'missing from input data')
-            del obj_pool, missing
+            missing_objs = [(j.pk, i) for i, j in obj_pool.items() if j]
+            if missing_objs:
+                print(f'WARNING: {len(missing_objs)} existing {model_name} '
+                      f'reords missing from input data')
+            del obj_pool
+            if not diff:
+                del missing_objs
+
         sleep(0.2)  # let the progress meter finish before printing warnings
 
         for fname, bad_ids in missing_fks.items():
@@ -558,34 +590,33 @@ class BaseLoader(DjangoManager):
             del fname, bad_ids
         del missing_fks, row_skip_count, fk_skip_count
 
-        if upd_objs:
-            update_fields = [i.name for i in fields if not i.many_to_many]
-            if diff:
-                # retrieve old objects again
-                upd_q = make_int_in_filter('pk', [i.pk for i in upd_objs])
-                old_objs = self.filter(upd_q).in_bulk()
-                # compile differences
-                change_set = []
-                for i in upd_objs:
-                    items = []
-                    for j in update_fields:
-                        old_value = getattr(old_objs[i.pk], j)
-                        upd_value = getattr(i, j)
-                        if old_value != upd_value:
-                            if old_value is None:
-                                old_value = '<None>'
-                            elif isinstance(old_value, str):
-                                old_value = f'"{old_value}"'
-                            if upd_value is None:
-                                upd_value = '<None>'
-                            elif isinstance(upd_value, str):
-                                upd_value = f'"{upd_value}"'
-                            items.append(f'{j}: {old_value} -> {upd_value}')
-                    if items:
-                        items = [(i.pk, getattr(i, fields[0].name))] + items
-                        change_set.append(items)
-                del upd_q, old_objs, old_value, upd_value, items
+        update_fields = [i.name for i in fields if not i.many_to_many]
 
+        if diff:
+            change_set = []
+            unchanged_count = 0
+            new_count = len(new_objs)
+            # retrieve old objects again
+            upd_q = make_int_in_filter('pk', [i.pk for i in upd_objs])
+            old_objs = self.filter(upd_q)
+            upd_objs_by_pk = {i.pk: i for i in upd_objs}  # for fast access
+            for i in old_objs.iterator():
+                # compile differences
+                items = []
+                for j in update_fields:
+                    old_value = getattr(i, j)
+                    upd_value = getattr(upd_objs_by_pk[i.pk], j)
+                    if old_value != upd_value:
+                        items.append((j, old_value, upd_value))
+                if items:
+                    change_set.append(
+                        (i.pk, getattr(i, fields[0].name), items)
+                    )
+                else:
+                    unchanged_count += 1
+            del upd_q, old_objs, old_value, upd_value, items
+
+        if upd_objs:
             if bulk:
                 self.fast_bulk_update(upd_objs, fields=update_fields)
             else:
@@ -610,7 +641,7 @@ class BaseLoader(DjangoManager):
                               f'\n{vars(i)=}')
                         raise
 
-        del new_objs, upd_objs
+        del new_objs, upd_objs, update_fields
 
         if m2m_data:
             # get accession -> pk map
@@ -631,16 +662,7 @@ class BaseLoader(DjangoManager):
         sleep(1)  # let progress meter finish before returning
 
         if diff:
-            # save diffs to disk if configured, else return the change set
-            try:
-                diff_dir = settings.IMPORT_DIFF_DIR
-            except AttributeError:
-                pass
-            else:
-                if bool(diff_dir):
-                    save_import_diff(self.model, change_set)
-                    return
-            return change_set
+            return change_set, unchanged_count, new_count, missing_objs
 
     def _update_m2m(self, field_name, m2m_data, update=False):
         """
