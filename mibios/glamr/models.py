@@ -277,9 +277,9 @@ def load_meta_data(dry_run=False):
     """
     dbalias = router.db_for_write(Sample)
     with transaction.atomic(using=dbalias):
-        Reference.loader.load(validate=True, bulk=False)
-        Dataset.loader.load(validate=True, bulk=False)
-        Sample.loader.load_meta(validate=True, update=False, bulk=False)
+        Reference.loader.load()
+        Dataset.loader.load()
+        Sample.loader.load_meta()
         # Sample.objects.sync()
         if dry_run:
             transaction.set_rollback(True, dbalias)
