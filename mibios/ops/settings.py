@@ -15,9 +15,10 @@ from pathlib import Path
 
 from . import get_secret_key
 
-
-# Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/2.2/howto/deployment/checklist/
+
+DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
+
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = get_secret_key(Path('./secret.key'))
@@ -33,8 +34,7 @@ SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 X_FRAME_OPTIONS = 'DENY'
 
-ALLOWED_HOSTS = ['localhost']
-
+ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 # Application definition
 INSTALLED_APPS = [

@@ -1,15 +1,17 @@
 """
-Example settings for a mibios instance
+Example settings for a mibios/glamr instance
 
 Copy this file as settings.py into the instance's base directory.  The settings
 below that, in the original example file, are not commented out, show the
 default and need most likely be adjusted to make the site run.  Other,
 out-commented example settings show the defaults for a production site and are
 settings that are suggested to be modified for a different environment (e.g. in
-development).  There are many more settings in the mibio9s.ops.settings module
-and / or django.conf.settings that can be overwritten here.
+development).  There are many more settings in the mibios.glamr.settings and
+mibios.ops.settings modules and / or django.conf.settings that can be
+overwritten here.
 """
-from mibios.ops.settings import *
+from pathlib import Path
+from mibios.glamr.settings import *  # noqa:F403
 
 
 ### Set to True for development but never in production deployment
@@ -20,7 +22,6 @@ from mibios.ops.settings import *
 
 ### Add additional apps here:
 # INSTALLED_APPS.append('django_extensions')
-INSTALLED_APPS.append('mibios_seqapps.AppConfig')
 
 # User switch magic: needs the remote user injection middleware and set
 # ASSUME_IDENTIY = ('alice', 'bob') so when user bob logs in through the web
@@ -63,8 +64,8 @@ INSTALLED_APPS.append('mibios_seqapps.AppConfig')
 #     },
 # }
 
-# SITE_NAME = 'my site'
-# SITE_NAME_VERBOSE = 'my such-and-such site'
+# SITE_NAME = 'GLAMR'
+# SITE_NAME_VERBOSE = 'GLAMR DB test site'
 
 ### Allowed host settings:
 # ALLOWED_HOSTS = ['localhost', '127.0.0.1']  # default setting
@@ -73,3 +74,20 @@ INSTALLED_APPS.append('mibios_seqapps.AppConfig')
 
 ### Uncomment this do disable caching, for testing/debugging only
 # CACHES['default']['BACKEND'] = 'django.core.cache.backends.dummy.DummyCache'
+
+### Settings for umrad data loading
+# UMRAD_ROOT = Path('/path/to/UMRAD')
+# UMRAD_VERSION = 'DEV_0'
+# UNIREF100_INFO_PATH = Path('path/to/UNIREF100_INFO_special.txt')  # noqa:E501
+# IMPORT_DIFF_DIR = '/path/to/import_diffs/'
+
+### Settings for omics data loading
+# OMICS_DATA_ROOT = Path('/some/where/GLAMR')
+# OMICS_DATA_VERSION = 'JAN_2022'
+# AMPLICON_PIPELINE_BASE = '/some/path/'
+### Settings for glamr data loading
+# GLAMR_META_ROOT = Path('/path/to/GLAMR-Metadata')
+
+### Uncomment to make sqlite's spellfixing work
+### path must end in name of spellfix.so without .so suffix
+# SPELLFIX_EXT_PATH = '/path/to/spellfix'
