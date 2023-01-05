@@ -6,6 +6,6 @@ Related {{ model_name_verbose }} of {{ object_model_name_verbose }}
 <a href="{% url 'record' model=object_model_name pk=object.pk %}">{{ object }}</a>
 [<a href="{% url 'relations_full' model=object_model_name pk=object.pk field=field.name %}">full table</a>]
 </h3>
-{% render_table table %}
+{% render_table table 'glamr/related_records_table.html'%}
 {% endblock %}
 

@@ -1,15 +1,27 @@
 {% extends "glamr/base.html" %}
 {% block content %}
 
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/">Home</a></li>
+    <li class="breadcrumb-item"><a href="/{{ detail_url }}">Data Set</a></li>
+    <li class="breadcrumb-item"><a href="/{{ detail_url }}samples">Samples</a></li>
+    <li class="breadcrumb-item active" aria-current="page">Sample</li>
+  </ol>
+</nav>
+
 <h3>{{ object_model_verbose_name }}: {{ object }}</h3>
 
-<table class="table table-hover table-condensed">
+<table class="table table-hover table-condensed table-sm">
 <tbody>
 {% for name, url, value in details %}
+{% if value %} 
+{# filtering out rows that do not have values to cut down on info on page #}
 <tr>
     <td>{{ name }}:</td>
     <td>{% if url %}<a href="{{ url }}">{{ value }}</a>{% else %}{{ value|default_if_none:"<missing>" }}{% endif %}</td>
 </tr>
+{% endif %}
 {% endfor %}
 {% for name, model_name, qs, field in relations %}
 <tr><td>{{ name }}:</td>

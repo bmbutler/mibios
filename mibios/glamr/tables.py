@@ -246,14 +246,13 @@ class SingleColumnRelatedTable(Table):
 
 
 class SampleTable(Table):
-
-    best_sample_id = Column(
+    sample_name = Column(
         verbose_name='Sample Name/ID',
         # linkify=lambda record: get_sample_url(record),
         empty_values=[],
         linkify=lambda record: reverse('sample', args=[record.pk]),
     )
-    location = Column(
+    geo_loc_name = Column(
         empty_values=[],
         verbose_name='Location / site',
     )
@@ -265,12 +264,15 @@ class SampleTable(Table):
             'amplicon_target',
             'collection_timestamp', 'latitude', 'longitude',
         ]
-        sequence = ['best_sample_id', 'sample_type', '...']
+        sequence = ['sample_name', 'sample_type', '...']
         empty_text = 'There are no samples associated with this dataset'
+        attrs = {
+            "class": "table table-hover"
+        }
 
-    def render_best_sample_id(self, record):
+    def render_sample_name(self, record):
         return str(record)
 
-    def render_location(self, record):
+    def render_geo_loc_name(self, record):
         items = [record.geo_loc_name, record.noaa_site]
         return ' / '.join([i for i in items if i])
