@@ -1,4 +1,5 @@
 {% extends "glamr/base.html" %}
+{% load static %}
 {% load render_table from django_tables2 %}
 {% block content %}
 <h3>
@@ -6,6 +7,6 @@ Related {{ model_name_verbose }} of {{ object_model_name_verbose }}
 <a href="{% url 'record' model=object_model_name pk=object.pk %}">{{ object }}</a>
 [<a href="{% url 'relations' model=object_model_name pk=object.pk field=field.name %}">simple list</a>]
 </h3>
-{% render_table table %}
+{% render_table table 'glamr/related_records_table.html'%}
 {% endblock %}
 

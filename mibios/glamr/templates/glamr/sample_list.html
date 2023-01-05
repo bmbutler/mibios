@@ -1,6 +1,14 @@
 {% extends "glamr/base.html" %}
 {% load render_table from django_tables2 %}
 {% block content %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="/">Home</a></li>
+    <li class="breadcrumb-item"><a href="/dataset/{{ dataset_id }}">Data Set</a></li>
+    <li class="breadcrumb-item active" aria-current="page">Samples</li>
+  </ol>
+</nav>
+
 <h3>Samples for {{ dataset }}:</h3>
 {% render_table table %}
 {% endblock %}

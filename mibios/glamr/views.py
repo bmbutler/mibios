@@ -756,12 +756,47 @@ class SampleListView(SingleTableView):
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['dataset'] = str(self.dataset)
+        ctx['dataset_id'] = str(self.kwargs['pk'])
         return ctx
 
 
 class SampleView(BaseDetailView):
     model = get_sample_model()
+    template_name = 'glamr/sample_detail.html'
+    
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['detail_url'] = self.get_detail_url()
+        ctx['sample_id'] = str(self.kwargs['pk'])
+        
+        return ctx
 
+    def get_detail_url(self):
+        detail_url = ""
+        for i in self.model._meta.get_fields():
+            if i.name != 'dataset':
+                continue
+
+            value = getattr(self.object, i.name, None)
+            
+            if value:
+                if i.many_to_one or i.one_to_one:  # TODO: test 1-1 fields
+                    detail_url = tables.get_record_url(value)
+                elif isinstance(i, URLField):
+                    detail_url = value
+                else:
+                    detail_url = None
+            else:
+                detail_url = None
+
+            if i.name == 'dataset':
+                break;
+
+        if detail_url and detail_url.split("data/"):
+            detail_url = detail_url.split("data/")[1]
+        else:
+            detail_url = "dataset/0/"
+        return detail_url
 
 class SearchView(TemplateView):
     """ offer a form for advanced search, offer model list """
@@ -927,3 +962,5 @@ class ToManyFullListView(ModelTableMixin, ToManyListView):
         super().setup(request, *args, **kwargs)
         # hide the column for the object
         self.exclude.append(self.field.remote_field.name)
+
+
