@@ -600,6 +600,7 @@ class BaseLoader(DjangoManager):
             upd_q = make_int_in_filter('pk', [i.pk for i in upd_objs])
             old_objs = self.filter(upd_q)
             upd_objs_by_pk = {i.pk: i for i in upd_objs}  # for fast access
+            old_value, upd_value, items = None, None, None
             for i in old_objs.iterator():
                 # compile differences
                 items = []
