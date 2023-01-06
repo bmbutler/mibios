@@ -805,10 +805,15 @@ class SearchView(TemplateView):
     def get_context_data(self, **ctx):
         ctx = super().get_context_data(**ctx)
         ctx['advanced_search'] = True
-        ctx['models'] = [
+        
+        # models in alphabetical order
+        model_list = [
             (i._meta.model_name, i._meta.verbose_name)
             for i in get_registry().models.values()
         ]
+        model_list.sort(key=lambda model_list:model_list[1].lower())
+        ctx['models'] = model_list
+        
         return ctx
 
 

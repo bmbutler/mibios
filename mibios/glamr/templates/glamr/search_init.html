@@ -1,16 +1,24 @@
 {% extends "glamr/base.html" %}
+{% load static %}
 {% block content %}
 <div class="row">
 {% include "glamr/search_form_simple.html" %}
 </div>
 </div>
-<h3>Complex search</h3>
-<p>Pick a data category:
-<ul>
-    {% for name, verbose in models %}
-    <li><a href="{% url 'search_model' model=name %}">{{ verbose }}</li>
-    {% endfor %}
-</ul>
-</p>
+
+<h3>Advanced Search</h3>
+
+<div class="dropdown show">
+    <button class="btn btn-primary dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+        Select a data category
+    </button>
+    <div class="dropdown-menu scrollable" aria-labelledby="dropdownMenuLink">
+        {% for name, verbose in models %}
+            <a href="{% url 'search_model' model=name %}" class="dropdown-item">{{ verbose }}</a>
+        {% endfor %}
+    </div>
+    
+</div>
+
 {% endblock %}
 

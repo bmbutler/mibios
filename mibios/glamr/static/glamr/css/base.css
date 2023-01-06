@@ -21,3 +21,8 @@
 .basic-item{
 	padding-top: 12px;
 }
+
+.scrollable {
+    max-height: 400px;
+    overflow-x: hidden;
+}
