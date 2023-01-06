@@ -771,11 +771,11 @@ class BaseLoader(DjangoManager):
         # we don't know which objects are new and which got updated, so we're
         # deleting it all here so we can bulk create below
         print('Deleting existing m2m links for update... ', end='', flush=True)
-        f = make_int_in_filter(our_id_name + '__pk', m2m_data.keys())
-        qs = Through.objects.filter(**f)
+        q = make_int_in_filter(our_id_name + '__pk', m2m_data.keys())
+        qs = Through.objects.filter(q)
         delcount, _ = qs.delete()
         print(f'[{delcount} OK]')
-        del f, qs
+        del q, qs
 
         self.bulk_create_wrapper(Through.objects.bulk_create)(through_objs)
 
