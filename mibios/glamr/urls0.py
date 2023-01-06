@@ -10,6 +10,7 @@ url declarations for the mibios.glamr app
 from django.urls import include, path
 
 from mibios import urls as mibios_urls
+from mibios.omics.views import krona
 from . import views
 
 
@@ -20,6 +21,7 @@ urlpatterns = [
     path('dataset/<int:pk>/', views.DatasetView.as_view(), name='dataset'),
     path('reference/<int:pk>/', views.ReferenceView.as_view(), name='reference'),  # noqa: E501
     path('sample/<int:pk>/', views.SampleView.as_view(), name='sample'),
+    path('sample/<int:sample_pk>/krona/<str:stats_field>/', krona, name='krona'),  # noqa:E501
     path('data/<str:model>/', views.TableView.as_view(), name='generic_table'),  # noqa: E501
     path('data/<str:model>/<int:pk>/', views.RecordView.as_view(), name='record'),  # noqa: E501
     path('data/<str:model>/<int:pk>/overview/', views.OverView.as_view(), name='record_overview'),  # noqa: E501

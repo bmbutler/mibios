@@ -118,7 +118,7 @@ class TaxonAbundanceTable(Table):
 
     class Meta:
         model = omics_models.TaxonAbundance
-        fields = ['sample', 'lin_avg_rpkm', 'lin_gnm_pgc', 'lin_sum_sco']
+        fields = ['sample', 'sum_gene_rpkm']
 
 
 class DatasetTable(Table):

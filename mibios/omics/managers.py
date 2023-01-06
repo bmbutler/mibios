@@ -8,11 +8,11 @@ Assumes that UMRAD and sample meta-data is loaded
     s = Sample.objects.get(sample_id='samp_14')
     Contig.loader.load_fasta_sample(s)
     Gene.loader.load_fasta_sample(s)
-    Contig.loader.load_abundance_sample(s, bulk=False)
-    Gene.loader.load_abundance_sample(s, bulk=False)
+    Contig.loader.load_abundance_sample(s)
+    Gene.loader.load_abundance_sample(s)
     Alignment.loader.load_sample(s)
     Gene.loader.assign_gene_lca(s)
-    Contig.loader.assign_gene_lca(s)
+    Contig.loader.assign_contig_lca(s)
     TaxonAbundance.loader.load_sample(s)
 
 """
@@ -20,6 +20,10 @@ from itertools import groupby, islice
 from logging import getLogger
 from operator import itemgetter
 import os
+import shutil
+from statistics import median
+import subprocess
+import tempfile
 
 from django.conf import settings
 from django.db.models import prefetch_related_objects
@@ -185,9 +189,9 @@ class AlignmentLoader(BulkLoader, SampleLoadMixin):
     def get_file(self, sample):
         return sample.get_metagenome_path() / f'{sample.tracking_id}_GENES.m8'
 
-    def query2gene_pk(self, value, row, obj):
+    def query2gene_pk(self, value, obj):
         """
-        get gene PK from qseqid column for genes
+        Pre-processor to get gene PK from qseqid column for genes
 
         The query column has all that's in the fasta header, incl. the prodigal
         data.  Also add the sample pk (gene is a FK field).
@@ -195,9 +199,9 @@ class AlignmentLoader(BulkLoader, SampleLoadMixin):
         gene_id = value.split('\t', maxsplit=1)[0].partition('_')[2]
         return self.gene_id_map[gene_id]
 
-    def upper(self, value, row, obj):
+    def upper(self, value, obj):
         """
-        upper-case the uniref100 id
+        Pre-processor to upper-case the uniref100 id
 
         the incoming prefixes have mixed case
         """
@@ -452,6 +456,33 @@ class ContigLikeLoader(SequenceLikeLoader):
 
         return lca
 
+    def abundance_stats(self, sample):
+        """
+        Calculate various abundance based statistics per taxon and sample
+
+        Return value is intended to be fed into the per-taxon abundance table.
+        """
+        qs = (self
+              .filter(sample=sample)
+              .exclude(lca=None)
+              .select_related('lca')
+              .order_by('-lca__rank', 'lca'))
+        stats = {}
+        for lca, objs in groupby(qs.iterator(), key=lambda x: x.lca):
+            objs = list(objs)
+
+            # weighted fpkm averages
+            wmedian_fpkm = median((i.fpkm for i in objs for _ in range(i.length)))  # noqa:E501
+
+            stats[lca] = {}
+            stats[lca]['wmedian_fpkm'] = wmedian_fpkm
+            stats[lca]['count'] = len(objs)
+            stats[lca]['length'] = sum((i.length for i in objs))
+            stats[lca]['reads_mapped'] = sum((i.reads_mapped for i in objs))
+            stats[lca]['frags_mapped'] = sum((i.frags_mapped for i in objs))
+
+        return stats
+
 
 class ContigLoader(ContigLikeLoader):
     """ Manager for the Contig model """
@@ -467,17 +498,17 @@ class ContigLoader(ContigLikeLoader):
         return sample.get_metagenome_path() / 'assembly' \
             / f'{sample.tracking_id}_READSvsCONTIGS.rpkm'
 
-    def trim_id(self, value, row, obj):
-        """ trim tracking id off, e.g. deadbeef_123 => 123 """
+    def trim_id(self, value, obj):
+        """ Pre-processor to trim tracking id off, e.g. deadbeef_123 => 123 """
         _, _, value = value.partition('_')
         return value.upper()
 
-    def calc_rpkm(self, value, row, obj):
+    def calc_rpkm(self, value, obj):
         """ calculate rpkm based on total post-QC read-pairs """
         return (1_000_000_000 * int(obj.reads_mapped)
                 / int(obj.length) / self.sample.read_count)
 
-    def calc_fpkm(self, value, row, obj):
+    def calc_fpkm(self, value, obj):
         """ calculate fpkm based on total post-QC read-pairs """
         return (1_000_000_000 * int(obj.frags_mapped)
                 / int(obj.length) / self.sample.read_count)
@@ -553,7 +584,7 @@ class ContigLoader(ContigLikeLoader):
         )
         self.bulk_create_wrapper(Through.objects.bulk_create)(objs)
 
-        self.bulk_update(contigs.values(), fields=['lca'])
+        self.fast_bulk_update(contigs.values(), fields=['lca'])
 
 
 class FuncAbundanceLoader(BulkLoader, SampleLoadMixin):
@@ -591,17 +622,19 @@ class GeneLoader(ContigLikeLoader):
         return sample.get_metagenome_path() / 'genes' \
             / f'{sample.tracking_id}_READSvsGENES.rpkm'
 
-    def extract_gene_id(self, value, row, obj):
-        """ get just the gene id from what was a post-prodigal fasta header """
+    def extract_gene_id(self, value, obj):
+        """
+        Pre-processor to get just the gene id from prodigal fasta header
+        """
         # deadbeef_123_1 # bla bla bla => 123_1
         return value.split(maxsplit=1)[0].partition('_')[2]
 
-    def calc_rpkm(self, value, row, obj):
+    def calc_rpkm(self, value, obj):
         """ calculate rpkm based on total post-QC read-pairs """
         return (1_000_000_000 * int(obj.reads_mapped)
                 / int(obj.length) / self.sample.read_count)
 
-    def calc_fpkm(self, value, row, obj):
+    def calc_fpkm(self, value, obj):
         """ calculate fpkm based on total post-QC read-pairs """
         return (1_000_000_000 * int(obj.frags_mapped)
                 / int(obj.length) / self.sample.read_count)
@@ -695,7 +728,7 @@ class GeneLoader(ContigLikeLoader):
         self.bulk_create_wrapper(Through.objects.bulk_create)(objs)
 
         # update lca field for all genes incl. the unknowns
-        self.bulk_update(genes, fields=['lca', 'besthit_id'])
+        self.fast_bulk_update(genes, fields=['lca', 'besthit'])
         print('Erasing lca for genes without any hits... ', end='', flush=True)
         num_unknown = self.filter(hits=None).update(lca=None)
         print(f'{num_unknown} [OK]')
@@ -862,63 +895,150 @@ class SampleManager(Manager):
             )
 
 
-class TaxonAbundanceLoader(Manager):
+class TaxonAbundanceManager(Manager):
     """ loader manager for the TaxonAbundance model """
     ok_field_name = 'tax_abund_ok'
 
     @atomic_dry
-    def load_sample(self, sample, validate=False):
+    def populate_sample(self, sample, validate=False):
         """
         populate the taxon abundance table for a single sample
 
         This requires that the sample's genes' LCAs have been set.
         """
-        print('Fetching taxonomy... ', end='', flush=True)
-        Ancestry = Taxon._meta.get_field('ancestors').remote_field.through
-        qs = (
-            Ancestry.objects
-            .filter(from_taxon__gene__sample=sample)
-            .distinct()
-            .values_list('from_taxon_id', 'to_taxon_id')
-            .order_by('from_taxon_id')
-        )
-        # map of PKs from a gene's taxon to list of ancestor tax nodes
-        # (for those that have ancestors, so not root's immediate children
-        # (domains of life and unplaced stuff))
-        ancestors = {
-            from_pk: [i for _, i in grp]
-            for from_pk, grp in groupby(qs, key=lambda x: x[0])
-        }
-        print(f'{len(ancestors)} [OK]')
+        qs = self.filter(sample=sample)
+        if qs.exists():
+            print('Deleting existing data... ', end='', flush=True)
+            _, num_deleted = qs.delete()
+            print(f'{num_deleted} [OK]')
 
-        print('Accumulating RPKMs... ', end='', flush=True)
-        data = {}
-        qs = sample.gene_set.values_list('lca_id', 'rpkm')
-        for lca_id, gene_rpkm in qs.iterator():
-            if lca_id is None:
-                continue
+        Contig = import_string('mibios.omics.models.Contig')
+        Gene = import_string('mibios.omics.models.Gene')
+        print('Compiling stats for contigs... ', end='', flush=True)
+        contig_stats = Contig.loader.abundance_stats(sample)
+        print(f'{len(contig_stats)} [OK]')
+        print('Compiling stats for genes... ', end='', flush=True)
+        gene_stats = Gene.loader.abundance_stats(sample)
+        print(f'{len(gene_stats)} [OK]')
 
-            for j in [lca_id] + ancestors.get(lca_id, []):
-                try:
-                    data[j] += gene_rpkm
-                except KeyError:
-                    data[j] = gene_rpkm
-        print(f'{len(data)} [OK]')
+        # taxa for which we have stats don't quite overlap genes vs. contigs,
+        # but we'll create an object for each taxon and fill in default values
+        # (0.0) for each statistics that is missing
+        taxa = set(contig_stats.keys()).union(gene_stats.keys())
 
-        objs = (
-            self.model(sample=sample, taxon_id=k, sum_gene_rpkm=v)
-            for k, v in data.items()
-        )
+        def fpkm(count, length):
+            """
+            calculate fpkm: count per kb length per 1m sequenced readpairs
+            """
+            if not count and not length:
+                # return 0.0 fpkm for missing data and avoid zero division
+                # but still catch bad data (zero length but non-zero count)
+                return 0.0
+            return 1_000_000_000 * count / (length * sample.read_count)
 
-        if validate:
-            objs = list(objs)
-            for i in objs:
-                try:
-                    i.full_clean()
-                except Exception:
-                    print(f'validation failed: {vars(i)}')
-                    raise
+        total = sample.read_count
+        objs = []
+        empty_dict = {}  # stand-in so getting the default works
+        for taxon in taxa:
+            cont_st = contig_stats.get(taxon, empty_dict)
+            gene_st = gene_stats.get(taxon, empty_dict)
 
+            len_contigs = cont_st.get('length', 0)
+            len_genes = gene_st.get('length', 0)
+            frags_mapped_contig = cont_st.get('frags_mapped', 0)
+            frags_mapped_gene = gene_st.get('frags_mapped', 0)
+
+            objs.append(self.model(
+                sample=sample,
+                taxon=taxon,
+                count_contig=cont_st.get('count', 0),
+                count_gene=gene_st.get('count', 0),
+                len_contig=len_contigs,
+                len_gene=len_genes,
+                mean_fpkm_contig=fpkm(frags_mapped_contig, len_contigs),
+                mean_fpkm_gene=fpkm(frags_mapped_gene, len_genes),
+                wmedian_fpkm_contig=cont_st.get('wmedian_fpkm', 0.0),
+                wmedian_fpkm_gene=gene_st.get('wmedian_fpkm', 0.0),
+                norm_reads_contig=cont_st.get('reads_mapped', 0.0) / total,
+                norm_reads_gene=gene_st.get('reads_mapped', 0.0) / total,
+                norm_frags_contig=frags_mapped_contig / total,
+                norm_frags_gene=frags_mapped_gene / total,
+            ))
         self.bulk_create(objs)
-        setattr(sample, self.ok_field_name, True)
-        sample.save()
+
+    def as_krona_input_text(self, sample, field_name):
+        """
+        Generate input text data for krona
+
+        Will return an empty string if no abundance data is saved for the given
+        sample.
+        """
+        # field_name may be user input from http requests, double-check that
+        # this is a real field, so we don't send garbage to krona (via the
+        # getattr below)
+        self.model._meta.get_field(field_name)  # may raise FieldDoesNotExist
+
+        qs = self.filter(sample=sample).select_related('taxon')
+        qs = qs.prefetch_related('taxon__ancestors')
+
+        rows = []
+        for i in qs.iterator():
+            lin = sorted(i.taxon.ancestors.all(), key=lambda x: x.rank)
+            row = [str(getattr(i, field_name))] + [i.name for i in lin]
+            rows.append('\t'.join(row))
+        return '\n'.join(rows)
+
+    def as_krona_html(self, sample, field, outpath=None):
+        """
+        Generate the krona html file
+
+        If outpath is given this is save to the file system, if it is None, the
+        default, then Krona's html content is the return value (indended to be
+        used by a view).  In the latter case a None return value indicates
+        either an error with running the krona generator or missing abundance
+        data (Check the django error log for details.)
+        """
+        # TODO: caching, have a settings option to store krona's static files
+        # (CSS, ...) locally instead of at sourceforge or wherever.
+        with tempfile.TemporaryDirectory() as tmpd:
+            krona_in = tmpd + '/data.txt'
+            krona_out = tmpd + '/krona.html'
+
+            with open(krona_in, 'w') as ofile:
+                txt = self.as_krona_input_text(sample, field)
+                if txt:
+                    ofile.write(txt)
+                else:
+                    # no abundance data for this sample.  If we were to
+                    # continue, krona will happily make a page, which would be
+                    # mostly empty, will little indication whats going on.
+                    if outpath is None:
+                        # assume the calling view handles errors
+                        log.error(
+                            'no tax abundance data, not generating krona page'
+                        )
+                        return None
+                    else:
+                        raise ValueError('no abundance data')
+
+            cmd = [
+                'ktImportText',
+                '-n', f'all of {sample}',
+                '-o', krona_out,
+                krona_in
+            ]
+            try:
+                subprocess.run(cmd, cwd=tmpd, check=True)
+            except subprocess.CalledProcessError as e:
+                # e.g. krona not installed
+                if outpath is None:
+                    raise
+                else:
+                    log.error(f'krona failed: {e}')
+                    return None
+
+            if outpath is None:
+                with open(krona_out) as ifile:
+                    return ifile.read()
+            else:
+                shutil.copy2(krona_out, outpath)

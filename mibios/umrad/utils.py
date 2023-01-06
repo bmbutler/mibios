@@ -1,7 +1,7 @@
 from datetime import datetime
 from functools import partial, wraps
 from inspect import signature
-from itertools import zip_longest
+from itertools import chain, zip_longest
 from operator import length_hint
 import os
 from pathlib import Path
@@ -11,7 +11,9 @@ import sys
 
 import pandas
 
+from django.conf import settings
 from django.db import router, transaction
+from django.db.models import Q
 
 # Workaround for weird pandas/xlrd=1.2/defusedxml combination runtime issue,
 # we'll get an AttributeError: 'ElementTree' object has no attribute
@@ -346,6 +348,7 @@ class InputFileSpec:
     IGNORE_COLUMN = object()
     SKIP_ROW = object()
     CALC_VALUE = object()
+    NO_HEADER = object()
 
     empty_values = []
     """
@@ -355,8 +358,8 @@ class InputFileSpec:
 
     def __init__(self, *column_specs):
         self._spec = column_specs or None
-        self._fields = None
-        self._convfuncs = None
+
+        # set by setup():
         self.model = None
         self.loader = None
         self.path = None
@@ -387,19 +390,18 @@ class InputFileSpec:
 
         self.empty_values += self.loader.empty_values
 
-        cols = []  # used column header
-        all_cols = []  # all row column headers, as in file
-        keys = []  # used keys, usually field names
-        row_keys = []  # all row keys incl. Nones
-        # conversion functions, one (or None) per used columns plus non-column
-        # value calculation:
-        conv = []
+        col_names = []  # all row column headers, as in file
+        col_index = []  # index of actually used columns
+        keys = []
+        field_names = []
+        fields = []
+        prepfuncs = []
 
+        cur_col_index = None  # for non-header input, defined by order in spec
         for spec_line in column_specs:
             # TODO: re-write as match statement?
             # FIXME: two-str-items format can be <col> <field> OR <field> <fun>
             # with no super easy way to distinguish them
-            orig_spec_line = spec_line
             if not isinstance(spec_line, tuple):
                 # no-header-simple-format
                 spec_line = (spec_line, )
@@ -414,89 +416,89 @@ class InputFileSpec:
                     self.has_header = True
 
             if not self.has_header:
-                # add None as column name placeholder
-                spec_line = (None, *spec_line)
+                spec_line = (self.NO_HEADER, *spec_line)
 
-            colname, key, *convfunc = spec_line
+            colname, key, *prepfunc = spec_line
 
-            if colname is not self.CALC_VALUE:
+            if colname is self.CALC_VALUE:
+                if key is None:
+                    raise RuntimeError('require key (field name) for for which'
+                                       'to calculate a value')
+
+                if not self.has_header:
+                    col_index.append(self.CALC_VALUE)
+            else:
                 # current spec item is for a column in input
-                if self.has_header:
-                    all_cols.append(colname)
-                elif colname is not None:
-                    raise RuntimeError(f'got column name but assumed no '
-                                       f'header: {orig_spec_line}')
-                row_keys.append(key)
+                if not self.has_header:
+                    # add 0-based numerical index for column name
+                    # these have to be counted here
+                    if cur_col_index is None:
+                        cur_col_index = 0
+                    else:
+                        cur_col_index += 1
 
                 if key is None:
                     # ignore this column
                     continue
 
-            if '.' in key:
-                key, _, attr = key.partition('.')
-                self.fk_attrs[key] = attr
+                if not self.has_header:
+                    col_index.append(cur_col_index)
 
+            col_names.append(colname)
             keys.append(key)
-            if convfunc:
-                if len(convfunc) > 1:
-                    raise ValueError(
-                        f'too many items in spec for {colname}/{key}'
-                    )
-                convfunc = convfunc[0]
-                if isinstance(convfunc, str):
-                    convfunc_name = convfunc
-                    # getattr gives us abound method:
-                    convfunc = getattr(loader, convfunc_name)
-                    if not callable(convfunc):
+
+            if '.' in key:
+                field_name, _, attr = key.partition('.')
+                self.fk_attrs[field_name] = attr
+            else:
+                field_name = key
+
+            field = self.model._meta.get_field(field_name)
+            fields.append(field)
+            field_names.append(field_name)
+
+            if len(prepfunc) == 0:
+                # no pre-proc method set, add auto-magic stuff as-needed here
+                if field.choices:
+                    # automatically attach prep method for choice fields
+                    prepfunc = self.loader.get_choice_value_prep_method(field)
+            elif len(prepfunc) > 1:
+                raise ValueError(f'too many items in spec for {colname}/{key}')
+            elif len(prepfunc) == 1 and prepfunc[0] is None:
+                # pre-proc method explicitly set to None
+                prepfunc = None
+            else:
+                # a non-None pre-proc method is given
+                prepfunc = prepfunc[0]
+                if isinstance(prepfunc, str):
+                    prepfunc_name = prepfunc
+                    # getattr gives us a bound method:
+                    prepfunc = getattr(loader, prepfunc_name)
+                    if not callable(prepfunc):
                         raise ValueError(
                             f'not the name of a {self.loader} method: '
-                            f'{convfunc_name}'
+                            f'{prepfunc_name}'
                         )
-                elif callable(convfunc):
+                elif callable(prepfunc):
                     # Assume it's a function that takes the loader as
                     # 1st arg.  We get this when the previoudsly
                     # delclared method's identifier is passed directly
                     # in the spec's declaration.
-                    convfunc = partial(convfunc, self.loader)
+                    prepfunc = partial(prepfunc, self.loader)
                 else:
-                    raise ValueError(f'not a callable: {convfunc}')
-            else:
-                convfunc = None
+                    raise ValueError(f'not a callable: {prepfunc}')
 
-            if colname is self.CALC_VALUE and convfunc is None:
-                raise ValueError('callable for value calculation missing')
+            prepfuncs.append(prepfunc)
 
-            conv.append(convfunc)
-
-        self.all_cols = all_cols
-        self.cols = cols
-        self.row_keys = row_keys
+        self.col_names = col_names
+        self.col_index = col_index
         self.keys = keys
-        self._convfuncs_raw = conv
+        self.field_names = field_names
+        self.fields = tuple(fields)
+        self.prepfuncs = tuple(prepfuncs)
 
     def __len__(self):
         return len(self._spec)
-
-    def get_fields(self):
-        if self._fields is None:
-            self._fields = \
-                tuple((self.model._meta.get_field(i) for i in self.keys))
-        return self._fields
-
-    def get_convfuncs(self):
-        if self._convfuncs is None:
-            convfuncs = []
-            for field, fn in zip(self.get_fields(), self._convfuncs_raw):
-                if fn is None and field.choices:
-                    # automatically attach prep method for choice fields
-                    convfuncs.append(
-                        self.loader.get_choice_value_prep_function(field)
-                    )
-                else:
-                    convfuncs.append(fn)
-            self._convfuncs = tuple(convfuncs)
-
-        return self._convfuncs
 
     def iterrows(self):
         """
@@ -516,25 +518,26 @@ class InputFileSpec:
 
         :param list row: A list of str
         """
-        fields = list(self.get_fields())
-        convfuncs = list(self.get_convfuncs())
-        # zip: skips extra columns in row beyond row_keys
-        for key, value in zip(self.row_keys, row):
-            if key is None:
-                continue  # skip this column
-            field = fields.pop(0)
-            if value in self.empty_values or value in field.empty_values:
-                value = None
-            yield (field, convfuncs.pop(0), value)
-        # non-row items, values get calculated
-        for i, j in zip(fields, convfuncs):
-            if i is None or j is None:
-                raise ValueError(f'expect field and callable but got {i}/{j}')
-            yield (i, j, None)
+        it = zip(self.fields, self.prepfuncs, self.col_names, self.col_index)
+        for field, fn, col_name, col_i in it:
+            if col_name is self.CALC_VALUE:
+                if fn is None:
+                    # No method was provided in spec, so we let them skip this
+                    # one and trust that this field was or will be set via some
+                    # other field's processing.
+                    value = self.IGNORE_COLUMN
+                else:
+                    # fn will calculate value
+                    value = None
+            else:
+                value = row[col_i]
+                if value in self.empty_values or value in field.empty_values:
+                    value = None
+            yield (field, fn, value)
 
-    def row2dict(self, row):
-        """ turn a row (of values) into a dict with field names as keys """
-        return {field.name: val for field, _, val in self.row_data(row)}
+    def row2dict(self, row_data):
+        """ turn result of row_data() into a dict with field names as keys """
+        return {field.name: val for field, _, val in row_data}
 
 
 class CSV_Spec(InputFileSpec):
@@ -551,24 +554,30 @@ class CSV_Spec(InputFileSpec):
         """
         consumes and checks a single line of columns headers
 
+        Calling this will set up the column_index that is needed to iterate
+        over the rows.
+
         Overwrite this method if your file has a more complex layout.  Make
         sure this method consumes all non-data rows at the beginning of the
         file.
         """
         head = file.readline().rstrip('\n').split(self.sep)
-        cols = self.all_cols
-        for i, (a, b) in enumerate(zip(head, cols), start=1):
-            # ignore column number differences here, will catch later
-            if a != b:
-                raise ValueError(
-                    f'Unexpected header row: first mismatch in column '
-                    f'{i}: got "{a}", expected "{b}"'
-                )
-        if len(head) != len(self.all_cols):
-            raise ValueError(
-                f'expecting {len(self)} columns but got '
-                f'{len(head)} in header row'
-            )
+        col_pos = {colname: pos for pos, colname in enumerate(head)}
+
+        column_index = []
+        for col in self.col_names:
+            if col is self.CALC_VALUE:
+                column_index.append(self.CALC_VALUE)
+            else:
+                try:
+                    pos = col_pos[col]
+                except KeyError:
+                    raise RuntimeError(
+                        f'column "{col}" not found in header: {head}'
+                    )
+
+                column_index.append(pos)
+        self.col_index = column_index
 
     def iterrows(self):
         """
@@ -598,7 +607,8 @@ class ExcelSpec(InputFileSpec):
         df = pandas.read_excel(
             str(self.path),
             sheet_name=self.sheet_name,
-            usecols=self.all_cols,
+            # TODO: only read columns we need
+            # usecols=...,
             na_values=self.empty_values,
             keep_default_na=False,
         )
@@ -607,13 +617,36 @@ class ExcelSpec(InputFileSpec):
         df = df.where(pandas.notnull(df), None)
         return df
 
+    def process_header(self, df):
+        """
+        Populate the column index
+        """
+        col_pos = {colname: pos for pos, colname in enumerate(df.columns)}
+
+        column_index = []
+        for col in self.col_names:
+            if col is self.CALC_VALUE:
+                column_index.append(col_pos)
+            else:
+                try:
+                    pos = col_pos[col]
+                except KeyError:
+                    raise RuntimeError(
+                        f'column not found: {col=} in {col_pos=}'
+                    )
+
+                column_index.append(pos)
+        self.col_index = column_index
+
     def iterrows(self):
         """
         An iterator over the table's rows, yields Pandas.Series instances
 
         :param pathlib.Path path: path to the data file
         """
-        for _, row in self.get_dataframe().iterrows():
+        df = self.get_dataframe()
+        self.process_header(df)  # this call has to be made somewhere
+        for _, row in df.iterrows():
             yield row
 
 
@@ -683,3 +716,120 @@ def atomic_dry(f):
                 transaction.set_rollback(True, dbalias)
             return retval
     return wrapper
+
+
+def compile_ranges(int_list, min_range_size=2):
+    """
+    Compile ranges and singles from sequence of integers
+
+    This is a helper for make_int_in_filter.
+
+    Ranges will be (start, end) and inclusive, as for Django's range lookup and
+    SQL's BETWEEN operator.
+    """
+    END = object()
+    singles = []
+    ranges = []
+    range_min = None
+    range_max = None
+
+    ints = chain(sorted(set(int_list)), [END])
+    first = next(ints)
+    if first is END:
+        return ranges, singles
+    else:
+        # initilize a range
+        range_min = first
+        range_max = first
+
+    for i in ints:
+        if i == range_max + 1:
+            # extend current range
+            range_max = i
+        else:
+            # finish current range
+            if range_max - range_min + 1 >= min_range_size:
+                ranges.append((range_min, range_max))
+            else:
+                for j in range(range_min, range_max + 1):
+                    singles.append(j)
+            # start new range
+            range_min = i
+            range_max = i
+    return ranges, singles
+
+
+def make_int_in_filter(lookup_name, integers):
+    """
+    Make a range lookup filter from a list of integers
+
+    Use this for really long lists of mostly consequetive integers.  If the
+    given list has only singles, or is empty, this will return the expected
+
+        Q(<lookup_name>__in=integers)
+
+    but for consequitive numbers __range lookups will be added as in
+
+        Q(<lookup_name>__range=(start, end))
+
+    The idea is that for most workloads this will result in a smaller SQL
+    statement and maybe even a smaller query execution time.  In particular
+    with sqlite2 we seem to run into some limit when using __in with a list of
+    more than 250,000 integers, givinh us a "too many variables" error.
+    """
+    ranges, singles = compile_ranges(integers)
+    q = Q(**{lookup_name + '__in': singles})
+    for start, end in ranges:
+        q = q | Q(**{lookup_name + '__range': (start, end)})
+    return q
+
+
+def save_import_diff(model, changes, unchanged_count, new_count, missing_objs,
+                     path=None, dry_run=False):
+    """
+    Save change set to disk, called by Loader.load()
+    """
+    if path is None:
+        path = settings.IMPORT_DIFF_DIR
+
+    summary = (f'new: {new_count},  changed: {len(changes)},  unchanged: '
+               f'{unchanged_count},  missing: {len(missing_objs)}')
+    print('Summary:', summary)
+    now = datetime.now()
+
+    if dry_run:
+        opath = Path(path) / f'{model._meta.model_name}.dryrun.txt'
+    else:
+        # try to make a unique filename, but overwrite after last attempt
+        def suffixes():
+            yield '.txt'
+            for i in range(1, 99):
+                yield f'.{i}.txt'
+        obase = Path(path) / f'{model._meta.model_name}.{now.date()}.txt'
+        for suf in suffixes():
+            opath = obase.with_suffix(suf)
+            if not opath.exists():
+                break
+
+    def fmt(val):
+        """ value formatter """
+        if val is None:
+            return '<None>'
+        elif isinstance(val, str):
+            return f'"{val}"'
+        else:
+            return val
+
+    with opath.open('w') as ofile:
+        ofile.write(f'=== {now} ===\nSummary:   {summary}\n')
+        for pk, record_id, items in changes:
+            items = [
+                f'{field}: {fmt(old)}  ->  {fmt(new)}'
+                for field, old, new in items
+            ]
+            ofile.write(f'{pk}\t{record_id}\t{items[0]}\n')
+            for i in items[1:]:
+                ofile.write(f'\t\t{i}\n')
+        for pk, key in missing_objs:
+            ofile.write(f'missing: {pk} / {key}\n')
+    print(f'Diff saved to: {opath}')

@@ -6,7 +6,8 @@ from operator import attrgetter, length_hint
 from time import sleep
 
 from django.conf import settings
-from django.core.exceptions import FieldDoesNotExist, ValidationError
+from django.core.exceptions import ValidationError
+from django.db import connection, transaction
 from django.db.models.manager import Manager as DjangoManager
 from django.utils.module_loading import import_string
 
@@ -16,7 +17,7 @@ from mibios.models import (
 )
 
 from .utils import (CSV_Spec, ProgressPrinter, atomic_dry,
-                    get_last_timer)
+                    get_last_timer, make_int_in_filter, save_import_diff)
 
 
 log = getLogger(__name__)
@@ -28,7 +29,10 @@ class InputFileError(Exception):
 
     We may expect this error and may tolerate it and skip the offending line
     """
-    pass
+    def __init__(self, *args):
+        args = [f'{type(i).__name__}: {i}' if isinstance(i, Exception) else i
+                for i in args]
+        super().__init__(*args)
 
 
 class BulkCreateWrapperMixin:
@@ -162,7 +166,9 @@ class BulkCreateWrapperMixin:
                 except Exception as e:
                     print(f'ERROR updating {model_name or "?"}: batch 1st: '
                           f'{vars(batch[0])=}')
-                    raise RuntimeError('error updating batch', batch) from e
+                    print(f'{len(batch)=} {batch[:10]=}')
+                    print(f'{batch[-10:]=}')
+                    raise RuntimeError('error updating batch') from e
                 pp.inc(len(batch))
 
             pp.finish()
@@ -239,6 +245,24 @@ class BaseLoader(DjangoManager):
     """
     empty_values = []
 
+    _DEFAULT_LOAD_KWARGS = dict(
+        sep=None,
+        skip_on_error=0,
+        update=False,
+        bulk=False,
+        validate=False,
+        diff=False,
+    )
+    # Inheriting classes can set default kwargs for load() here.  In __init__()
+    # anything missing is set from _DEFAULT_LOAD_KWARGS above, which inheriting
+    # classes should not change (assuming they want to use our load().
+    default_load_kwargs = {}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for k, v in self._DEFAULT_LOAD_KWARGS.items():
+            self.default_load_kwargs.setdefault(k, v)
+
     def get_file(self):
         """
         Return pathlib.Path to input data file
@@ -252,9 +276,8 @@ class BaseLoader(DjangoManager):
     simple list, listing the fields in the right order.
     """
 
-    def load(self, spec=None, start=0, limit=None, dry_run=False, sep=None,
-             parse_only=False, file=None, template={}, skip_on_error=False,
-             update=False, bulk=False, validate=True):
+    def load(self, spec=None, start=0, limit=None, dry_run=False,
+             parse_into=None, file=None, template={}, **kwargs):
         """
         Load data from file
 
@@ -263,10 +286,11 @@ class BaseLoader(DjangoManager):
         :param int limit:
             Stop after reading this many records.  If None (the default), then
             load all data.
-        :param bool parse_only:
-            Return each row as a dict and don't use the general loader logic.
-        :param bool skip_on_error:
-            If True, then certain Exceptions raised while processing a line of
+        :param list parse_into:
+            If an empty list is passed, then we run in "parse only" mode.  The
+            parsed data is appended to the provided list.
+        :param int skip_on_error:
+            If not 0, then certain Exceptions raised while processing a line of
             the input file cause the line to be skipped and an error message to
             be printed.
         :param bool validate:
@@ -275,11 +299,18 @@ class BaseLoader(DjangoManager):
             issue as this way the error message will point to the offending
             line.
 
-        May assume empty table ?!?
         """
+        # Most work is delegated to _load_rows(), here in the body of load() we
+        # just do some setup and clean-up stuff.
+
+        # set default kwargs if any are missing
+        for k, v in self.default_load_kwargs.items():
+            kwargs.setdefault(k, v)
+
+        # setup spec
         setup_kw = dict(spec=spec)
-        if sep is not None:
-            setup_kw['sep'] = sep
+        if kwargs['sep'] is not None:
+            setup_kw['sep'] = kwargs['sep']
         if file is not None:
             setup_kw['path'] = file
         self.setup_spec(**setup_kw)
@@ -293,20 +324,17 @@ class BaseLoader(DjangoManager):
                 stop = start + limit
             row_it = islice(row_it, start, stop)
 
-        if parse_only:
-            return self._parse_rows(row_it)
+        if parse_into is not None:
+            self._parse_rows(row_it, parse_into=parse_into)
+            return
 
         try:
-            return self._load_rows(
+            diff_info = self._load_rows(
                 row_it,
                 template=template,
-                sep=sep,
                 dry_run=dry_run,
-                skip_on_error=skip_on_error,
-                validate=validate,
-                update=update,
-                bulk=bulk,
                 first_lineno=start + 2 if self.spec.has_header else 1,
+                **kwargs
             )
         except Exception:
             # cleanup progress printing (if any)
@@ -317,6 +345,27 @@ class BaseLoader(DjangoManager):
                 pass
             raise
 
+        if kwargs.get('diff', False):
+            change_set, unchanged_count, new_count, missing_objs = diff_info
+            if new_count or change_set or missing_objs:
+                try:
+                    diff_dir = settings.IMPORT_DIFF_DIR
+                except AttributeError:
+                    diff_dir = ''
+
+                if diff_dir:
+                    save_import_diff(
+                        self.model,
+                        change_set, unchanged_count,
+                        new_count, missing_objs,
+                        dry_run=dry_run,
+                    )
+                else:
+                    print('WARNING: IMPORT_DIFF_DIR not configured - not '
+                          'saving import diff')
+            else:
+                print('diff: no changes recorded')
+
     def setup_spec(self, spec=None, **kwargs):
         if spec is None:
             if self.spec is None:
@@ -326,22 +375,21 @@ class BaseLoader(DjangoManager):
         self.spec.setup(loader=self, **kwargs)
 
     @atomic_dry
-    def _load_rows(self, rows, sep='\t', dry_run=False, template={},
-                   skip_on_error=False, validate=False, update=False,
-                   bulk=True, first_lineno=None):
-        ncols = len(self.spec.all_cols)
-        fields = self.spec.get_fields()
-        num_line_errors = 0
-        max_line_errors = 10  # > 0
+    def _load_rows(self, rows, sep='\t', template={},
+                   skip_on_error=0, validate=False, update=False,
+                   bulk=True, first_lineno=None, diff=False):
+        """
+        Do the data loading, called by load()
 
-        pp = ProgressPrinter(
-            f'{self.model._meta.model_name} rows read from file'
-        )
-        rows = pp(rows)
+        Returns a tuple of several diff statistics if parameter diff is True,
+        else returns None.
+        """
+        fields = self.spec.fields
+        model_name = self.model._meta.model_name
 
         if update:
-            print(f'Retrieving {self.model._meta.model_name} records for '
-                  f'update mode... ')
+            print(f'Retrieving {model_name} records for update mode... ',
+                  end='', flush=True)
             obj_pool = self._get_objects_for_update(template)
             print(f'[{len(obj_pool)} OK]')
 
@@ -371,66 +419,69 @@ class BaseLoader(DjangoManager):
             }
             print('[OK]')
 
-        objs = []
+        pp = ProgressPrinter(f'{model_name} rows read from file')
+        new_objs = []  # will be created
+        upd_objs = []  # will be updated
         m2m_data = {}
         missing_fks = defaultdict(set)
         row_skip_count = 0
         fk_skip_count = 0
         pk = None
 
-        for lineno, row in enumerate(rows, start=first_lineno):
-            if num_line_errors >= max_line_errors:
-                raise RuntimeError('ERROR: too many per-line errors')
-
-            if len(row) != ncols:
-                err_msg = (f'\nERROR: on line {lineno}: bad num of cols: '
-                           f'{len(row)} expected: {ncols=}')
-                if skip_on_error:
-                    print(err_msg)
-                    num_line_errors += 1
-                    continue
-                raise InputFileError(err_msg)
-
+        for lineno in self.iterate_rows(pp(rows), start=first_lineno):
             obj = None
+            obj_is_new = None
             m2m = {}
-            for field, fn, value in self.spec.row_data(row):
+            for field, fn, value in self.current_row_data:
 
                 if callable(fn):
                     try:
-                        value = fn(value, row, obj)
+                        value = fn(value, obj)
                     except InputFileError as e:
+                        msg = (f'\nERROR at line {lineno} / field {field}: '
+                               f'value was "{value}" -- {e}')
                         if skip_on_error:
-                            print(f'\nERROR on line {lineno}: {e} -- will '
-                                  f'skip offending row\n{row}')
-                            num_line_errors += 1
+                            print(msg, '-- will skip offending row:')
+                            print(self.current_row)
+                            skip_on_error -= 1
                             break  # skips line
-                        raise
+                        else:
+                            print(msg)
+                            raise
 
-                    if value is self.spec.IGNORE_COLUMN:
-                        continue  # next column
-                    elif value is self.spec.SKIP_ROW:
-                        row_skip_count += 1
-                        break  # skips line / avoids for-else block
+                if value is self.spec.IGNORE_COLUMN:
+                    continue  # next column
+
+                if value is self.spec.SKIP_ROW:
+                    row_skip_count += 1
+                    break  # skips line / avoids for-else block
 
                 if obj is None:
+                    # the first field
                     if update:
                         # first field MUST identify the object, the value's
                         # type must match the obj pool's keys
-                        try:
+                        if value is None:
+                            row_skip_count += 1
+                            break  # skips line
+                        elif value in obj_pool:
                             obj = obj_pool[value]
-                        except KeyError as e:
-                            if skip_on_error:
-                                print(
-                                    f'\nERROR on line {lineno}: update mode, '
-                                    f'but found no record with key {e} -- '
-                                    f'will skip offending row:\n{row}'
+                            if obj is None:
+                                raise RuntimeError(
+                                    f'duplicate key value: {value} at line '
+                                    f'{lineno}'
                                 )
-                                num_line_errors += 1
-                                break  # skip this row
-                            raise
+                            obj_pool[value] = None
+                            obj_is_new = False
+                            # this value is already set, next field please
+                            continue
+                        else:
+                            obj = self.model(**template)
+                            obj_is_new = True
 
                     else:
                         obj = self.model(**template)
+                        obj_is_new = True
 
                 if field.many_to_many:
                     # the "value" here is a list of tuples of through model
@@ -440,7 +491,7 @@ class BaseLoader(DjangoManager):
                     # will later be replaced by the pk/id.)  If value comes in
                     # as a str, this list-of-tuples is generated below.  If it
                     # is neither None nor a str, the we assume that a
-                    # conversion function has taken care of everything.  For
+                    # pre-processing method has taken care of everything.  For
                     # through models with additional data the parameters must
                     # be in the correct order.
                     if value is None:
@@ -487,23 +538,34 @@ class BaseLoader(DjangoManager):
                     try:
                         obj.full_clean()
                     except ValidationError as e:
+                        print(f'\nERROR on line {lineno}: '
+                              f'{"(new)" if obj_is_new else "(update)"} {e}'
+                              f'offending row:\n{self.current_row}')
                         if skip_on_error:
-                            print(f'\nERROR on line {lineno}: {e} -- will '
-                                  f'skip offending row\n{row}')
-                            num_line_errors += 1
+                            print('-- skipped row --')
+                            skip_on_error -= 1
                             continue  # skips line
-                        print(f'\nERROR on line {lineno}: {e}')
-                        print('offending row:', row)
                         print(f'{vars(obj)=}')
                         raise
 
-                objs.append(obj)
+                if obj_is_new:
+                    new_objs.append(obj)
+                else:
+                    upd_objs.append(obj)
+
                 if m2m:
                     m2m_data[obj.get_accessions()] = m2m
 
-        del fkmap, field, value, row, pk, obj, m2m
+        del fkmap, field, value, pk, obj, m2m
         if update:
+            missing_objs = [(j.pk, i) for i, j in obj_pool.items() if j]
+            if missing_objs:
+                print(f'WARNING: {len(missing_objs)} existing {model_name} '
+                      f'reords missing from input data')
             del obj_pool
+            if not diff:
+                del missing_objs
+
         sleep(0.2)  # let the progress meter finish before printing warnings
 
         for fname, bad_ids in missing_fks.items():
@@ -520,7 +582,7 @@ class BaseLoader(DjangoManager):
             print(f'Skipped {row_skip_count} rows (blank rows/other reasons '
                   f'see file spec)')
 
-        if not objs:
+        if not new_objs and not upd_objs:
             print('WARNING: nothing saved, empty file or all got skipped')
             return
 
@@ -528,36 +590,59 @@ class BaseLoader(DjangoManager):
             del fname, bad_ids
         del missing_fks, row_skip_count, fk_skip_count
 
-        if update:
-            # m2m fields must be updated later
-            update_fields = [i.name for i in fields if not i.many_to_many]
+        update_fields = [i.name for i in fields if not i.many_to_many]
+
+        if diff:
+            change_set = []
+            unchanged_count = 0
+            new_count = len(new_objs)
+            # retrieve old objects again
+            upd_q = make_int_in_filter('pk', [i.pk for i in upd_objs])
+            old_objs = self.filter(upd_q)
+            upd_objs_by_pk = {i.pk: i for i in upd_objs}  # for fast access
+            old_value, upd_value, items = None, None, None
+            for i in old_objs.iterator():
+                # compile differences
+                items = []
+                for j in update_fields:
+                    old_value = getattr(i, j)
+                    upd_value = getattr(upd_objs_by_pk[i.pk], j)
+                    if old_value != upd_value:
+                        items.append((j, old_value, upd_value))
+                if items:
+                    change_set.append(
+                        (i.pk, getattr(i, fields[0].name), items)
+                    )
+                else:
+                    unchanged_count += 1
+            del upd_q, old_objs, old_value, upd_value, items
+
+        if upd_objs:
             if bulk:
-                self.bulk_update(objs, fields=update_fields)
+                self.fast_bulk_update(upd_objs, fields=update_fields)
             else:
-                pp = ProgressPrinter(
-                    f'{self.model._meta.model_name} objects saved'
-                )
-                for i in pp(objs):
+                pp = ProgressPrinter(f'{model_name} records updated')
+                for i in pp(upd_objs):
                     try:
                         i.save(update_fields=update_fields)
                     except Exception as e:
                         print(f'exception {e} while saving {i}:\n{vars(i)=}')
                         raise
-        else:
+
+        if new_objs:
             if bulk:
-                self.bulk_create(objs)
+                self.bulk_create(new_objs)
             else:
-                for n, i in enumerate(objs, start=1):
+                pp = ProgressPrinter(f'new {model_name} records saved')
+                for i in pp(new_objs):
                     try:
                         i.save()
                     except Exception as e:
-                        # reported number is approximate since we may have
-                        # skipped lines
-                        print(f'ERROR: {type(e)}: {e} at or a little before '
-                              f'line {n} while saving object:\n'
-                              f'{i}:\n{vars(i)=}')
+                        print(f'ERROR: {type(e)}: {e} while saving object: {i}'
+                              f'\n{vars(i)=}')
                         raise
-        del objs
+
+        del new_objs, upd_objs, update_fields
 
         if m2m_data:
             # get accession -> pk map
@@ -575,7 +660,10 @@ class BaseLoader(DjangoManager):
             for field in (i for i in fields if i.many_to_many):
                 self._update_m2m(field.name, m2m_data, update=update)
 
-        sleep(1)  # let progress meter finish
+        sleep(1)  # let progress meter finish before returning
+
+        if diff:
+            return change_set, unchanged_count, new_count, missing_objs
 
     def _update_m2m(self, field_name, m2m_data, update=False):
         """
@@ -680,18 +768,20 @@ class BaseLoader(DjangoManager):
             for i, j, *params in rels
         ]
 
-        if update:
-            print('Deleting m2m links for update... ', end='', flush=True)
-            old = Through.objects.filter(uniref100__pk__in=m2m_data.keys())
-            delcount, _ = old.delete()
-            print(f'[{delcount} OK]')
-            del old
+        # we don't know which objects are new and which got updated, so we're
+        # deleting it all here so we can bulk create below
+        print('Deleting existing m2m links for update... ', end='', flush=True)
+        f = make_int_in_filter(our_id_name + '__pk', m2m_data.keys())
+        qs = Through.objects.filter(**f)
+        delcount, _ = qs.delete()
+        print(f'[{delcount} OK]')
+        del f, qs
 
         self.bulk_create_wrapper(Through.objects.bulk_create)(through_objs)
 
-    def get_choice_value_prep_function(self, field):
+    def get_choice_value_prep_method(self, field):
         """
-        Return conversion/processing method for choice value prepping
+        Return pre-processing method for choice value prepping
         """
         prep_values = {j: i for i, j in field.choices}
 
@@ -703,11 +793,10 @@ class BaseLoader(DjangoManager):
 
     def split_m2m_value(self, value, row=None):
         """
-        Helper to split semi-colon-separated list-field values in import file
+        Pre-processor to split semi-colon-separated list-field values
 
         This will additionally sort and remove duplicates.  If you don't want
         this use the split_m2m_value_simple() method.
-        A conversion/processing method.
         """
         # split and remove empties:
         items = (i for i in value.split(';') if i)
@@ -718,40 +807,74 @@ class BaseLoader(DjangoManager):
 
     def split_m2m_value_simple(self, value, row=None):
         """
-        Helper to split semi-colon-separated list-field values in import file
-
-        A conversion/processing method.
+        Pre-processor to split semi-colon-separated list-field values
         """
         return value.split(';')
 
-    def _parse_rows(self, rows):
-        ncols = len(self.spec.all_cols)
+    def iterate_rows(self, rows, start=0):
+        """
+        Helper to advance over rows manage the current row's data
 
-        data = []
-        for row in rows:
-            if len(row) != ncols:
-                raise ValueError(
-                    f'bad num of cols ({len(row)}), {row=} '
-                    f'{ncols=}'
-                )
+        This generator will yield the current row's number
+        """
+        get_row_data = self.spec.row_data  # get a local ref
+        for i, row in enumerate(rows, start=start):
+            self.current_row = row
+            self.current_row_data = list(get_row_data(row))
+            yield i
 
+    def get_current_value(self, field_name):
+        """ Return a value from the current row """
+        try:
+            for field, _, value in self.current_row_data:
+                if field.name == field_name:
+                    return value
+        except AttributeError:
+            if not hasattr(self, 'current_row_data'):
+                # iterate_rows() needs to set up current_row_data first
+                raise RuntimeError('iterate_rows() must be called first')
+            raise  # something else going on
+
+        raise ValueError(f'no such field in row data: {field_name}')
+
+    @atomic_dry
+    def fast_bulk_update(self, objs, fields, batch_size=None):
+        """
+        A faster alternative for bulk_update
+
+        This does not use QuerySet.update() machinery that bulk_update benefits
+        from, so there are some limitations:
+
+        * no support for dealing multi-table inheritance
+
+        On the other hand this can run much faster and can handle many update
+        fields just fine.
+        """
+        if connection.vendor != 'sqlite':
+            # TODO: need implementation for postgres, fallback for now
+            return self.bulk_update(objs, fields, batch_size=batch_size)
+
+        if connection.vendor == 'sqlite':
+            meth = self._fast_bulk_update_sqlite_batch
+            if batch_size is None:
+                # limit batch size to maximum allowed variable
+                batch_size = \
+                    settings.SQLITE_MAX_VARIABLE_NUMBER // (len(fields) + 1)
+        else:
+            raise NotImplementedError
+
+        return self.bulk_update_wrapper(meth)(objs, fields, batch_size)
+
+    def _parse_rows(self, rows, parse_into):
+        for _ in self.iterate_rows(rows):
             rec = {}
-            for key, value in zip(self.spec.row_keys, row):
-                if key is None:
-                    continue
-                try:
-                    field = self.model._meta.get_field(key)
-                except FieldDoesNotExist:
-                    # caller must handle values from m2m field (if any)
-                    pass
-                else:
-                    if field.many_to_many:
-                        value = self.split_m2m_value(value)
+            for field, _, value in self.current_row_data:
+                if field.many_to_many and value is not None:
+                    value = self.split_m2m_value(value)
 
-                rec[key] = value
+                rec[field.name] = value
 
-            data.append(rec)
-        return data
+            parse_into.append(rec)
 
     def _get_objects_for_update(self, template):
         """
@@ -771,11 +894,82 @@ class BaseLoader(DjangoManager):
         ]
         get_pool_key = attrgetter(*pool_key_fields)
         # so the key is either a scalar value or a tuple of values
-        obj_pool = {
-            get_pool_key(i): i
-            for i in self.filter(**template).iterator()
-        }
+        obj_pool = {}
+        for i in self.filter(**template).iterator():
+            key = get_pool_key(i)
+            if key in obj_pool:
+                # Field should be unique, but maybe nulls are allowed, anyways,
+                # can't let this go through here
+                raise RuntimeError(f'duplicate key: {key=} {len(obj_pool)=}')
+            obj_pool[key] = i
         return obj_pool
+
+    def _fast_bulk_update_sqlite_batch(self, objs, field_names):
+        """
+        Fast-update a single batch under sqlite3
+
+        objs -- an iterable of objects to be updated
+
+        This implements a four step process:
+
+            1. create a temporary table
+            2. insert data and primary keys into the temp table
+            3. update real table from temp table
+            4. drop the temp table again
+
+        The column definitions for the temporary table may be missing some
+        constraint bits, e.g. decimal places for the decimal fields.  Is it not
+        entirely clear whether this may cause data loss.
+
+        The generated SQL has one variable per updated field plus primary key
+        per object.  Sqlite3 has a compiled-in SQLITE_MAX_VARIABLE_NUMBER value
+        that limits how many variables may be include. This limits the number
+        of objects that can be processed.  The relevant batching must be
+        managed by the caller.
+        """
+        TEMP_TABLE = 'temp_fast_bulk_update_table'
+        pk_field = self.model._meta.pk
+        fields = [pk_field] + [
+            self.model._meta.get_field(i)
+            for i in field_names
+        ]
+        for i in fields:
+            if i not in self.model._meta.local_concrete_fields:
+                # wrong field name or m2m or model inheritance
+                raise RuntimeError(f'not local+concrete: {i} of {self.model}')
+        col_defs = ', '.join([
+            f'{i.column} {i.db_type(connection)}'
+            for i in fields
+        ])
+        create_sql = f'CREATE TEMP TABLE {TEMP_TABLE} ({col_defs})'
+
+        col_names = ', '.join([i.column for i in fields])
+        # placeholders & parameters
+        # (there can be lots and lots of them, up to SQLITE_MAX_VARIABLE_NUM)
+        insert_params = []
+        field_n_attrs = tuple(((i, i.attname) for i in fields))
+        for obj_count, i in enumerate(objs, start=1):
+            for field, attr in field_n_attrs:
+                insert_params.append(
+                    field.get_db_prep_save(getattr(i, attr), connection)
+                )
+        num_fields = len(fields)
+        values = ','.join(['({})'.format(','.join(['%s'] * num_fields))] * obj_count)  # noqa: E501
+
+        insert_sql = f'INSERT INTO {TEMP_TABLE} ({col_names}) VALUES {values}'
+        table = self.model._meta.db_table
+        set_expr = ', '.join([
+            f'{i.column} = updates_tmp.{i.column}'
+            for i in fields
+        ])
+        cond = f'{table}.{pk_field.column} = {TEMP_TABLE}.{pk_field.column}'
+        update_sql = \
+            f'UPDATE {table} SET {set_expr} FROM {TEMP_TABLE} WHERE {cond}'
+        with transaction.atomic(), connection.cursor() as cur:
+            cur.execute(create_sql, [])
+            cur.execute(insert_sql, insert_params)
+            cur.execute(update_sql, [])
+            cur.execute(f'DROP TABLE {TEMP_TABLE}', [])
 
     def quick_erase(self):
         quickdel = import_string(
@@ -799,8 +993,8 @@ class CompoundRecordLoader(BulkLoader):
     def get_file(self):
         return settings.UMRAD_ROOT / 'MERGED_CPD_DB.txt'
 
-    def chargeconv(self, value, row, obj):
-        """ convert '2+' -> 2 / '2-' -> -2 """
+    def chargeconv(self, value, obj):
+        """ Pre-processor to convert '2+' -> 2 / '2-' -> -2 """
         if value == '' or value is None:
             return None
         elif value.endswith('-'):
@@ -813,13 +1007,15 @@ class CompoundRecordLoader(BulkLoader):
             except ValueError as e:
                 raise InputFileError from e
 
-    def collect_others(self, value, row, obj):
-        """ triggered on kegg columns, collects from other sources too """
-        # assume that value == row[7]
-        lst = self.split_m2m_value(';'.join(row[7:12]))
+    def collect_others(self, value, obj):
+        """
+        Pre-processor triggered on kegg column to collect from other columns
+        """
+        # assume that value == current_row[7]
+        lst = self.split_m2m_value(';'.join(self.current_row[7:12]))
         try:
             # remove the record itself
-            lst.remove(row[0])
+            lst.remove(self.current_row[0])
         except ValueError:
             pass
         return ';'.join(lst)
@@ -903,43 +1099,45 @@ class ReactionRecordLoader(BulkLoader):
         ReactionCompound = \
             self.model._meta.get_field('compound').remote_field.through
         field = ReactionCompound._meta.get_field('side')
-        self._prep_side_val = self.get_choice_value_prep_function(field)
+        self._prep_side_val = self.get_choice_value_prep_method(field)
         field = ReactionCompound._meta.get_field('location')
-        self._prep_loc_val = self.get_choice_value_prep_function(field)
+        self._prep_loc_val = self.get_choice_value_prep_method(field)
         field = ReactionCompound._meta.get_field('transport')
-        self._prep_trn_val = self.get_choice_value_prep_function(field)
+        self._prep_trn_val = self.get_choice_value_prep_method(field)
 
         self.loc_values = [i[0] for i in ReactionCompound.LOCATION_CHOICES]
 
     def get_file(self):
         return settings.UMRAD_ROOT / 'MERGED_RXN_DB.txt'
 
-    def errata_check(self, value, row, obj):
-        """ skip extra header rows """
+    def errata_check(self, value, obj):
+        """ Pre-processor to skip extra header rows """
         # FIXME: remove this function when source data is fixed
         if value == 'rxn':
             return CSV_Spec.SKIP_ROW
         return value
 
-    def process_xrefs(self, value, row, obj):
+    def process_xrefs(self, value, obj):
         """
-        collect data from all xref columns
+        Pre-processor to collect data from all xref columns
 
         subsequenc rxn xref columns will then be skipped
         Returns list of tuples.
         """
+        row = self.current_row
         xrefs = []
         for i in row[3:6]:  # the alt_* columns
             xrefs += self.split_m2m_value(i)
         xrefs = [(i, ) for i in xrefs if i != row[0]]  # rm this rxn itself
         return xrefs
 
-    def process_compounds(self, value, row, obj):
+    def process_compounds(self, value, obj):
         """
-        collect data from the 18 compound columns
+        Pre-processor to collect data from the 18 compound columns
 
         Will remove duplicates.  Other compound columns should be skipped
         """
+        row = self.current_row
         all_cpds = []
         # outer loop: source values in order of column sets in input file
         for i, src in enumerate(('CH', 'KG', 'BC')):
@@ -1166,12 +1364,12 @@ class UniRef100Loader(BulkLoader):
             obj.db = db
             objs.append(obj)
         pp = ProgressPrinter('func xrefs db values assigned')
-        FuncRefDBEntry.objects.bulk_update(pp(objs), ['db'])
+        FuncRefDBEntry.name_loader.fast_bulk_update(pp(objs), ['db'])
 
-    def process_func_xrefs(self, value, row, obj):
-        """ collect COG through EC columns """
+    def process_func_xrefs(self, value, obj):
+        """ Pre-processor ro collect COG through EC columns """
         ret = []
-        for (db_code, _), vals in zip(self.func_dbs, row[13:19]):
+        for (db_code, _), vals in zip(self.func_dbs, self.current_row[13:19]):
             for i in self.split_m2m_value(vals):
                 try:
                     db = self.funcref2db[i]
@@ -1184,14 +1382,14 @@ class UniRef100Loader(BulkLoader):
                 ret.append((i, ))
         return ret
 
-    def process_reactions(self, value, row, obj):
-        """ collect all reactions """
+    def process_reactions(self, value, obj):
+        """ Pre-processor to collect all reactions """
         rxns = set()
-        for i in row[17:20]:
+        for i in self.current_row[17:20]:
             items = self.split_m2m_value(i)
             for j in items:
                 if j in rxns:
-                    raise InputFileError(f'reaction accession dupe: {row}')
+                    raise InputFileError('reaction accession dupe')
                 else:
                     rxns.add(j)
         return [(i, ) for i in rxns]

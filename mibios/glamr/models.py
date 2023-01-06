@@ -65,6 +65,7 @@ class Dataset(AbstractDataset):
     )
     note = models.TextField(**ch_opt)
 
+    accession_fields = ('dataset_id', )
     loader = DatasetLoader()
     orphan_group_description = 'Samples without a data set'
 
@@ -174,9 +175,19 @@ class Reference(Model):
 
 
 class Sample(AbstractSample):
+    DATE_ONLY = 'date_only'
+    YEAR_ONLY = 'year_only'
+    MONTH_ONLY = 'month_only'
+    FULL_TIMESTAMP = ''
+    PARTIAL_TS_CHOICES = (
+        (DATE_ONLY, DATE_ONLY),
+        (YEAR_ONLY, YEAR_ONLY),
+        (MONTH_ONLY, MONTH_ONLY),
+        (FULL_TIMESTAMP, FULL_TIMESTAMP),
+    )
 
     project_id = models.CharField(
-        max_length=16, **ch_opt,
+        max_length=32, **ch_opt,
         help_text='Project accession, e.g. NCBI bioproject',
     )
     biosample = models.CharField(max_length=16, **ch_opt)
@@ -186,6 +197,13 @@ class Sample(AbstractSample):
     longitude = models.CharField(max_length=16, **ch_opt)
     # timestamp: expect ISO8601 formats plus yyyy and yyyy-mm
     collection_timestamp = models.DateTimeField(**opt)
+    # Indicate missing time or partial non-ISO6801 dates: e.g. 2013 or 2013-08
+    collection_ts_partial = models.CharField(
+        max_length=10,
+        choices=PARTIAL_TS_CHOICES,
+        default=FULL_TIMESTAMP,
+        blank=True,
+    )
     noaa_site = models.CharField(max_length=16, **ch_opt, verbose_name='NOAA Site')  # noqa: E501
     env_broad_scale = models.CharField(max_length=64, **ch_opt)
     env_local_scale = models.CharField(max_length=64, **ch_opt)
@@ -259,9 +277,9 @@ def load_meta_data(dry_run=False):
     """
     dbalias = router.db_for_write(Sample)
     with transaction.atomic(using=dbalias):
-        Reference.loader.load(validate=True, bulk=False)
-        Dataset.loader.load(validate=True, bulk=False)
-        Sample.loader.load_meta(validate=True, update=False, bulk=False)
+        Reference.loader.load()
+        Dataset.loader.load()
+        Sample.loader.load_meta()
         # Sample.objects.sync()
         if dry_run:
             transaction.set_rollback(True, dbalias)

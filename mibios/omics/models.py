@@ -228,7 +228,7 @@ class AbstractSample(Model):
         Gene.loader.load_sample(self)
         FuncAbundance.loader.load_sample(self)
         CompoundAbundance.loader.load_sample(self)
-        TaxonAbundance.loader.load_sample(self)
+        TaxonAbundance.objects.load_sample(self)
         set_rollback(dry_run)
 
     def get_fastq_prefix(self):
@@ -859,9 +859,47 @@ class CheckM(Model):
 class TaxonAbundance(Model):
     sample = models.ForeignKey(settings.OMICS_SAMPLE_MODEL, **fk_req)
     taxon = models.ForeignKey(Taxon, **fk_req, related_name='abundance')
-    sum_gene_rpkm = models.DecimalField(**digits(12, 4))
 
-    loader = managers.TaxonAbundanceLoader()
+    # meta-genomic abundance measures
+    # (horizontal aggregations / normalized by total post-QC read-pair count)
+    count_contig = models.PositiveIntegerField(
+        verbose_name='number of contigs',
+    )
+    count_gene = models.PositiveIntegerField(
+        verbose_name='number of genes',
+    )
+    len_contig = models.PositiveIntegerField(
+        verbose_name='total length of all contigs',
+    )
+    len_gene = models.PositiveIntegerField(
+        verbose_name='total length of all genes',
+    )
+    mean_fpkm_contig = models.FloatField(
+        verbose_name='aggregated fpkm across all contigs',
+    )
+    mean_fpkm_gene = models.FloatField(
+        verbose_name='aggregated fpkm across all genes',
+    )
+    wmedian_fpkm_contig = models.FloatField(
+        verbose_name='weighted median fpkm across all contigs',
+    )
+    wmedian_fpkm_gene = models.FloatField(
+        verbose_name='weighted median fpkm across all genes',
+    )
+    norm_reads_contig = models.FloatField(
+        verbose_name='sum of reads mapping to contigs, normalized',
+    )
+    norm_reads_gene = models.FloatField(
+        verbose_name='sum of reads mapping to genes, normalized',
+    )
+    norm_frags_contig = models.FloatField(
+        verbose_name='sum of fragments mapping to contigs, normalized',
+    )
+    norm_frags_gene = models.FloatField(
+        verbose_name='sum of fragments mapping to genes, normalized',
+    )
+
+    objects = managers.TaxonAbundanceManager()
 
     class Meta(Model.Meta):
         unique_together = (
@@ -870,7 +908,7 @@ class TaxonAbundance(Model):
 
     def __str__(self):
         return (f'{self.taxon.name}/{self.sample.sample_name} '
-                f'{self.sum_gene_rpkm}')
+                f'{self.wmedian_fpkm_contig}')
 
 
 class CompoundAbundance(AbstractAbundance):

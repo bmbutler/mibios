@@ -50,22 +50,31 @@ class BuildPyCmd(build_py):
 def get_package_data():
     """
     Return a dict top-level-package -> list of globs of data files
+
+    This function will find data files for django apps.
     """
-    # get top-level packages:
-    plist = [i for i in setuptools.find_packages() if '.' not in i]
     data = {}
-    paths = [  # django app data files / normal directory layout
+
+    # globs in django app package directory for the kind of data files we're
+    # looking for:
+    paths = [
         'templates/*.html',
-        'templates/{app}/*.html',
-        'static/{app}/css/*.css',
-        'static/{app}/js/*.js',
-        'static/{app}/img/*.png',
+        'templates/{app_name}/*.html',
+        'static/{app_name}/css/*.css',
+        'static/{app_name}/js/*.js',
+        'static/{app_name}/img/*.png',
     ]
-    for app in plist:
-        # assume app is django app
+
+    for app in setuptools.find_packages():
+        app_path = Path(app.replace('.', '/'))
+        if not (app_path / 'apps.py').is_file():
+            # is not a django app
+            continue
+        # short app_name is last component of dotted module name
+        _, _, app_name = app.rpartition('.')
         for p in paths:
-            p = p.format(app=app)
-            if list(Path(app).glob(p)):
+            p = p.format(app_name=app_name)
+            if list(Path(app_path).glob(p)):
                 if app not in data:
                     data[app] = []
                 data[app].append(p)
@@ -85,16 +94,17 @@ setuptools.setup(
     url='https://sites.google.com/a/umich.edu/the-schmidt-lab/home',
     python_requires='>=3.10',
     install_requires=[
-        'biopython~=1.79',
+        'biopython~=1.80',
         'defusedxml~=0.7',
         'Django~=3.2.0',
         'django-extensions~=3.2.0',
         'djangorestframework~=3.14.0',
         'django-tables2~=2.4.0',
-        'matplotlib~=3.5.0',
+        'matplotlib~=3.6.0',
         'pandas~=1.3.0',
+        'psycopg2~=2.9.0',
         'xlrd~=1.2',
-        'zipstream',
+        'zipstream~=1.1.0',
     ],
     packages=setuptools.find_packages(),
     package_data=get_package_data(),

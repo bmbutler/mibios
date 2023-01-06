@@ -296,6 +296,12 @@ class Model(MibiosModel):
     history = None
     objects = Manager()
 
+    accession_fields = None
+    """
+    Overwrite this in inheriting model with a list of field names, if the
+    automatic detection in get_accession_fields() fails for whatever reason.
+    """
+
     class Meta:
         abstract = True
         default_manager_name = 'objects'
@@ -315,6 +321,11 @@ class Model(MibiosModel):
 
         Raises KeyError in all other cases.
         """
+        if cls.accession_fields is not None:
+            return tuple(
+                (cls._meta.get_field(i) for i in cls.accession_fields)
+            )
+
         unique_fields = [
             i for i in cls._meta.get_fields()
             if hasattr(i, 'unique') and i.unique and not i.primary_key

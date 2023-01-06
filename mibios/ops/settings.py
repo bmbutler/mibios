@@ -15,9 +15,10 @@ from pathlib import Path
 
 from . import get_secret_key
 
-
-# Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/2.2/howto/deployment/checklist/
+
+DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
+
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = get_secret_key(Path('./secret.key'))
@@ -33,8 +34,7 @@ SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 X_FRAME_OPTIONS = 'DENY'
 
-ALLOWED_HOSTS = ['localhost']
-
+ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 # Application definition
 INSTALLED_APPS = [
@@ -102,6 +102,12 @@ DATABASES = {
         'OPTIONS': {'uri': True},
     }
 }
+
+# The maximal variable number in SQLite is compiled in and imposes some limits
+# of bulk operations in mibios.umrad.  It is documented to be 999 or 32766
+# depending on SQLite version but seems to be 250000 on current Debian systems.
+# One may obtain the correct value by running .limits in the sqlite3 CLI.
+SQLITE_MAX_VARIABLE_NUMBER = 250000
 
 # Password validation
 # https://docs.djangoproject.com/en/2.2/ref/settings/#auth-password-validators
