@@ -52,7 +52,7 @@ class AbstractSample(Model):
     )
 
     sample_id = models.CharField(
-        max_length=256,
+        max_length=32,
         # TODO: make required
         **uniq_opt,
         help_text='internal sample accession',
@@ -63,8 +63,8 @@ class AbstractSample(Model):
         **uniq_opt,
         help_text='internal uniform hex id',
     )
-    sample_name = models.CharField(
-        max_length=64,
+    sample_name = models.TextField(
+        max_length=32,
         help_text='sample ID or name as given by study',
     )
     dataset = models.ForeignKey(
@@ -77,10 +77,10 @@ class AbstractSample(Model):
         **opt,
     )
     has_paired_data = models.BooleanField(**opt)
-    sra_accession = models.CharField(max_length=16, **ch_opt, help_text='SRA accession')  # noqa: E501
-    amplicon_target = models.CharField(max_length=16, **ch_opt)
-    fwd_primer = models.CharField(max_length=32, **ch_opt)
-    rev_primer = models.CharField(max_length=32, **ch_opt)
+    sra_accession = models.TextField(max_length=16, **ch_opt, help_text='SRA accession')  # noqa: E501
+    amplicon_target = models.TextField(max_length=16, **ch_opt)
+    fwd_primer = models.TextField(max_length=32, **ch_opt)
+    rev_primer = models.TextField(max_length=32, **ch_opt)
 
     # sample data accounting flags
     meta_data_loaded = models.BooleanField(
@@ -142,8 +142,7 @@ class AbstractSample(Model):
         help_text='Compound abundance data loaded',
     )
 
-    analysis_dir = models.CharField(
-        max_length=256,
+    analysis_dir = models.TextField(
         **opt,
         help_text='path to results of analysis, relative to OMICS_DATA_ROOT',
     )

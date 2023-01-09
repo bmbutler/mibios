@@ -462,8 +462,7 @@ class VocabularyModel(Model):
     """
     A list of controlled vocabulary
     """
-    max_length = 64
-    entry = models.CharField(max_length=max_length, unique=True, blank=False)
+    entry = models.TextField(max_length=64)
 
     class Meta(Model.Meta):
         abstract = True

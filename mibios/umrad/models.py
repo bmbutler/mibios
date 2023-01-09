@@ -33,11 +33,11 @@ class CompoundRecord(Model):
         (DB_PUBCHEM, 'PubChem'),
     )
 
-    accession = models.CharField(max_length=40, unique=True)
+    accession = models.TextField(max_length=32, unique=True)
     source = models.CharField(max_length=2, choices=DB_CHOICES, db_index=True)
-    formula = models.CharField(max_length=32, blank=True)
+    formula = models.TextField(max_length=64, blank=True)
     charge = models.SmallIntegerField(blank=True, null=True)
-    mass = models.CharField(max_length=16, blank=True)  # TODO: decimal??
+    mass = models.TextField(max_length=32, blank=True)  # TODO: decimal??
     names = models.ManyToManyField('CompoundName')
     others = models.ManyToManyField('self', symmetrical=False)
 
@@ -75,12 +75,10 @@ class CompoundRecord(Model):
 
 
 class CompoundName(VocabularyModel):
-    max_length = 128
     abundance_accessor = 'compoundentry__abundance'
 
 
 class FunctionName(VocabularyModel):
-    max_length = 128
     abundance_accessor = 'funcrefdbentry__abundance'
 
 
@@ -255,9 +253,9 @@ class Taxon(Model):
         (7, 'species'),
         (8, 'strain'),
     )
-    name = models.CharField(max_length=256)
+    name = models.TextField(max_length=64)
     rank = models.PositiveSmallIntegerField(choices=RANKS)
-    lineage = models.CharField(max_length=512)
+    lineage = models.TextField()
     ancestors = models.ManyToManyField(
         'self',
         symmetrical=False,
@@ -510,11 +508,11 @@ class UniRef100(Model):
     #  4 Length
     length = models.PositiveIntegerField(blank=True, null=True)
     #  5 SigPep
-    signal_peptide = models.CharField(max_length=32, **ch_opt)
+    signal_peptide = models.TextField(max_length=32, **ch_opt)
     #  6 TMS
-    tms = models.CharField(max_length=128, **ch_opt)
+    tms = models.TextField(**ch_opt)
     #  7 DNA
-    dna_binding = models.CharField(max_length=128, **ch_opt)
+    dna_binding = models.TextField(**ch_opt)
     #  8 TaxonId
     taxids = models.ManyToManyField(TaxID, related_name='classified_uniref100')
     #  9 Metal

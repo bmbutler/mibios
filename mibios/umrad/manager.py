@@ -190,7 +190,7 @@ class QuerySet(BulkCreateWrapperMixin, MibiosQuerySet):
             uid_field = self.model._meta.get_field(field_name)
 
         if lookup is None:
-            if uid_field.get_internal_type() == 'CharField':
+            if uid_field.get_internal_type() in ('CharField', 'TextField'):
                 lookup = 'icontains'
             else:
                 lookup = 'exact'

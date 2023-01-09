@@ -32,36 +32,33 @@ class Dataset(AbstractDataset):
     reference = models.ForeignKey('Reference', **fk_opt)
     # project IDs: usually a single accession, but can be ,-sep lists or even
     # other text
-    bioproject = models.CharField(max_length=100, **ch_opt)
-    jgi_project = models.CharField(max_length=100, **ch_opt)
-    gold_id = models.CharField(max_length=100, **ch_opt)
-    scheme = models.CharField(
-        max_length=512,
+    bioproject = models.TextField(max_length=32, **ch_opt)
+    jgi_project = models.TextField(max_length=32, **ch_opt)
+    gold_id = models.TextField(max_length=32, **ch_opt)
+    scheme = models.TextField(
         **ch_opt,
         verbose_name='location and sampling scheme',
     )
-    material_type = models.CharField(
-        max_length=128,
+    material_type = models.TextField(
         **ch_opt,
     )
-    water_bodies = models.CharField(
-        max_length=256,
+    water_bodies = models.TextField(
         **ch_opt,
         help_text='list or description of sampled bodies of water',
     )
-    primers = models.CharField(
-        max_length=64,
+    primers = models.TextField(
+        max_length=32,
         **ch_opt,
     )
-    sequencing_target = models.CharField(
-        max_length=64,
+    sequencing_target = models.TextField(
+        max_length=32,
         **ch_opt,
     )
-    sequencing_platform = models.CharField(
-        max_length=64,
+    sequencing_platform = models.TextField(
+        max_length=32,
         **ch_opt,
     )
-    size_fraction = models.CharField(
+    size_fraction = models.TextField(
         max_length=32,
         **ch_opt,
         help_text='e.g.: >0.22µm or 0.22-1.6µm',
@@ -145,21 +142,19 @@ class Reference(Model):
     A journal article or similar, primary reference for a data set
     """
     reference_id = AccessionField(prefix='paper_')
-    short_reference = models.CharField(
+    short_reference = models.TextField(
         # this field is required
-        max_length=128,
+        max_length=32,
         help_text='short reference',
     )
-    authors = models.CharField(
-        max_length=2048, **ch_opt,
+    authors = models.TextField(
+        **ch_opt,
         help_text='author listing',
     )
-    title = models.CharField(
-        max_length=512, **ch_opt,
-    )
+    title = models.TextField(**ch_opt)
     abstract = models.TextField(**ch_opt)
-    key_words = models.CharField(max_length=128, **ch_opt)
-    publication = models.CharField(max_length=128, **ch_opt)
+    key_words = models.TextField(**ch_opt)
+    publication = models.TextField(max_length=64, **ch_opt)
     doi = OptionalURLField(**uniq_opt)
 
     loader = ReferenceLoader()
@@ -192,15 +187,15 @@ class Sample(AbstractSample):
         (FULL_TIMESTAMP, FULL_TIMESTAMP),
     )
 
-    project_id = models.CharField(
+    project_id = models.TextField(
         max_length=32, **ch_opt,
         help_text='Project accession, e.g. NCBI bioproject',
     )
-    biosample = models.CharField(max_length=16, **ch_opt)
-    geo_loc_name = models.CharField(max_length=256, **ch_opt)
-    gaz_id = models.CharField(max_length=16, **ch_opt, verbose_name='GAZ id')
-    latitude = models.CharField(max_length=16, **ch_opt)
-    longitude = models.CharField(max_length=16, **ch_opt)
+    biosample = models.TextField(max_length=32, **ch_opt)
+    geo_loc_name = models.TextField(max_length=64, **ch_opt)
+    gaz_id = models.TextField(max_length=32, **ch_opt, verbose_name='GAZ id')
+    latitude = models.TextField(max_length=16, **ch_opt)
+    longitude = models.TextField(max_length=16, **ch_opt)
     # timestamp: expect ISO8601 formats plus yyyy and yyyy-mm
     collection_timestamp = models.DateTimeField(**opt)
     # Indicate missing time or partial non-ISO6801 dates: e.g. 2013 or 2013-08
@@ -210,49 +205,49 @@ class Sample(AbstractSample):
         default=FULL_TIMESTAMP,
         blank=True,
     )
-    noaa_site = models.CharField(max_length=16, **ch_opt, verbose_name='NOAA Site')  # noqa: E501
-    env_broad_scale = models.CharField(max_length=64, **ch_opt)
-    env_local_scale = models.CharField(max_length=64, **ch_opt)
-    env_medium = models.CharField(max_length=64, **ch_opt)
+    noaa_site = models.TextField(max_length=16, **ch_opt, verbose_name='NOAA Site')  # noqa: E501
+    env_broad_scale = models.TextField(max_length=32, **ch_opt)
+    env_local_scale = models.TextField(max_length=32, **ch_opt)
+    env_medium = models.TextField(max_length=32, **ch_opt)
     modified_or_experimental = models.BooleanField(default=False)
-    depth = models.CharField(max_length=16, **ch_opt)
-    depth_sediment = models.CharField(max_length=16, **ch_opt)
-    size_frac_up = models.CharField(max_length=16, **ch_opt)
-    size_frac_low = models.CharField(max_length=16, **ch_opt)
-    ph = models.CharField(max_length=8, **ch_opt, verbose_name='pH')
-    temp = models.CharField(max_length=8, **ch_opt)
-    calcium = models.CharField(max_length=8, **ch_opt)
-    potassium = models.CharField(max_length=8, **ch_opt)
-    magnesium = models.CharField(max_length=8, **ch_opt)
-    ammonium = models.CharField(max_length=8, **ch_opt)
-    nitrate = models.CharField(max_length=8, **ch_opt)
-    phosphorus = models.CharField(max_length=8, **ch_opt)
-    diss_oxygen = models.CharField(max_length=8, **ch_opt)
-    conduc = models.CharField(max_length=16, **ch_opt)
-    secci = models.CharField(max_length=8, **ch_opt)
-    turbidity = models.CharField(max_length=8, **ch_opt)
-    part_microcyst = models.CharField(max_length=8, **ch_opt)
-    diss_microcyst = models.CharField(max_length=8, **ch_opt)
-    ext_phyco = models.CharField(max_length=8, **ch_opt)
-    ext_microcyst = models.CharField(max_length=8, **ch_opt)
-    ext_anatox = models.CharField(max_length=8, **ch_opt)
-    chlorophyl = models.CharField(max_length=8, **ch_opt)
-    diss_phosp = models.CharField(max_length=8, **ch_opt)
-    soluble_react_phosp = models.CharField(max_length=8, **ch_opt)
-    ammonia = models.CharField(max_length=8, **ch_opt)
-    nitrate_nitrite = models.CharField(max_length=8, **ch_opt)
-    urea = models.CharField(max_length=8, **ch_opt)
-    part_org_carb = models.CharField(max_length=8, **ch_opt)
-    part_org_nitro = models.CharField(max_length=8, **ch_opt)
-    diss_org_carb = models.CharField(max_length=8, **ch_opt)
-    col_dom = models.CharField(max_length=8, **ch_opt)
-    suspend_part_matter = models.CharField(max_length=8, **ch_opt)
-    suspend_vol_solid = models.CharField(max_length=8, **ch_opt)
+    depth = models.TextField(max_length=16, **ch_opt)
+    depth_sediment = models.TextField(max_length=16, **ch_opt)
+    size_frac_up = models.TextField(max_length=16, **ch_opt)
+    size_frac_low = models.TextField(max_length=16, **ch_opt)
+    ph = models.TextField(max_length=8, **ch_opt, verbose_name='pH')
+    temp = models.TextField(max_length=8, **ch_opt)
+    calcium = models.TextField(max_length=8, **ch_opt)
+    potassium = models.TextField(max_length=8, **ch_opt)
+    magnesium = models.TextField(max_length=8, **ch_opt)
+    ammonium = models.TextField(max_length=8, **ch_opt)
+    nitrate = models.TextField(max_length=8, **ch_opt)
+    phosphorus = models.TextField(max_length=8, **ch_opt)
+    diss_oxygen = models.TextField(max_length=8, **ch_opt)
+    conduc = models.TextField(max_length=16, **ch_opt)
+    secci = models.TextField(max_length=8, **ch_opt)
+    turbidity = models.TextField(max_length=8, **ch_opt)
+    part_microcyst = models.TextField(max_length=8, **ch_opt)
+    diss_microcyst = models.TextField(max_length=8, **ch_opt)
+    ext_phyco = models.TextField(max_length=8, **ch_opt)
+    ext_microcyst = models.TextField(max_length=8, **ch_opt)
+    ext_anatox = models.TextField(max_length=8, **ch_opt)
+    chlorophyl = models.TextField(max_length=8, **ch_opt)
+    diss_phosp = models.TextField(max_length=8, **ch_opt)
+    soluble_react_phosp = models.TextField(max_length=8, **ch_opt)
+    ammonia = models.TextField(max_length=8, **ch_opt)
+    nitrate_nitrite = models.TextField(max_length=8, **ch_opt)
+    urea = models.TextField(max_length=8, **ch_opt)
+    part_org_carb = models.TextField(max_length=8, **ch_opt)
+    part_org_nitro = models.TextField(max_length=8, **ch_opt)
+    diss_org_carb = models.TextField(max_length=8, **ch_opt)
+    col_dom = models.TextField(max_length=8, **ch_opt)
+    suspend_part_matter = models.TextField(max_length=8, **ch_opt)
+    suspend_vol_solid = models.TextField(max_length=8, **ch_opt)
     microcystis_count = models.PositiveIntegerField(**opt)
     planktothris_count = models.PositiveIntegerField(**opt)
     anabaena_d_count = models.PositiveIntegerField(**opt)
     cylindrospermopsis_count = models.PositiveIntegerField(**opt)
-    notes = models.CharField(max_length=512, **ch_opt)
+    notes = models.TextField(**ch_opt)
 
     objects = SampleManager.from_queryset(SampleQuerySet)()
     loader = SampleLoader()
@@ -266,7 +261,7 @@ class Sample(AbstractSample):
 
 
 class SearchTerm(models.Model):
-    term = models.CharField(max_length=32, db_index=True)
+    term = models.TextField(max_length=32, db_index=True)
     has_hit = models.BooleanField(default=False)
     content_type = models.ForeignKey(ContentType, **fk_req)
     object_id = models.PositiveIntegerField()

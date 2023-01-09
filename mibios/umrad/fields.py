@@ -76,10 +76,9 @@ class PathField(Field):
     description = 'a file-system-path-like field'
     default_base = './q'  # str
 
-    def __init__(self, *args, max_length=1024, base=None, exists=True,
+    def __init__(self, *args, base=None, exists=True,
                  null=True, default=None, **kwargs):
         super().__init__(*args, null=null, default=default, **kwargs)
-        self.max_length = max_length
         if base is None:
             self.base = Path(self.default_base)
         else:
@@ -94,7 +93,7 @@ class PathField(Field):
         return name, path, args, kwargs
 
     def get_internal_type(self):
-        return 'CharField'
+        return 'TextField'
 
     def from_db_value(self, value, expression, connection):
         if value is None:
