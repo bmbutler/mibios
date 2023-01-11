@@ -6,6 +6,8 @@ import inspect
 import logging
 import time
 
+import django.db
+
 
 logging.addLevelName(25, 'SUCCESS')
 
@@ -320,3 +322,22 @@ def url_query_value_to_python(key, value):
         value = tuple(value.split(','))
 
     return value
+
+
+def get_db_connection_info():
+    """
+    compile a information on DB connections
+
+    Returns dict mapping the db alias to a string.  This information should not
+    be displayed in production, only use this during development.
+    """
+    info = {}
+    for i in django.db.connections.all():
+        params = i.get_connection_params()
+        params = [
+            f'{k}={v}' for k, v in params.items()
+            if k != 'password'
+        ]
+        params = ' '.join(params)
+        info[i.alias] = f'{i.display_name} ({params})'
+    return info

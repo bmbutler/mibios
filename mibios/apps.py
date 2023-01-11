@@ -4,11 +4,10 @@ import logging
 from django import apps
 from django.conf import settings
 from django.contrib.admin.apps import AdminConfig as UpstreamAdminConfig
-import django.db
 from django.utils.module_loading import import_string
 
 from .registry import Registry
-from .utils import getLogger, QueryLogFilter
+from .utils import get_db_connection_info, getLogger, QueryLogFilter
 
 
 log = getLogger(__name__)
@@ -82,14 +81,8 @@ class MibiosConfig(apps.AppConfig):
 
         # display some info
         if settings.DEBUG:
-            for i in django.db.connections.all():
-                params = i.get_connection_params()
-                params = [
-                    f'{k}={v}' for k, v in params.items()
-                    if k != 'password'
-                ]
-                params = ' '.join(params)
-                log.info(f'DB {i.alias}: {i.display_name} ({params})')
+            for alias, info in get_db_connection_info().items():
+                log.info(f'DB {alias}: {info}')
 
         info = f'Registry {registry.name} (app:models+datasets):'
         for i in registry.apps.keys():
