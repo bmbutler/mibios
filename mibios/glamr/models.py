@@ -7,13 +7,16 @@ from django.db import models, router, transaction
 from django.urls import reverse
 
 from mibios.omics.models import AbstractDataset, AbstractSample
+from mibios.omics.managers import SampleManager
 from mibios.umrad.fields import AccessionField
+from mibios.umrad.manager import Manager
 from mibios.umrad.models import Model
 from mibios.umrad.model_utils import ch_opt, fk_opt, fk_req, uniq_opt, opt
 
 from .fields import OptionalURLField
 from .load import \
     DatasetLoader, ReferenceLoader, SampleLoader, SearchTermManager
+from .queryset import DatasetQuerySet, SampleQuerySet
 
 
 class Dataset(AbstractDataset):
@@ -66,7 +69,10 @@ class Dataset(AbstractDataset):
     note = models.TextField(**ch_opt)
 
     accession_fields = ('dataset_id', )
+
+    objects = Manager.from_queryset(DatasetQuerySet)()
     loader = DatasetLoader()
+
     orphan_group_description = 'samples without a data set'
 
     class Meta:
@@ -248,6 +254,7 @@ class Sample(AbstractSample):
     cylindrospermopsis_count = models.PositiveIntegerField(**opt)
     notes = models.CharField(max_length=512, **ch_opt)
 
+    objects = SampleManager.from_queryset(SampleQuerySet)()
     loader = SampleLoader()
 
     class Meta:
