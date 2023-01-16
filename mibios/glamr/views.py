@@ -10,10 +10,14 @@ from django.core.exceptions import FieldDoesNotExist
 from django.db.models import Count, Field, URLField
 from django.http import Http404, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
+from django.utils.html import mark_safe
 from django.views.generic import DetailView
 from django.views.generic.base import TemplateView
 from django.views.generic.list import ListView
 
+from mibios.glamr.models import (
+    Sample, Dataset
+)
 from mibios import get_registry
 from mibios.data import TableConfig
 from mibios.models import Q
@@ -29,6 +33,8 @@ from .forms import (
     AdvancedSearchForm, QBuilderForm, QLeafEditForm,
 )
 from .search_utils import get_suggestions
+
+import json
 
 
 log = getLogger(__name__)
@@ -600,6 +606,20 @@ class DemoFrontPageView(SingleTableView):
         ctx['mc_abund'] = TaxonAbundance.objects \
             .filter(taxon__name='MICROCYSTIS') \
             .select_related('sample')[:5]
+
+
+        # Get context for dataset summary
+        dataset_counts_df = Dataset.objects.basic_counts()
+        dataset_counts_json = dataset_counts_df.reset_index().to_json(orient = 'records')
+        dataset_counts_data = json.loads(dataset_counts_json)
+        ctx['dataset_counts'] = dataset_counts_data
+
+        # Get context for sample summary
+        sample_counts_df = Sample.objects.basic_counts()
+        sample_counts_json = sample_counts_df.reset_index().to_json(orient = 'records')
+        sample_counts_data = json.loads(sample_counts_json)
+        ctx['sample_counts'] = sample_counts_data
+        
         return ctx
 
     def make_ratios_plot(self):
