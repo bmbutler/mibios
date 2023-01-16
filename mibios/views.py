@@ -36,7 +36,7 @@ from .tables import (DeletedHistoryTable, HistoryTable,
                      CompactHistoryTable, DetailedHistoryTable,
                      SnapshotListTable, SnapshotTableColumn, Table,
                      table_factory, ORDER_BY_FIELD)
-from .utils import getLogger
+from .utils import get_db_connection_info, getLogger
 
 
 log = getLogger(__name__)
@@ -95,6 +95,10 @@ class BasicBaseMixin(CuratorMixin, ContextMixin):
         ctx['version_info'] = {'mibios': __version__}
         for conf in get_registry().apps.values():
             ctx['version_info'][conf.name] = getattr(conf, 'version', None)
+        if settings.DEBUG:
+            ctx['version_info']['DEBUG'] = 'True'
+            for db_alias, db_info in get_db_connection_info().items():
+                ctx['version_info'][f'DB {db_alias}'] = db_info
         return ctx
 
     @staticmethod
