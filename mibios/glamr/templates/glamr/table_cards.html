@@ -42,11 +42,11 @@
                             {% for column in table.columns %}
                                     {% if column.orderable %}
                                         <li class="nav-item">
-                                            <a class="sort nav-link" id={{ column.attrs.navID }} data-toggle="pill" href="{% querystring table.prefixed_order_by_field=column.order_by_alias.next %}">{{ column.header }}<i id="{{column.attrs.navID}}-icon" class="icon-sort bi bi-caret-down m-1"></i></a>
+                                            <a class="sort nav-link" id={{ column.attrs.navID }} href="{% querystring table.prefixed_order_by_field=column.order_by_alias.next %}">{{ column.header }}<i id="{{column.attrs.navID}}-icon" class="icon-sort bi bi-caret-down m-1"></i></a>
                                         </li>
                                     {% else %}
                                         <li class="nav-item">
-                                            <span class="nav-link" id={{ column.attrs.navID }} data-toggle="pill" href="#">{{ column.header }}</span>
+                                            <span class="nav-link" id={{ column.attrs.navID }} href="#">{{ column.header }}</span>
                                         </li>
                                     {% endif %}
                             {% endfor %}
