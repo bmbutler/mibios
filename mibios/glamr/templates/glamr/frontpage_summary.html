@@ -1,0 +1,80 @@
+<button class="btn btn-primary m-2" type="button" data-toggle="collapse" data-target="#frontpage_summary_datasets" aria-expanded="false" aria-controls="frontpage_summary_datasets">
+    Summary of Available Datasets
+</button>
+<button class="btn btn-primary m-2" type="button" data-toggle="collapse" data-target="#frontpage_summary_samples" aria-expanded="false" aria-controls="frontpage_summary_samples">
+    Summary of Available Samples
+</button>
+<div id="frontpage_summary_datasets" class="frontpage_summary collapse">
+	<div class="card mb-2 mt-2">
+		<div style="display: flex; flex-direction: row" class="card-header">
+	        <h4 class="card-title">Available Datasets</h4>
+	    </div>
+		<div class="card-body">
+			<div class="card-text">
+				<table class="table table-hover table-condensed table-sm">
+					<thead>
+						<tr>
+							<th>Location</th>
+							<th>Datasets with Amplicon Samples</th>
+							<th>Datasets with Metagenome Samples</th>
+							<th>Datasets with Metatranscriptome Samples</th>
+						</tr>
+					</thead>
+					<tbody>
+						{% for row in dataset_counts %}
+					    	<tr>
+					    		<td>{{ row.geo_loc_name }}:</td>
+						    	<td>
+						    		{{row.amplicon}}
+						    	</td>
+						    	<td>
+						    		{{row.metagenome}}
+						    	</td>
+						    	<td>
+						    		{{row.metatranscriptome}}
+						    	</td>
+						    </tr>
+						{% endfor %}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+</div>
+<div id="frontpage_summary_samples" class="frontpage_summary collapse">
+	<div class="card mb-2 mt-2">
+		<div style="display: flex; flex-direction: row" class="card-header">
+	        <h4 class="card-title">Available Samples</h4>
+	    </div>
+		<div class="card-body">
+			<div class="card-text">
+				<table class="table table-hover table-condensed table-sm">
+					<thead>
+						<tr>
+							<th>Location</th>
+							<th>Amplicon Samples</th>
+							<th>Metagenome Samples</th>
+							<th>Metatranscriptome Samples</th>
+						</tr>
+					</thead>
+					<tbody>
+						{% for row in sample_counts %}
+					    	<tr>
+					    		<td>{{ row.geo_loc_name }}:</td>
+						    	<td>
+						    		{{row.amplicon}}
+						    	</td>
+						    	<td>
+						    		{{row.metagenome}}
+						    	</td>
+						    	<td>
+						    		{{row.metatranscriptome}}
+						    	</td>
+						    </tr>
+						{% endfor %}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+</div>
