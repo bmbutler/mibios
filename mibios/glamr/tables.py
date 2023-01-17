@@ -257,6 +257,10 @@ class SampleTable(Table):
         verbose_name='Location / site',
     )
     sample_type = Column()
+    dataset = Column(
+        linkify=lambda value: reverse('dataset', args=[value.pk]),
+        verbose_name='Dataset',
+    )
 
     class Meta:
         model = glamr_models.Sample

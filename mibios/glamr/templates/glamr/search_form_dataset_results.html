@@ -1,0 +1,29 @@
+{% extends "glamr/base.html" %}
+{% load static %}
+{% load render_table from django_tables2 %}
+{% block content %}
+{% include "glamr/search_form_sample.html" %}
+<br/>
+<h3>Searching datasets for <small>"{{ query }}"</small> returned {{ search_results | length }} results:</h3>
+<ul>
+{% for item in search_results %}
+    <li class="card mb-2">
+        <div style="display: flex; flex-direction: row" class="card-header">
+            <h5 class="card-title"><a href="{% url 'record' model=model_name pk=item.pk %}">Dataset: {{ item }}</a></h5>
+        </div>
+        <div class="card-body">
+            Reference: {% if item.reference_id %}
+                <a href="{% url 'record' model='reference' pk=item.reference_id %}">{{item.reference}}</a><br/>
+            {% else %}
+                <i>No reference associated with this dataset</i><br/>
+            {% endif %}
+            Description: {{item.scheme}}<br/>
+            Water Bodies: {{item.water_bodies}}<br/>
+            Material Type: {{item.material_type}}<br/>
+        </div> 
+    </li>
+{% endfor %}
+</ul>
+
+{% endblock %}
+

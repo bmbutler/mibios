@@ -32,5 +32,7 @@ urlpatterns = [
     path('data/<str:model>/<int:pk>/relations/<str:field>/full/', views.ToManyFullListView.as_view(), name='relations_full'),  # noqa: E501
     path('search/', views.SearchView.as_view(), name='search_initial'),  # noqa: E501
     path('search/hits/', views.SearchHitView.as_view(), name='search_hits'),  # noqa: E501
+    path('search/samples/results/', views.SampleSearchHitView.as_view(), name='search_form_sample_results'),  # noqa: E501
+    path('search/datasets/results/', views.DatasetSearchHitView.as_view(), name='search_form_dataset_results'),  # noqa: E501
     path('search/<str:model>/', views.SearchModelView.as_view(), name='search_model'),  # noqa: E501
 ]

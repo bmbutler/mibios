@@ -1,0 +1,41 @@
+<script type="text/javascript">
+    function changeSelection(){
+        if(document.getElementById('search_dropdown').value == "Samples"){
+            document.getElementById('simple_search_form').action = "{% url 'search_form_sample_results' %}"
+            document.getElementById('search_box').placeholder = "Search for samples by name, type, location, year, etc"
+        }
+        else {
+            document.getElementById('simple_search_form').action = "{% url 'search_form_dataset_results' %}"
+            document.getElementById('search_box').placeholder = "Search for datasets by name, description, reference, location, etc"
+        }
+    }
+</script>
+
+<form id="simple_search_form" action="{% url 'search_form_sample_results' %}" method="get">
+    <div class="input-group mb-3">
+        <div class="input-group-prepend">
+            <select class="btn btn-outline-primary dropdown-toggle" id="search_dropdown" onchange="changeSelection()">
+                <option selected>Search for...</option>
+                <option value="Samples">Samples</option>
+                <option value="Datasets">Datasets</option>
+            </select>
+            <button class="btn btn-primary" type="submit" values="Submit">Search</button>
+        </div>
+        <input type="text" name="query" id="search_box" placeholder="Search for samples by name, type, location, year, etc" required id="id_query" class="form-control">
+        <div class="input-group-append">
+            <button class="btn btn-outline-primary" type="button" data-toggle="collapse" data-target="#search-help-detail" aria-expanded="false" aria-controls="search-help-detail">
+                <i class="bi bi-info-circle"></i>
+            </button>
+        </div>
+    </div>
+</form>
+
+<div id="search-help-detail" class="search-help-detail collapse m3">
+    Samples can be searched for by name, id, location, body of water, sample type, collection year, project id, dataset description or material type, reference name or authors, broad/local scale environment, or environment medium.
+    <br/>
+    Datasets can be searched for by body of water, material type, sample type or location, reference title and authors, description, bioproject, or id.
+    <br/>
+    More complex searches can be performed by clicking on the "Advanced Search" link at the top of the page.
+</div>
+
+
