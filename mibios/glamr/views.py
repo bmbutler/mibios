@@ -607,7 +607,6 @@ class DemoFrontPageView(SingleTableView):
             .filter(taxon__name='MICROCYSTIS') \
             .select_related('sample')[:5]
 
-
         # Get context for dataset summary
         dataset_counts_df = Dataset.objects.basic_counts()
         dataset_counts_json = dataset_counts_df.reset_index().to_json(orient = 'records')
@@ -906,19 +905,106 @@ class SearchHitView(TemplateView):
                 if i.has_hit:
                     have_abundance = True
                     break
-            else:
-                have_abundance = False
-            model = content_type.model_class()
-            hits = [
-                (i.content_object, str(i.content_object), None)
-                for i in grp
-            ]
-            self.hits.append((
-                have_abundance,
-                model._meta.verbose_name_plural,
-                model._meta.model_name,
-                hits,
-            ))
+                else:
+                    have_abundance = False
+                model = content_type.model_class()
+                hits = [
+                    (i.content_object, str(i.content_object), None)
+                    for i in grp
+                ]
+                self.hits.append((
+                    have_abundance,
+                    model._meta.verbose_name_plural,
+                    model._meta.model_name,
+                    hits,
+                ))
+
+class SampleSearchHitView(TemplateView):
+    model=models.Sample
+    template_name = 'glamr/search_form_sample_results.html'
+    table_class = tables.SampleTable
+
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['search_results'] = self.results
+        ctx['model_name'] = models.Sample._meta.model_name
+        ctx['query'] = self.query
+        return ctx
+
+    def get(self, request, *args, **kwargs):
+        self.form = AdvancedSearchForm(data=self.request.GET)
+        if self.form.is_valid():
+            self.query = self.form.cleaned_data['query']
+            self.search()
+        else:
+            # invalid form, pretend empty search result
+            pass
+
+        return self.render_to_response(self.get_context_data())
+
+    def search(self):
+        self.results = []
+        qs = Sample.objects.filter(
+            Q(geo_loc_name__icontains=self.query) | 
+            Q(sample_type__icontains=self.query) |
+            Q(collection_ts_partial__icontains=self.query) |
+            Q(collection_timestamp__icontains=self.query) |
+            Q(project_id__icontains=self.query) |
+            Q(dataset__scheme__icontains=self.query) |
+            Q(env_broad_scale__icontains=self.query) |
+            Q(env_local_scale__icontains=self.query)|
+            Q(env_medium__icontains=self.query) |
+            Q(sample_id__icontains=self.query) |
+            Q(dataset__water_bodies__icontains=self.query) | 
+            Q(dataset__scheme__icontains=self.query) | 
+            Q(dataset__material_type__icontains=self.query) | 
+            Q(dataset__reference__short_reference__icontains=self.query) |
+            Q(dataset__reference__title__icontains=self.query) |
+            Q(dataset__reference__authors__icontains=self.query) |
+            Q(sample_name__icontains=self.query)
+        ).order_by('sample_name')
+        
+        self.results = qs
+
+class DatasetSearchHitView(TemplateView):
+    model=models.Dataset
+    template_name = 'glamr/search_form_dataset_results.html'
+    table_class = tables.DatasetTable
+
+    def get_context_data(self, **ctx):
+        ctx = super().get_context_data(**ctx)
+        ctx['search_results'] = self.results
+        ctx['model_name'] = models.Dataset._meta.model_name
+        ctx['query'] = self.query
+        return ctx
+
+    def get(self, request, *args, **kwargs):
+        self.form = AdvancedSearchForm(data=self.request.GET)
+        if self.form.is_valid():
+            self.query = self.form.cleaned_data['query']
+            self.search()
+        else:
+            # invalid form, pretend empty search result
+            pass
+
+        return self.render_to_response(self.get_context_data())
+
+    def search(self):
+        self.results = []
+        qs = Dataset.objects.filter(
+            Q(water_bodies__icontains=self.query) | 
+            Q(material_type__icontains=self.query) |
+            Q(reference__short_reference__icontains=self.query) |
+            Q(reference__title__icontains=self.query) |
+            Q(reference__authors__icontains=self.query) |
+            Q(scheme__icontains=self.query) |
+            Q(bioproject__icontains=self.query) |
+            Q(dataset_id__icontains=self.query) |
+            Q(sample__sample_type__icontains=self.query) |
+            Q(sample__geo_loc_name__icontains=self.query)
+        ).order_by('dataset_id')
+        
+        self.results = qs
 
 
 class TableView(BaseFilterMixin, ModelTableMixin, SingleTableView):

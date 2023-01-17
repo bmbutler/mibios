@@ -1,0 +1,33 @@
+{% extends "glamr/base.html" %}
+{% load static %}
+{% load render_table from django_tables2 %}
+{% block content %}
+{% include "glamr/search_form_sample.html" %}
+<br/>
+<h3>Searching samples for <small>"{{ query }}"</small> returned {{ search_results | length }} results:</h3>
+<ul>
+{% for item in search_results %}
+    <li class="card mb-2">
+        <div style="display: flex; flex-direction: row" class="card-header">
+            <h5 class="card-title"><a href="{% url 'record' model=model_name pk=item.pk %}">Sample: {{ item }}</a></h5>
+        </div>
+        <div class="card-body">
+            Dataset: {% if item.dataset_id %}
+                <a href="{% url 'record' model='dataset' pk=item.dataset_id %}">{{item.dataset}}</a><br/>
+            {% else %}
+                <i>No dataset associated with this sample</i><br/>
+            {% endif %}
+            Location: {{item.geo_loc_name}}<br/>
+            Sample Type: {{item.sample_type}}<br/>
+            Collection Timestamp: {{item.collection_timestamp}}<br/>
+            Project ID: {{item.project_id}}<br/>
+            Environment Broad Scale: {{item.env_broad_scale}}<br/>
+            Environment Local Scale: {{item.env_local_scale}}<br/>
+            Environment Medium: {{item.env_medium}}<br/>
+        </div> 
+    </li>
+{% endfor %}
+</ul>
+
+{% endblock %}
+
