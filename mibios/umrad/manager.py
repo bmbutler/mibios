@@ -1403,7 +1403,7 @@ class UniRef100Loader(BulkLoader):
         ('TMS', 'tms'),
         ('DNA', 'dna_binding'),
         ('TaxonId', 'taxids'),
-        ('Metal', 'metal_binding'),
+        ('Binding', 'binding'),
         ('Loc', 'subcellular_locations'),
         ('TCDB', 'function_refs', process_func_xrefs),
         ('COG', None),

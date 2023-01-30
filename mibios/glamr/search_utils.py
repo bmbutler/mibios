@@ -12,7 +12,7 @@ from django.dispatch import receiver
 
 from mibios.omics import get_sample_model
 from mibios.umrad.models import (
-    CompoundRecord, CompoundName, FunctionName, Location, Metal,
+    CompoundRecord, CompoundName, FunctionName, Location,
     FuncRefDBEntry, ReactionRecord, Taxon, Uniprot, UniRef100,
 )
 from .models import SearchTerm
@@ -22,7 +22,7 @@ log = getLogger(__name__)
 
 spellfix_models = [
     CompoundRecord, ReactionRecord, CompoundName,
-    FunctionName, Location, Metal, FuncRefDBEntry, Taxon,
+    FunctionName, Location, FuncRefDBEntry, Taxon,
 ]
 searchable_models = spellfix_models + [
     UniRef100, Uniprot, get_sample_model(),

@@ -87,10 +87,6 @@ class Location(VocabularyModel):
         verbose_name = 'subcellular location'
 
 
-class Metal(VocabularyModel):
-    pass
-
-
 class ReactionCompound(models.Model):
     """
     intermediate model for reaction -> l/r-compound m2m relations
@@ -515,8 +511,8 @@ class UniRef100(Model):
     dna_binding = models.TextField(**ch_opt)
     #  8 TaxonId
     taxids = models.ManyToManyField(TaxID, related_name='classified_uniref100')
-    #  9 Metal
-    metal_binding = models.ManyToManyField(Metal)
+    #  9 Binding
+    binding = models.ManyToManyField(CompoundRecord)
     # 10 Loc
     subcellular_locations = models.ManyToManyField(Location)
     # 11-17 TCDB COG Pfam Tigr Gene_Ont InterPro ECs
