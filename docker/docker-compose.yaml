@@ -1,0 +1,31 @@
+version: "3"
+services:
+  apache2:
+    image: glamr.apache2
+    depends_on:
+      - webapp
+    restart: always
+    ports:
+      - 8080:80
+    volumes:
+      - static:/glamr/static:ro
+  webapp:
+    image: glamr.webapp
+    depends_on:
+      - database
+    restart: always
+    ports:
+      - 3032
+    volumes:
+      # manage collectstatic writes here
+      - static:/glamr/static:rw
+  database:
+    image: glamr.database
+    restart: always
+    ports:
+      - 5432
+    volumes:
+      - /var/local/postgresql-glamr:/var/local/postgresql
+
+volumes:
+  static:

@@ -1,0 +1,4 @@
+#!/bin/bash
+docker build --tag glamr.apache2 apache2/
+docker build --tag glamr.webapp webapp/
+docker build --tag glamr.database database/
