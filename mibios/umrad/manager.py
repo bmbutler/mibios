@@ -108,7 +108,7 @@ class BulkCreateWrapperMixin:
                 except Exception as e:
                     print(f'ERROR saving to {model_name or "?"}: batch 1st: '
                           f'{vars(batch[0])=}')
-                    raise RuntimeError('error saving batch', batch) from e
+                    raise RuntimeError('error saving batch', batch[:9]) from e
                 pp.inc(len(batch))
 
             pp.finish()
