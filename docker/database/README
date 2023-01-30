@@ -1,5 +1,0 @@
-First-time setup of database
-
-createuser glamr_django
-createdb --owner glamr_django
-
