@@ -74,7 +74,7 @@ class AccessionField(CharField):
 
 class PathField(Field):
     description = 'a file-system-path-like field'
-    default_base = './q'  # str
+    default_base = './'  # str
 
     def __init__(self, *args, base=None, exists=True,
                  null=True, default=None, **kwargs):
