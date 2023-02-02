@@ -18,6 +18,9 @@ ENV APACHE_LOG_DIR /var/log/apache2
 ENV APACHE_RUN_DIR /run
 ENV APACHE_PID_FILE /run/apache2.pid
 
+# static content from webapp
+VOLUME /glamr/static/
+
 EXPOSE 80/tcp
 HEALTHCHECK CMD curl --silent --fail http://localhost:80/server-status/ || exit 1
 

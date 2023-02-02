@@ -36,14 +36,6 @@ WORKDIR /glamr
 RUN mkdir static_var && chown www-data:www-data static_var
 COPY settings.py ./settings.py
 RUN manage_mibios collectstatic
-VOLUME ["/glamr/static"]
 
 EXPOSE 3032/tcp
-# HEALTHCHECK
 CMD ["uwsgi", "--ini", "/etc/uwsgi.ini"]
-#CMD [ \
-#  "uwsgi", \
-#  "--plugins", "python3", \
-#  "--uwsgi-socket", "0.0.0.0:3023", \
-#  "--chdir", "/glamr", \
-#]
