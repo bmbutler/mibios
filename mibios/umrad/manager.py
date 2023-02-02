@@ -437,10 +437,11 @@ class BaseLoader(DjangoManager):
                 if callable(fn):
                     try:
                         value = fn(value, obj)
-                    except InputFileError as e:
+                    except Exception as e:
                         msg = (f'\nERROR at line {lineno} / field {field}: '
                                f'value was "{value}" -- {e}')
-                        if skip_on_error:
+                        if skip_on_error and isinstance(e, InputFileError):
+                            # skip line on expected errors
                             print(msg, '-- will skip offending row:')
                             print(self.current_row)
                             skip_on_error -= 1
