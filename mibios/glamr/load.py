@@ -116,7 +116,7 @@ class ReferenceLoader(MetaDataLoader):
 
 class SampleLoader(MetaDataLoader):
     """ loader for Great_Lakes_Omics_Datasets.xlsx """
-    empty_values = ['NA', 'Not Listed', 'NF', '#N/A']
+    empty_values = ['NA', 'Not Listed', 'NF', '#N/A', 'ND']
 
     def get_file(self):
         return settings.GLAMR_META_ROOT / 'Great_Lakes_Omics_Datasets.xlsx - samples.tsv'  # noqa:E501
@@ -238,69 +238,84 @@ class SampleLoader(MetaDataLoader):
             return value
 
     spec = CSV_Spec(
-        ('SampleID', 'sample_id'),  # B
-        ('SampleName', 'sample_name', check_ids),  # C
-        ('StudyID', 'dataset.dataset_id'),  # A
-        ('ProjectID', 'project_id'),  # D
-        ('Biosample', 'biosample'),  # E
-        ('Accession_Number', 'sra_accession'),  # F
-        ('JGI_study', None),  # TODO
-        ('JGI_biosample', None),  # TODO
-        ('sample_type', 'sample_type'),  # G
-        ('has_paired_data', 'has_paired_data', parse_bool),  # H
-        ('amplicon_target', 'amplicon_target'),  # I
-        ('F_primer', 'fwd_primer'),  # J
-        ('R_primer', 'rev_primer'),  # K
-        ('geo_loc_name', 'geo_loc_name'),  # L
-        ('GAZ_id', 'gaz_id'),  # M
-        ('lat', 'latitude'),  # N
-        ('lon', 'longitude'),  # O
-        ('collection_date', 'collection_timestamp', process_timestamp),  # P
-        (CSV_Spec.CALC_VALUE, 'collection_ts_partial', None),  # P
-        ('NOAA_Site', 'noaa_site'),  # Q
-        ('env_broad_scale', 'env_broad_scale'),  # R
-        ('env_local_scale', 'env_local_scale'),  # S
-        ('env_medium', 'env_medium'),  # T
+        ('SampleID', 'sample_id'),  # A
+        # ignore id_fixed / sample_input_complete columns
+        ('SampleName', 'sample_name', check_ids),  # D
+        ('StudyID', 'dataset.dataset_id'),  # E
+        ('ProjectID', 'project_id'),  # F
+        ('Biosample', 'biosample'),  # G
+        ('Accession_Number', 'sra_accession'),  # H
+        # ignore 4 ref ID columns
+        # ('JGI_study', None),  # TODO
+        # ('JGI_biosample', None),  # TODO
+        ('sample_type', 'sample_type'),  # M
+        ('has_paired_data', 'has_paired_data', parse_bool),  # N
+        ('amplicon_target', 'amplicon_target'),  # O
+        ('F_primer', 'fwd_primer'),  # P
+        ('R_primer', 'rev_primer'),  # Q
+        ('geo_loc_name', 'geo_loc_name'),  # R
+        ('GAZ_id', 'gaz_id'),  # S
+        ('lat', 'latitude'),  # T
+        ('lon', 'longitude'),  # U
+        ('collection_date', 'collection_timestamp', process_timestamp),  # V
+        (CSV_Spec.CALC_VALUE, 'collection_ts_partial', None),
+        ('NOAA_Site', 'noaa_site'),  # W
+        ('env_broad_scale', 'env_broad_scale'),  # X
+        ('env_local_scale', 'env_local_scale'),  # Y
+        ('env_medium', 'env_medium'),  # Z
+        ('keywords', 'keywords'),  # AA
+        ('depth', 'depth'),  # AB
+        ('depth_sediment', 'depth_sediment'),  # AC
+        ('size_frac_up', 'size_frac_up'),  # AD
+        ('size_frac_low', 'size_frac_low'),  # AE
+        ('pH', 'ph'),  # AF
+        ('temp', 'temp'),  # AG
+        ('calcium', 'calcium'),  # AH
+        ('potassium', 'potassium'),  # AI
+        ('magnesium', 'magnesium'),  # AJ
+        ('ammonium', 'ammonium'),  # AK
+        ('nitrate', 'nitrate'),  # AL
+        ('tot_phos', 'total_phos'),  # AM
+        ('diss_oxygen', 'diss_oxygen'),  # AN
+        ('conduc', 'conduc'),  # AO
+        ('secci', 'secci'),  # AP
+        ('turbidity', 'turbidity'),  # AQ
+        ('part_microcyst', 'part_microcyst'),  # AR
+        ('diss_microcyst', 'diss_microcyst'),  # AS
+        ('ext_phyco', 'ext_phyco'),  # AT
+        ('ext_microcyst', 'ext_microcyst'),  # AU
+        ('ext_Anatox', 'ext_anatox'),  # AV
+        ('chlorophyl', 'chlorophyl'),  # AW
+        ('diss_phosp', 'diss_phos'),  # AX
+        ('soluble_react_phosp', 'soluble_react_phos'),  # AY
+        ('ammonia', 'ammonia'),  # AZ
+        ('Nitrate_Nitrite', 'nitrate_nitrite'),  # BA
+        ('urea', 'urea'),  # BB
+        ('part_org_carb', 'part_org_carb'),  # BC
+        ('part_org_nitro', 'part_org_nitro'),  # BD
+        ('diss_org_carb', 'diss_org_carb'),  # BE
+        ('Col_DOM', 'col_dom'),  # BF
+        ('suspend_part_matter', 'suspend_part_matter'),  # BG
+        ('suspend_vol_solid', 'suspend_vol_solid'),  # BH
+        ('microcystis_count', 'microcystis_count', parse_human_int),  # BI
+        ('planktothrix_count', 'planktothrix_count', parse_human_int),  # BJ
+        ('anabaena_D_count', 'anabaena_d_count', parse_human_int),  # BK
+        ('cylindrospermopsis_count', 'cylindrospermopsis_count'),  # BL
+        ('ice_cover', 'ice_cover'),  # BM
+        ('chlorophyl_fluoresence', 'chlorophyl_fluoresence'),  # BN
+        ('sampling_device', 'sampling_device'),  # BO
         ('modified_or_experimental', 'modified_or_experimental', parse_bool),
-        ('depth', 'depth'),  # V
-        ('depth_sediment', 'depth_sediment'),  # W
-        ('size_frac_up', 'size_frac_up'),  # X
-        ('size_frac_low', 'size_frac_low'),  # Y
-        ('pH', 'ph'),  # Z
-        ('temp', 'temp'),  # AA
-        ('calcium', 'calcium'),  # AB
-        ('potassium', 'potassium'),  # AC
-        ('magnesium', 'magnesium'),  # AD
-        ('ammonium', 'ammonium'),  # AE
-        ('nitrate', 'nitrate'),  # AF
-        ('phosphorus', 'phosphorus'),  # AG
-        ('diss_oxygen', 'diss_oxygen'),  # AH
-        ('conduc', 'conduc'),  # AI
-        ('secci', 'secci'),  # AJ
-        ('turbidity', 'turbidity'),  # AK
-        ('part_microcyst', 'part_microcyst'),  # AL
-        ('diss_microcyst', 'diss_microcyst'),  # AM
-        ('ext_phyco', 'ext_phyco'),  # AN
-        ('ext_microcyst', 'ext_microcyst'),  # AO
-        ('ext_Anatox', 'ext_anatox'),  # AP
-        ('chlorophyl', 'chlorophyl'),  # AQ
-        ('diss_phosp', 'diss_phosp'),  # AR
-        ('soluble_react_phosp', 'soluble_react_phosp'),  # AS
-        ('ammonia', 'ammonia'),  # AT
-        ('Nitrate_Nitrite', 'nitrate_nitrite'),  # AU
-        ('urea', 'urea'),  # AV
-        ('part_org_carb', 'part_org_carb'),  # AW
-        ('part_org_nitro', 'part_org_nitro'),  # AX
-        ('diss_org_carb', 'diss_org_carb'),  # AY
-        ('Col_DOM', 'col_dom'),  # AZ
-        ('suspend_part_matter', 'suspend_part_matter'),  # BA
-        ('suspend_vol_solid', 'suspend_vol_solid'),  # BB
-        ('Microcystis_count', 'microcystis_count', parse_human_int),  # BC
-        ('Planktothris_Count', 'planktothris_count', parse_human_int),  # BD
-        ('Anabaena-D_count', 'anabaena_d_count', parse_human_int),  # BE
-        ('Cylindrospermopsis_count', 'cylindrospermopsis_count'),  # BF
-        ('ice_cover', None),  # TODO
-        ('Notes', 'notes'),  # BG
+        ('is_isolate', 'is_isolate', parse_bool),  # BQ
+        ('is_blank_neg_control', 'is_neg_control', parse_bool),  # BR
+        ('is_mock_community_or_pos_control', 'is_pos_control', parse_bool),
+        ('filtration_volume', 'filt_volume'),  # BT
+        ('filtration_duration', 'filt_duration'),  # BU
+        ('par', 'par'),  # BV
+        ('qPCR_total', 'qPCR_total'),  # BW
+        ('qPCR_mcyE', 'qPCR_mcyE'),  # BX
+        ('qPCR_sxtA', 'qPCR_sxtA'),  # BY
+        ('Notes', 'notes'),  # BZ
+
     )
 
     @atomic_dry
