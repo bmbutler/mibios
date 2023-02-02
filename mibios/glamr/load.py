@@ -202,7 +202,9 @@ class SampleLoader(MetaDataLoader):
             # which MIMARKS/MIXS allows
             m = self.partial_date_pat.match(old_value)
 
-            if m is not None:
+            if m is None:
+                raise InputFileError(f'failed parsing timestamp: {old_value}')
+            else:
                 year, month = m.groups()
                 year = int(year)
                 if month is None:
