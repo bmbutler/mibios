@@ -8,14 +8,14 @@ To start the containers run, e.g.:
 
 COMPOSE_PROJECT_NAME=glamr docker-compose up
 
-If the host's database data directory is empty, the db connection will fail
-and django app will probably give a 500 server error, you can setup an
-empty database by running something like:
+If the host's database data directory is not set up with a database, the db
+connection will fail and django app will probably respond with a 500 server
+error, you can setup an empty database by running something like:
 
 host:/$ docker exec -it glamr_database_1 bash
 container:/$ /usr/lib/postgresql/15/bin/initdb
 container:/$ createuser glamr_django
-container:/$ createdb --owner glamr_django
+container:/$ createdb --owner glamr_django glamr
 
 host:/$ docker exec -it glamr_webapp_1 bash
 container:/$ manage_mibios migrate
