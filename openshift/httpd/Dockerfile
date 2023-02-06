@@ -10,10 +10,13 @@ RUN apt-get update && apt-get install --assume-yes --no-install-recommends \
     apache2 \
     libapache2-mod-uwsgi
 
+COPY start.sh /start.sh
 COPY apache24.conf /etc/apache2/conf-available/glamr.conf
-RUN a2enmod proxy
-RUN a2enmod proxy_uwsgi
-RUN a2enconf glamr
+
+RUN    a2enmod proxy \
+    && a2enmod proxy_uwsgi \
+    && a2enconf glamr \
+    && chmod +x /start.sh
 
 RUN      sed -i 's/80/8080/' /etc/apache2/sites-enabled/000-default.conf \
       && sed -i 's/80/8080/' /etc/apache2/ports.conf \
@@ -25,4 +28,4 @@ USER 1001
 
 EXPOSE 8080/tcp
 
-CMD ["apache2", "-k", "start", "-DFOREGROUND"]
+CMD ["/bin/bash", "/start.sh"]
