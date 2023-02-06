@@ -37,15 +37,15 @@ RUN mkdir /glamr
 WORKDIR /glamr
 RUN mkdir static_var && chown 1001:0 static_var
 COPY settings.py ./settings.py
+COPY start.sh /start.sh
 
-RUN    manage_mibios collectstatic
+RUN chmod +x /start.sh
 
 ### Added for OpenShift compatabiltiy ###########
-RUN    chown -R 1001:0 /glamr \
-    && chmod g+rw secret.key
+RUN    chown -R 1001:0 /glamr
 USER 1001
 #################################################
 
 EXPOSE 3032/tcp
 
-CMD ["uwsgi", "--ini", "/etc/uwsgi.ini"]
+CMD ["/bin/bash", "/start.sh"]
