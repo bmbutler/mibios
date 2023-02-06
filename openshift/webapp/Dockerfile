@@ -41,7 +41,8 @@ COPY settings.py ./settings.py
 RUN    manage_mibios collectstatic
 
 ### Added for OpenShift compatabiltiy ###########
-RUN chown -R 1001:0 /glamr
+RUN    chown -R 1001:0 /glamr \
+    && chmod g+rw secret.key
 USER 1001
 #################################################
 
