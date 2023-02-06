@@ -42,7 +42,8 @@ COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
 ### Added for OpenShift compatabiltiy ###########
-RUN    chown -R 1001:0 /glamr
+RUN    chown -R 1001:0 /glamr \
+    && chmod -R g+rwx /glamr 
 USER 1001
 #################################################
 
