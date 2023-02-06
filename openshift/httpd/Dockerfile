@@ -27,7 +27,7 @@ RUN    a2enmod proxy \
     && chown -Rf 1001:0 /var/log/apache2 \
     && chmod -Rf ug=rwx /var/log/apache2 \
     && chown -Rf 1001:0 /var/cache/apache2 \
-    && chmod -Rf ug=rwx /var/cache/apache
+    && chmod -Rf ug=rwx /var/cache/apache2
 
 RUN      sed -i 's/80/8080/' /etc/apache2/sites-enabled/000-default.conf \
       && sed -i 's/80/8080/' /etc/apache2/ports.conf \
