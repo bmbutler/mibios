@@ -8,7 +8,12 @@ RUN ln -sf /usr/share/zoneinfo/America/Detroit /etc/localtime
 RUN apt-get update && apt-get install --assume-yes --no-install-recommends \
     curl \
     apache2 \
-    libapache2-mod-uwsgi
+    libapache2-mod-uwsgi \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /var/run/apache2 \
+             /var/run/apache2/lock
 
 COPY start.sh /start.sh
 COPY apache24.conf /etc/apache2/conf-available/glamr.conf
