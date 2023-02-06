@@ -42,9 +42,9 @@ MEDIA_URL = '/glamr/media/'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'glamr',
-        'USER': 'glamr_django',
-        'HOST': 'database',
+        'NAME': env('DATABASE_NAME'),
+        'USER': env('DATABASE_USER'),
+        'HOST': env('DATABASE_HOST'),
         'PORT': '5432',
     },
 }
