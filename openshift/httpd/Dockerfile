@@ -21,7 +21,13 @@ COPY apache24.conf /etc/apache2/conf-available/glamr.conf
 RUN    a2enmod proxy \
     && a2enmod proxy_uwsgi \
     && a2enconf glamr \
-    && chmod +x /start.sh
+    && chmod +x /start.sh \
+    && chown -Rf 1001:0 /var/run/apache2 \
+    && chmod -Rf ug=rwx /var/run/apache2 \
+    && chown -Rf 1001:0 /var/log/apache2 \
+    && chmod -Rf ug=rwx /var/log/apache2 \
+    && chown -Rf 1001:0 /var/cache/apache2 \
+    && chmod -Rf ug=rwx /var/cache/apache
 
 RUN      sed -i 's/80/8080/' /etc/apache2/sites-enabled/000-default.conf \
       && sed -i 's/80/8080/' /etc/apache2/ports.conf \
